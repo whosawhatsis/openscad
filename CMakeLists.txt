@@ -1089,6 +1089,7 @@ set(CORE_SOURCES
   src/glview/RenderSettings.cc
   src/glview/preview/CSGTreeNormalizer.cc
   src/handle_dep.cc
+  src/io/depthmap.cc
   src/io/DxfData.cc
   src/io/dxfdim.cc
   src/io/export.cc
@@ -1253,7 +1254,8 @@ if(NULLGL)
     src/glview/OffscreenView.cc
     src/glview/OffscreenContextNULL.cc
     src/io/export_png.cc
-    src/io/imageutils.cc)
+    src/io/imageutils.cc
+    src/io/imageutils-gray16.cc)
 else()
   set(OFFSCREEN_SOURCES
     src/glview/OpenGLContext.cc
@@ -1272,6 +1274,7 @@ else()
     src/glview/preview/ThrownTogetherRenderer.cc
     src/io/export_png.cc
     src/io/imageutils.cc
+    src/io/imageutils-gray16.cc
     ${GLEW_SOURCES})
   if(NOT USE_POLYSET_FOR_CGAL)
     list(APPEND OFFSCREEN_SOURCES
