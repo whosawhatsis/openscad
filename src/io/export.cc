@@ -200,6 +200,12 @@ ExportInfo createExportInfo(const FileFormat& format, const FileFormatInfo& info
     exportInfo.optionsPdf = ExportPdfOptions::withOptions(cmdLineOptions);
   } else if (format == FileFormat::SVG) {
     exportInfo.optionsSvg = ExportSvgOptions::withOptions(cmdLineOptions);
+  } else if (format == FileFormat::OFF) {
+    const auto section = cmdLineOptions.find("off");
+    if (section != cmdLineOptions.end()) {
+      const auto precision = section->second.find("precision");
+      if (precision != section->second.end()) exportInfo.offPrecision = std::stoi(precision->second);
+    }
   }
 
   return exportInfo;
@@ -212,14 +218,17 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
   case FileFormat::ASCII_STL:  export_stl(root_geom, output, false); break;
   case FileFormat::BINARY_STL: export_stl(root_geom, output, true); break;
   case FileFormat::OBJ:        export_obj(root_geom, output); break;
-  case FileFormat::OFF:        export_off(root_geom, output); break;
-  case FileFormat::WRL:        export_wrl(root_geom, output); break;
-  case FileFormat::AMF:        export_amf(root_geom, output); break;
-  case FileFormat::_3MF:       export_3mf(root_geom, output, exportInfo); break;
-  case FileFormat::DXF:        export_dxf(root_geom, output); break;
-  case FileFormat::SVG:        export_svg(root_geom, output, exportInfo); break;
-  case FileFormat::PDF:        export_pdf(root_geom, output, exportInfo); break;
-  case FileFormat::POV:        export_pov(root_geom, output, exportInfo); break;
+  case FileFormat::OFF:
+    if (exportInfo.offPrecision) output << std::setprecision(exportInfo.offPrecision);
+    export_off(root_geom, output);
+    break;
+  case FileFormat::WRL:  export_wrl(root_geom, output); break;
+  case FileFormat::AMF:  export_amf(root_geom, output); break;
+  case FileFormat::_3MF: export_3mf(root_geom, output, exportInfo); break;
+  case FileFormat::DXF:  export_dxf(root_geom, output); break;
+  case FileFormat::SVG:  export_svg(root_geom, output, exportInfo); break;
+  case FileFormat::PDF:  export_pdf(root_geom, output, exportInfo); break;
+  case FileFormat::POV:  export_pov(root_geom, output, exportInfo); break;
 #ifdef ENABLE_CGAL
   case FileFormat::NEFDBG: export_nefdbg(root_geom, output); break;
   case FileFormat::NEF3:   export_nef3(root_geom, output); break;
