@@ -944,6 +944,7 @@ int openscad_main(int argc, char **argv)
 #ifdef Q_OS_MACOS
     ("psn", po::value<std::string>(), "process serial number")
 #endif
+    ("new-window-process", "internal guard for a child process owning one GUI window")
     ("input-file", po::value<std::vector<std::string>>(), "input file");
   // clang-format on
 
@@ -1201,7 +1202,8 @@ int openscad_main(int argc, char **argv)
       gui_test = "all";
     }
     auto reset_window_settings = vm.count("reset-window-settings") > 0;
-    rc = gui(inputFiles, original_path, argc, argv, gui_test, reset_window_settings);
+    auto new_window_process = vm.count("new-window-process") > 0;
+    rc = gui(inputFiles, original_path, argc, argv, gui_test, reset_window_settings, new_window_process);
 #endif
   } else {
     LOG("Requested GUI mode but can't open display!\n");
