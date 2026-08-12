@@ -1556,10 +1556,9 @@ endif()
 # OFF precision #
 #################
 
-# `-O off/precision=<n>` gives a lossless OFF round-trip, which the per-window
-# render subprocess needs in order to hand geometry back to its parent. Also pins
-# the default, which must stay at the iostream default or every existing OFF
-# expectation moves with it.
+# `-O export-off/precision=<n>` gives a lossless OFF coordinate round-trip. Also
+# pins the default, which must stay at the iostream default or every existing
+# OFF expectation moves with it.
 if(OPENSCAD_BINPATH)
   add_test(NAME off_precision
     CONFIGURATIONS Default

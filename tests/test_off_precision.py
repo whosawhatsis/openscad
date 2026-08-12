@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-# Checks the `-O off/precision=<n>` export option.
+# Checks the `-O export-off/precision=<n>` export option.
 #
-# The per-window render subprocess (feature 29) hands geometry back to the parent
-# as an OFF file. That only works if the round-trip is lossless, and OFF export
-# writes at the iostream default of 6 significant digits, which it is not.
+# OFF export writes at the iostream default of 6 significant digits, which is
+# not sufficient for an exact coordinate round-trip.
 #
 # The option has to be opt-in: raising precision for every OFF export would move
 # every existing OFF regression expectation.
@@ -43,10 +42,10 @@ def main():
     # The corner at the origin is the translation itself, exactly.
     expected = float(OFFSET)
 
-    got = min_x(export(binary, scad, outdir / "precise.off", "-O", "off/precision=17"))
+    got = min_x(export(binary, scad, outdir / "precise.off", "-O", "export-off/precision=17"))
     if got != expected:
         raise SystemExit(
-            f"off/precision=17 lost precision: got {got!r}, want {expected!r}")
+            f"export-off/precision=17 lost precision: got {got!r}, want {expected!r}")
 
     # The default must not move, or every existing OFF expectation moves with it.
     default = min_x(export(binary, scad, outdir / "default.off"))
@@ -54,6 +53,13 @@ def main():
         raise SystemExit(
             "default OFF export changed: it is now full precision, which "
             "invalidates the existing OFF regression expectations")
+
+    for invalid in ("abc", "-5", "99999"):
+        text = export(binary, scad, outdir / f"invalid-{invalid}.off",
+                      "-O", f"export-off/precision={invalid}")
+        if min_x(text) == expected:
+            raise SystemExit(
+                f"invalid OFF precision {invalid!r} unexpectedly enabled full precision")
 
     print("OK")
 

@@ -201,10 +201,10 @@ ExportInfo createExportInfo(const FileFormat& format, const FileFormatInfo& info
   } else if (format == FileFormat::SVG) {
     exportInfo.optionsSvg = ExportSvgOptions::withOptions(cmdLineOptions);
   } else if (format == FileFormat::OFF) {
-    const auto section = cmdLineOptions.find("off");
-    if (section != cmdLineOptions.end()) {
-      const auto precision = section->second.find("precision");
-      if (precision != section->second.end()) exportInfo.offPrecision = std::stoi(precision->second);
+    const auto& setting = Settings::SettingsExportOff::exportOffPrecision;
+    const auto precision = set_cmd_line_option(cmdLineOptions, Settings::SECTION_EXPORT_OFF, setting);
+    if (precision >= setting.minimum() && precision <= setting.maximum()) {
+      exportInfo.offPrecision = precision;
     }
   }
 
