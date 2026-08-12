@@ -8,5 +8,4 @@ class TestMainWindow : public UXTest
 private slots:
   void checkOpenTabPropagateToWindow();
   void checkSaveToShouldUpdateWindowTitle();
-  void checkNewWindowLaunchesChildProcess();
 };

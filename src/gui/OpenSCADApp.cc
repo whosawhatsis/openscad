@@ -70,8 +70,8 @@ void OpenSCADApp::requestOpenFile(const QString& filename)
     }
   }
 
-  // ..otherwise, create a new process owning its own complete window
-  this->windowManager.openWindow({filename});
+  // ..otherwise, create a new one
+  new MainWindow(QStringList(filename));
 }
 
 void OpenSCADApp::showFontCacheDialog()
