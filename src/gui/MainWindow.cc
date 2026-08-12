@@ -1157,7 +1157,7 @@ void MainWindow::on_fileActionOpen_triggered()
 
 void MainWindow::on_fileActionNewWindow_triggered()
 {
-  new MainWindow(QStringList());
+  scadApp->windowManager.openWindow({});
 }
 
 void MainWindow::on_fileActionOpenWindow_triggered()
@@ -1167,7 +1167,7 @@ void MainWindow::on_fileActionOpenWindow_triggered()
     if (!i.exists()) {
       return;
     }
-    new MainWindow(QStringList(i.filePath()));
+    scadApp->windowManager.openWindow({i.filePath()});
   }
 }
 

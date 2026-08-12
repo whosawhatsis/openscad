@@ -201,7 +201,8 @@ void registerDefaultIcon(const QString&)
 #endif
 
 int gui(std::vector<std::string>& inputFiles, const std::filesystem::path& original_path, int argc,
-        char **argv, const std::string& gui_test, const bool reset_window_settings)
+        char **argv, const std::string& gui_test, const bool reset_window_settings,
+        const bool new_window_process)
 {
   configureOpenGLContext();
   OpenSCADApp app(argc, argv);
@@ -294,7 +295,8 @@ int gui(std::vector<std::string>& inputFiles, const std::filesystem::path& origi
   }
 
   auto showOnStartup = settings.value("launcher/showOnStartup");
-  bool showLauncher = noInputFiles && (showOnStartup.isNull() || showOnStartup.toBool());
+  bool showLauncher =
+    !new_window_process && noInputFiles && (showOnStartup.isNull() || showOnStartup.toBool());
 #ifdef ENABLE_GUI_TESTS
   if (gui_test != "none") {
     showLauncher = false;
