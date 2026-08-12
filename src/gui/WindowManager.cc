@@ -3,9 +3,14 @@
 #include <QCoreApplication>
 #include <QProcess>
 #include <QSet>
+#include <utility>
 
 #include "gui/MainWindow.h"
 #include "utils/printutils.h"
+
+WindowManager::WindowManager(Launcher launcher) : launcher(std::move(launcher))
+{
+}
 
 void WindowManager::add(MainWindow *mainwin)
 {
@@ -22,16 +27,20 @@ const QSet<MainWindow *>& WindowManager::getWindows() const
   return this->windows;
 }
 
-QStringList WindowManager::childArguments(const QStringList& filenames)
-{
-  return QStringList{"--new-window-process"} + filenames;
-}
-
 bool WindowManager::openWindow(const QStringList& filenames) const
 {
-  if (QProcess::startDetached(QCoreApplication::applicationFilePath(), childArguments(filenames))) {
+  const auto executable = QCoreApplication::applicationFilePath();
+  const auto arguments = QStringList{"--new-window-process"} + filenames;
+  const bool started =
+    launcher ? launcher(executable, arguments) : QProcess::startDetached(executable, arguments);
+  if (started) {
     return true;
   }
   LOG(message_group::Error, "Could not start a new OpenSCAD window process.");
   return false;
+}
+
+void WindowManager::setLauncher(Launcher launcher)
+{
+  this->launcher = std::move(launcher);
 }

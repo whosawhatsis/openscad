@@ -4,6 +4,7 @@
 #include <QStringList>
 #include <QTest>
 
+#include "gui/OpenSCADApp.h"
 #include "platform/PlatformUtils.h"
 
 void TestMainWindow::checkOpenTabPropagateToWindow()
@@ -42,4 +43,19 @@ void TestMainWindow::checkSaveToShouldUpdateWindowTitle()
 
   // The window title must also have the name of open file
   QCOMPARE(window->windowTitle(), "test-tmp.scad");
+}
+
+void TestMainWindow::checkNewWindowLaunchesChildProcess()
+{
+  QStringList arguments;
+  scadApp->windowManager.setLauncher([&](const QString&, const QStringList& args) {
+    arguments = args;
+    return true;
+  });
+
+  const bool invoked = QMetaObject::invokeMethod(window, "on_fileActionNewWindow_triggered");
+  scadApp->windowManager.setLauncher({});
+
+  QVERIFY(invoked);
+  QCOMPARE(arguments, QStringList{"--new-window-process"});
 }
