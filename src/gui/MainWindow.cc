@@ -959,7 +959,8 @@ void MainWindow::compileDone(bool didchange)
 void MainWindow::compileEnded()
 {
   clearCurrentOutput();
-  GuiLocker::unlock();
+  if (this->processIsolation) this->computeBusy = false;
+  else GuiLocker::unlock();
   if (designActionAutoReload->isChecked()) autoReloadTimer->start();
 #ifdef ENABLE_GUI_TESTS
   emit compilationDone(this->rootFile.get());
@@ -1883,7 +1884,7 @@ void MainWindow::on_designActionReloadAndPreview_triggered()
     actionReloadRenderPreview();
     return;
   }
-  if (GuiLocker::isLocked()) return;
+  if (this->computeBusy) return;
   if (fileChangedOnDisk()) {
     if (!checkEditorModified()) return;
     const auto refreshed = tabManager->refreshDocument();
@@ -1956,13 +1957,13 @@ void MainWindow::actionRenderPreview()
   }
   this->previewRequested = true;
 
-  if (GuiLocker::isLocked()) return;
+  if (this->computeBusy) return;
 
   bool python;
   QString pythonVenv;
   if (!prepareWorkerPython(python, pythonVenv)) return;
 
-  GuiLocker::lock();
+  this->computeBusy = true;
   this->previewRequested = false;
 
   resetMeasurementsState(false, "Render (not preview) to enable measurements");
@@ -2108,17 +2109,18 @@ void MainWindow::on_designAction3DPrint_triggered()
 
 void MainWindow::on_designActionRender_triggered()
 {
-  if (GuiLocker::isLocked()) return;
   if (!this->processIsolation) {
+    if (GuiLocker::isLocked()) return;
     GuiLocker::lock();
     prepareCompile("cgalRender", true, false);
     compile(false);
     return;
   }
+  if (this->computeBusy) return;
   bool python;
   QString pythonVenv;
   if (!prepareWorkerPython(python, pythonVenv)) return;
-  GuiLocker::lock();
+  this->computeBusy = true;
   setCurrentOutput();
   autoReloadTimer->stop();
   this->renderStatistic.start();
@@ -3672,6 +3674,8 @@ void MainWindow::setupCoreSubsystems()
     connect(this->computeWorker, &ComputeWorker::diagnostic, this, [this](const QString& text) {
       if (!text.isEmpty()) this->consoleOutput(Message(text.toStdString(), message_group::Error));
     });
+    connect(this->computeWorker, &ComputeWorker::output, this,
+            qOverload<const Message&>(&MainWindow::consoleOutput));
     connect(this->computeWorker, &ComputeWorker::parametersDiscovered, this,
             [this](const QString& source, const QString& metadata) {
               if (this->activeEditor->toPlainText() == source) {
