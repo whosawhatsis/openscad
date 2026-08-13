@@ -112,13 +112,15 @@
 #include "geometry/GeometryEvaluator.h"
 #include "glview/PolySetRenderer.h"
 #include "glview/RenderSettings.h"
+#include "glview/CsgInfo.h"
 #if not defined(USE_POLYSET_FOR_CGAL)
 #include "glview/cgal/CGALRenderer.h"
 #endif
 #include "glview/preview/CSGTreeNormalizer.h"
 #include "glview/preview/ThrownTogetherRenderer.h"
 #include "gui/AboutDialog.h"
-#include "gui/CGALWorker.h"
+#include "gui/ComputeWorker.h"
+#include "gui/GeometryWorker.h"
 #include "gui/ColorList.h"
 #include "gui/Dock.h"
 #include "gui/ai/AIDock.h"
@@ -207,6 +209,7 @@ unsigned int GuiLocker::guiLocked = 0;
 
 bool MainWindow::undockMode = false;
 bool MainWindow::reorderMode = false;
+bool MainWindow::processIsolation = false;
 const int MainWindow::tabStopWidth = 15;
 QElapsedTimer *MainWindow::progressThrottle = new QElapsedTimer();
 
@@ -616,8 +619,26 @@ void MainWindow::updateReorderMode(bool reorderMode)
 
 MainWindow::~MainWindow()
 {
-  delete this->cgalworker;
+  delete this->computeWorker;
+  delete this->geometryWorker;
 }
+
+void MainWindow::setProcessIsolation(bool enabled)
+{
+  processIsolation = enabled;
+}
+
+qint64 MainWindow::computeWorkerProcessId() const
+{
+  return this->computeWorker ? this->computeWorker->processId() : 0;
+}
+
+#ifdef ENABLE_GUI_TESTS
+void MainWindow::exitComputeWorkerForTest()
+{
+  if (this->computeWorker) this->computeWorker->exitForTest();
+}
+#endif
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
@@ -1721,6 +1742,27 @@ bool MainWindow::trust_python_file(const std::string& file, const std::string& c
 }
 #endif  // ifdef ENABLE_PYTHON
 
+bool MainWindow::prepareWorkerPython(bool& python, QString& pythonVenv)
+{
+  python = false;
+  pythonVenv.clear();
+  if (!this->activeEditor->filepath.endsWith(".py", Qt::CaseInsensitive)) return true;
+#ifdef ENABLE_PYTHON
+  const auto source = this->activeEditor->toPlainText().toStdString();
+  const auto filename = this->activeEditor->filepath.toStdString();
+  if (!Feature::ExperimentalPythonEngine.is_enabled() || !trust_python_file(filename, source)) {
+    LOG(message_group::Warning, Location::NONE, "", "Python is not enabled");
+    return false;
+  }
+  python = true;
+  pythonVenv = QString::fromStdString(venvBinDirFromSettings());
+  return true;
+#else
+  LOG(message_group::Warning, Location::NONE, "", "Python is not enabled");
+  return false;
+#endif
+}
+
 std::shared_ptr<SourceFile> MainWindow::parseDocument(EditorInterface *editor)
 {
   resetSuppressedMessages();
@@ -1787,8 +1829,26 @@ void MainWindow::parseTopLevelDocument()
 
 void MainWindow::checkAutoReload()
 {
-  if (!activeEditor->filepath.isEmpty()) {
-    actionReloadRenderPreview();
+  if (!this->processIsolation) {
+    if (!activeEditor->filepath.isEmpty()) actionReloadRenderPreview();
+    return;
+  }
+  if (activeEditor->filepath.isEmpty()) return;
+  if (fileChangedOnDisk()) {
+    on_designActionReloadAndPreview_triggered();
+    return;
+  }
+  for (auto dependency = this->workerDependencies.begin(); dependency != this->workerDependencies.end();
+       ++dependency) {
+    const QFileInfo info(dependency.key());
+    const auto identity = QString("%1.%2.%3")
+                            .arg(info.exists())
+                            .arg(info.lastModified().toMSecsSinceEpoch())
+                            .arg(info.size());
+    if (identity != dependency.value()) {
+      actionRenderPreview();
+      return;
+    }
   }
 }
 
@@ -1819,7 +1879,18 @@ bool MainWindow::checkEditorModified()
 
 void MainWindow::on_designActionReloadAndPreview_triggered()
 {
-  actionReloadRenderPreview();
+  if (!this->processIsolation) {
+    actionReloadRenderPreview();
+    return;
+  }
+  if (GuiLocker::isLocked()) return;
+  if (fileChangedOnDisk()) {
+    if (!checkEditorModified()) return;
+    const auto refreshed = tabManager->refreshDocument();
+    if (!refreshed) return;
+    if (GlobalPreferences::inst()->getValue("advanced/autoReloadRaise").toBool()) this->raise();
+  }
+  actionRenderPreview();
 }
 
 void MainWindow::actionReloadRenderPreview()
@@ -1871,26 +1942,82 @@ void MainWindow::on_designActionPreview_triggered()
 
 void MainWindow::actionRenderPreview()
 {
-  static bool preview_requested;
-  preview_requested = true;
+  if (!this->processIsolation) {
+    static bool previewRequested;
+    previewRequested = true;
+    if (GuiLocker::isLocked()) return;
+    GuiLocker::lock();
+    previewRequested = false;
+    resetMeasurementsState(false, "Render (not preview) to enable measurements");
+    prepareCompile("csgRender", !animateDock->isVisible(), true);
+    compile(false, false);
+    if (previewRequested) QTimer::singleShot(0, this, &MainWindow::actionRenderPreview);
+    return;
+  }
+  this->previewRequested = true;
 
   if (GuiLocker::isLocked()) return;
 
+  bool python;
+  QString pythonVenv;
+  if (!prepareWorkerPython(python, pythonVenv)) return;
+
   GuiLocker::lock();
-  preview_requested = false;
+  this->previewRequested = false;
 
   resetMeasurementsState(false, "Render (not preview) to enable measurements");
 
-  prepareCompile("csgRender", !animateDock->isVisible(), true);
-  compile(false, false);
+  setCurrentOutput();
+  autoReloadTimer->stop();
+  this->isPreview = true;
+  this->renderStatistic.start();
+  this->progresswidget = new ProgressWidget(this);
+  connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
+  connect(this->progresswidget, &ProgressWidget::canceled, this->computeWorker, &ComputeWorker::cancel);
+  const auto normalizationLimit =
+    2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
+  this->computeWorker->startPreview(this->activeEditor->toPlainText(), this->activeEditor->filepath,
+                                    this->activeEditor->parameterWidget->exportValues(),
+                                    normalizationLimit, this->animateWidget->getAnimTval(),
+                                    this->qglview->cam, python, pythonVenv);
+}
 
-  if (preview_requested) {
-    // if the action was called when the gui was locked, we must request it one more time
-    // however, it's not possible to call it directly NOR make the loop
-    // it must be called from the mainloop
-    QTimer::singleShot(0, this, &MainWindow::actionRenderPreview);
+void MainWindow::actionPreviewDone(const std::shared_ptr<CsgInfo>& products)
+{
+  updateStatusBar(nullptr);
+  if (!products) {
+    compileEnded();
+    if (this->previewRequested) QTimer::singleShot(0, this, &MainWindow::actionRenderPreview);
     return;
   }
+
+  this->rootProduct = products->root_products;
+  this->highlightsProducts = products->highlights_products;
+  this->backgroundProducts = products->background_products;
+  const auto limit = GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
+  if (this->rootProduct && this->rootProduct->size() > limit) {
+    LOG(message_group::UI_Warning, "Normalized tree has %1$d elements!", this->rootProduct->size());
+    LOG(message_group::UI_Warning, "OpenCSG rendering has been disabled.");
+    this->previewRenderer.reset();
+  } else {
+#ifdef ENABLE_OPENCSG
+    this->previewRenderer = std::make_shared<OpenCSGRenderer>(
+      this->rootProduct, this->highlightsProducts, this->backgroundProducts);
+#endif
+  }
+  this->thrownTogetherRenderer = std::make_shared<ThrownTogetherRenderer>(
+    this->rootProduct, this->highlightsProducts, this->backgroundProducts);
+
+  if (viewActionThrownTogether->isChecked()) viewModeThrownTogether();
+  else {
+#ifdef ENABLE_OPENCSG
+    viewModePreview();
+#else
+    viewModeThrownTogether();
+#endif
+  }
+  compileEnded();
+  if (this->previewRequested) QTimer::singleShot(0, this, &MainWindow::actionRenderPreview);
 }
 
 void MainWindow::csgRender()
@@ -1982,10 +2109,20 @@ void MainWindow::on_designAction3DPrint_triggered()
 void MainWindow::on_designActionRender_triggered()
 {
   if (GuiLocker::isLocked()) return;
+  if (!this->processIsolation) {
+    GuiLocker::lock();
+    prepareCompile("cgalRender", true, false);
+    compile(false);
+    return;
+  }
+  bool python;
+  QString pythonVenv;
+  if (!prepareWorkerPython(python, pythonVenv)) return;
   GuiLocker::lock();
-
-  prepareCompile("cgalRender", true, false);
-  compile(false);
+  setCurrentOutput();
+  autoReloadTimer->stop();
+  this->renderStatistic.start();
+  isolatedRender(python, pythonVenv);
 }
 
 void MainWindow::cgalRender()
@@ -1994,7 +2131,20 @@ void MainWindow::cgalRender()
     compileEnded();
     return;
   }
+  this->qglview->setRenderer(nullptr);
+  this->geomRenderer = nullptr;
+  rootGeom.reset();
+  LOG("Rendering Polygon Mesh using %1$s...",
+      renderBackend3DToString(RenderSettings::inst()->backend3D).c_str());
+  this->progresswidget = new ProgressWidget(this);
+  connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
+  if (!isClosing) progress_report_prep(this->rootNode, report_func, this);
+  else return;
+  this->geometryWorker->start(this->tree);
+}
 
+void MainWindow::isolatedRender(bool python, const QString& pythonVenv)
+{
   this->qglview->setRenderer(nullptr);
   this->geomRenderer = nullptr;
   rootGeom.reset();
@@ -2004,11 +2154,13 @@ void MainWindow::cgalRender()
 
   this->progresswidget = new ProgressWidget(this);
   connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
+  connect(this->progresswidget, &ProgressWidget::canceled, this->computeWorker, &ComputeWorker::cancel);
 
-  if (!isClosing) progress_report_prep(this->rootNode, report_func, this);
-  else return;
+  if (isClosing) return;
 
-  this->cgalworker->start(this->tree);
+  this->computeWorker->start(this->activeEditor->toPlainText(), this->activeEditor->filepath,
+                             this->activeEditor->parameterWidget->exportValues(),
+                             this->animateWidget->getAnimTval(), this->qglview->cam, python, pythonVenv);
 }
 
 void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_geom)
@@ -2049,6 +2201,8 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
     // Go to CGAL view mode
     viewModeRender();
     resetMeasurementsState(true, "Click to start measuring");
+    renderedEditor = activeEditor;
+    activeEditor->contentsRendered = true;
   } else {
     resetMeasurementsState(false, "No top level geometry; render something to enable measurements");
     LOG(message_group::UI_Warning, "No top level geometry to render");
@@ -2064,8 +2218,6 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
     renderCompleteSoundEffect->play();
   }
 
-  renderedEditor = activeEditor;
-  activeEditor->contentsRendered = true;
   compileEnded();
 }
 
@@ -3186,16 +3338,18 @@ void MainWindow::onTabManagerAboutToCloseEditor(EditorInterface *closingEditor)
 
 void MainWindow::onTabManagerEditorContentReloaded(EditorInterface *reloadedEditor)
 {
-  try {
-    // when a new editor is created, it is important to compile the initial geometry
-    // so the customizer panels are ok.
-    parseDocument(reloadedEditor);
-  } catch (const HardWarningException&) {
-    exceptionCleanup();
-  } catch (const std::exception& ex) {
-    UnknownExceptionCleanup(ex.what());
-  } catch (...) {
-    UnknownExceptionCleanup();
+  if (this->processIsolation) {
+    reloadedEditor->parameterWidget->setEnabled(false);
+  } else {
+    try {
+      parseDocument(reloadedEditor);
+    } catch (const HardWarningException&) {
+      exceptionCleanup();
+    } catch (const std::exception& ex) {
+      UnknownExceptionCleanup(ex.what());
+    } catch (...) {
+      UnknownExceptionCleanup();
+    }
   }
 
   // updates the content of the Recents Files menu to integrate the one possibly
@@ -3505,8 +3659,39 @@ void MainWindow::setupCoreSubsystems()
   renderCompleteSoundEffect = new QSoundEffect(this);
   renderCompleteSoundEffect->setSource(QUrl("qrc:/sounds/complete.wav"));
 
-  this->cgalworker = new CGALWorker();
-  connect(this->cgalworker, &CGALWorker::done, this, &MainWindow::actionRenderDone);
+  if (!this->processIsolation) {
+    this->geometryWorker = new GeometryWorker();
+    connect(this->geometryWorker, &GeometryWorker::done, this, &MainWindow::actionRenderDone);
+  } else {
+    this->computeWorker = new ComputeWorker();
+    connect(this->computeWorker, &ComputeWorker::done, this, &MainWindow::actionRenderDone);
+    connect(this->computeWorker, &ComputeWorker::previewDone, this, &MainWindow::actionPreviewDone);
+    connect(this->computeWorker, &ComputeWorker::progress, this, [this](int permille) {
+      if (this->progresswidget) this->progresswidget->setValue(permille);
+    });
+    connect(this->computeWorker, &ComputeWorker::diagnostic, this, [this](const QString& text) {
+      if (!text.isEmpty()) this->consoleOutput(Message(text.toStdString(), message_group::Error));
+    });
+    connect(this->computeWorker, &ComputeWorker::parametersDiscovered, this,
+            [this](const QString& source, const QString& metadata) {
+              if (this->activeEditor->toPlainText() == source) {
+                this->activeEditor->parameterWidget->setParameters(metadata.toStdString(),
+                                                                   source.toStdString());
+              }
+            });
+    connect(this->computeWorker, &ComputeWorker::dependenciesDiscovered, this,
+            [this](const QString& source, const QStringList& dependencies) {
+              if (this->activeEditor->toPlainText() != source) return;
+              this->workerDependencies.clear();
+              for (const auto& path : dependencies) {
+                const QFileInfo info(path);
+                this->workerDependencies[path] = QString("%1.%2.%3")
+                                                   .arg(info.exists())
+                                                   .arg(info.lastModified().toMSecsSinceEpoch())
+                                                   .arg(info.size());
+              }
+            });
+  }
 
   autoReloadTimer = new QTimer(this);
   autoReloadTimer->setSingleShot(false);

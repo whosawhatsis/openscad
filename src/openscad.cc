@@ -89,6 +89,7 @@
 #include "core/Context.h"
 #include "core/EvaluationSession.h"
 #include "core/RenderVariables.h"
+#include "core/progress.h"
 #include "core/ScopeContext.h"
 #include "core/Settings.h"
 #include "core/customizer/CommentParser.h"
@@ -102,17 +103,20 @@
 #include "geometry/PolySet.h"
 #include "glview/Camera.h"
 #include "glview/ColorMap.h"
+#include "glview/CsgInfo.h"
 #include "glview/OffscreenView.h"
 #include "glview/RenderSettings.h"
 #include "handle_dep.h"
 #include "io/export.h"
 #include "io/VideoEncoder.h"
+#include "json/json.hpp"
 #include "openscad_gui.h"
 #include "openscad_mimalloc.h"
 #include "platform/PlatformUtils.h"
 #include "utils/StackCheck.h"
 #include "utils/exceptions.h"
 #include "utils/printutils.h"
+#include "utils/scope_guard.hpp"
 
 #ifdef ENABLE_PYTHON
 #include "python/python_public.h"
@@ -180,6 +184,15 @@ struct CommandLine {
   const AnimateArgs animate;
   const std::vector<std::string> summaryOptions;
   const std::string summaryFile;
+  const std::string parameterMetadataFile = {};
+  const std::string csgProductsFile = {};
+  const size_t csgProductsLimit = 0;
+  const std::string dependencyFile = {};
+  const double time = 0;
+  const bool python = false;
+  const std::string pythonVenv = {};
+  const bool workerProgress = false;
+  const std::string workerCancelFile = {};
 };
 
 namespace {
@@ -244,6 +257,7 @@ void help_export()
   LOG("List of settings that can be given using the -O option using the");
   LOG("format '<section>/<key>=value', e.g.:");
   LOG("openscad -O export-pdf/paper-size=a6 -O export-pdf/show-grid=false\n");
+  help_export(Settings::SettingsExportOff::cmdline);
   help_export(Settings::SettingsExportPdf::cmdline);
   help_export(Settings::SettingsExport3mf::cmdline);
   help_export(Settings::SettingsExportSvg::cmdline);
@@ -438,7 +452,7 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
   fs::current_path(cmd.original_path);
 
   // Do we have an explicit root node (! modifier)?
-  std::shared_ptr<const AbstractNode> root_node;
+  std::shared_ptr<AbstractNode> root_node;
   const Location *nextLocation = nullptr;
   if (!(root_node = find_root_tag(absolute_root_node, &nextLocation))) {
     root_node = absolute_root_node;
@@ -448,6 +462,32 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
         "More than one Root Modifier (!)");
   }
   Tree tree(root_node, fparent.string());
+  struct {
+    int lastProgress = -1;
+    const std::string& cancelFile;
+  } workerProgress{-1, cmd.workerCancelFile};
+  if (cmd.workerProgress) {
+    progress_report_prep(
+      root_node,
+      [](const std::shared_ptr<const AbstractNode>&, void *userdata, int mark) {
+        auto& progress = *static_cast<decltype(workerProgress) *>(userdata);
+        if (fs::exists(progress.cancelFile)) throw ProgressCancelException();
+        const auto permille = std::min(999, static_cast<int>(mark * 1000.0 / progress_report_count));
+        if (permille <= progress.lastProgress) return;
+        progress.lastProgress = permille;
+        std::cout << "progress\t" << permille << std::endl;
+      },
+      &workerProgress);
+  }
+  auto progressGuard = sg::make_scope_guard([&cmd] {
+    if (cmd.workerProgress) progress_report_fin();
+  });
+
+  if (!cmd.csgProductsFile.empty()) {
+    CsgInfo products;
+    products.compile_products(tree, cmd.csgProductsLimit);
+    if (!products.write_products(cmd.csgProductsFile)) return 1;
+  }
 
   if (export_format == FileFormat::CSG) {
     // https://github.com/openscad/openscad/issues/128
@@ -687,16 +727,14 @@ int cmdline(const CommandLine& cmd)
 
 #ifdef ENABLE_PYTHON
   python_active = false;
-  if (cmd.filename.c_str() != NULL) {
-    if (boost::algorithm::ends_with(cmd.filename, ".py")) {
-      if (python_trusted == true) python_active = true;
-      else LOG("Python is not enabled");
-    }
+  if (cmd.python || boost::algorithm::ends_with(cmd.filename, ".py")) {
+    if (cmd.python || python_trusted) python_active = true;
+    else LOG("Python is not enabled");
   }
 
   if (python_active) {
     auto fulltext_py = text;
-    initPython("", 0.0);
+    initPython(cmd.pythonVenv, cmd.time);
     auto error = evaluatePython(fulltext_py, false);
     if (error.size() > 0) LOG(error.c_str());
     text = "\n";
@@ -716,8 +754,8 @@ int cmdline(const CommandLine& cmd)
 
   // add parameter to AST
   CommentParser::collectParameters(text.c_str(), root_file);
+  ParameterObjects parameters = ParameterObjects::fromSourceFile(root_file);
   if (!cmd.parameterFile.empty() && !cmd.setName.empty()) {
-    ParameterObjects parameters = ParameterObjects::fromSourceFile(root_file);
     ParameterSets sets;
     sets.readFile(cmd.parameterFile);
     for (const auto& set : sets) {
@@ -728,8 +766,16 @@ int cmdline(const CommandLine& cmd)
       }
     }
   }
+  if (!cmd.parameterMetadataFile.empty()) {
+    std::ofstream metadata(cmd.parameterMetadataFile);
+    metadata << parameters.toJson();
+  }
 
   root_file->handleDependencies();
+  if (!cmd.dependencyFile.empty()) {
+    std::ofstream dependencies(cmd.dependencyFile);
+    dependencies << nlohmann::json(root_file->dependencyPaths());
+  }
 
   RenderVariables render_variables = {
     .preview = fileformat::canPreview(export_format)
@@ -745,7 +791,7 @@ int cmdline(const CommandLine& cmd)
           fileformat::info(export_format).description);
       return 1;
     }
-    render_variables.time = 0;
+    render_variables.time = cmd.time;
     return do_export(cmd, render_variables, export_format, root_file, nullptr);
   } else {
     // export the requested number of animated frames
@@ -802,6 +848,114 @@ int cmdline(const CommandLine& cmd)
 
     return 0;
   }
+}
+
+static int compute_worker_export(const std::string& input, const std::string& output,
+                                 const FileFormat format, const std::string& parameter_file = {},
+                                 const std::string& set_name = {}, const size_t csg_products_limit = 0,
+                                 const double time = 0, const Camera camera = {},
+                                 const bool python = false, const std::string& python_venv = {},
+                                 const std::string& working_directory = {})
+{
+  const auto original_path =
+    working_directory.empty() ? fs::path(input).parent_path() : fs::path(working_directory);
+  const ViewOptions view_options{};
+  const CmdLineExportOptions export_options{{Settings::SECTION_EXPORT_OFF, {{"precision", "17"}}}};
+  return cmdline(CommandLine{false,
+                             input,
+                             false,
+                             output,
+                             original_path,
+                             parameter_file,
+                             set_name,
+                             view_options,
+                             camera,
+                             format,
+                             export_options,
+                             {},
+                             {},
+                             "",
+                             output + ".parameters.json",
+                             format == FileFormat::CSG ? output + ".products.json" : "",
+                             csg_products_limit,
+                             output + ".dependencies.json",
+                             time,
+                             python,
+                             python_venv,
+                             true,
+                             output + ".cancel"});
+}
+
+static int compute_worker_main()
+{
+  std::cout << "ready" << std::endl;
+  for (std::string command; std::getline(std::cin, command);) {
+    if (command == "ping") {
+      std::cout << "pong" << std::endl;
+    } else if (command == "exit-for-test") {
+      return 86;
+    } else if (!command.empty() && command.front() == '{') {
+      try {
+        const auto request = nlohmann::json::parse(command);
+        const auto operation = request.at("command").get<std::string>();
+        const auto preview = operation == "preview";
+        if (!preview && operation != "render") throw std::runtime_error("unknown command");
+        Camera camera;
+        const auto values = request.value("camera", std::vector<double>{});
+        if (values.size() == 8) {
+          camera.setVpr(values[0], values[1], values[2]);
+          camera.setVpt(values[3], values[4], values[5]);
+          camera.setVpd(values[6]);
+          camera.setVpf(values[7]);
+        }
+        const auto result = compute_worker_export(
+          request.at("input").get<std::string>(), request.at("output").get<std::string>(),
+          preview ? FileFormat::CSG : FileFormat::OFF, request.value("parameterFile", std::string{}),
+          request.value("setName", std::string{}), request.value("normalizationLimit", size_t{0}),
+          request.value("time", 0.0), camera, request.value("python", false),
+          request.value("pythonVenv", std::string{}), request.value("workingDirectory", std::string{}));
+        std::cout << (result == 0 ? preview ? "previewdone" : "done" : "error") << std::endl;
+      } catch (const ProgressCancelException&) {
+        std::cout << "cancelled" << std::endl;
+      } catch (const std::exception&) {
+        std::cout << "error" << std::endl;
+      }
+    } else if (command.rfind("render\t", 0) == 0 || command.rfind("preview\t", 0) == 0) {
+      std::vector<std::string> fields;
+      boost::split(fields, command, boost::is_any_of("\t"));
+      if (fields.size() < 3) {
+        std::cout << "error" << std::endl;
+        continue;
+      }
+      const auto preview = fields[0] == "preview";
+      const auto parameter_file = fields.size() > 3 ? fields[3] : std::string{};
+      const auto set_name = fields.size() > 4 ? fields[4] : std::string{};
+      const auto csg_products_limit = fields.size() > 5 ? boost::lexical_cast<size_t>(fields[5]) : 0;
+      const auto time = fields.size() > 6 ? boost::lexical_cast<double>(fields[6]) : 0;
+      Camera camera;
+      if (fields.size() > 14) {
+        camera.setVpr(boost::lexical_cast<double>(fields[7]), boost::lexical_cast<double>(fields[8]),
+                      boost::lexical_cast<double>(fields[9]));
+        camera.setVpt(boost::lexical_cast<double>(fields[10]), boost::lexical_cast<double>(fields[11]),
+                      boost::lexical_cast<double>(fields[12]));
+        camera.setVpd(boost::lexical_cast<double>(fields[13]));
+        camera.setVpf(boost::lexical_cast<double>(fields[14]));
+      }
+      const auto python = fields.size() > 15 && fields[15] == "python";
+      const auto python_venv = fields.size() > 16 ? fields[16] : std::string{};
+      try {
+        const auto result = compute_worker_export(
+          fields[1], fields[2], preview ? FileFormat::CSG : FileFormat::OFF, parameter_file, set_name,
+          csg_products_limit, time, camera, python, python_venv);
+        std::cout << (result == 0 ? preview ? "previewdone" : "done" : "error") << std::endl;
+      } catch (const ProgressCancelException&) {
+        std::cout << "cancelled" << std::endl;
+      }
+    } else if (command == "quit") {
+      return 0;
+    }
+  }
+  return 0;
 }
 
 template <class Seq, typename ToString>
@@ -921,6 +1075,8 @@ struct CommaSeparatedVector {
 // OpenSCAD
 int openscad_main(int argc, char **argv)
 {
+  const bool compute_worker = argc == 2 && std::string(argv[1]) == "--compute-worker";
+
 #if defined(ENABLE_CGAL) && defined(USE_MIMALLOC)
   // call init_mimalloc before any GMP variables are initialized. (defined in src/openscad_mimalloc.h)
   init_mimalloc();
@@ -961,6 +1117,8 @@ int openscad_main(int argc, char **argv)
   CGAL::set_warning_behaviour(CGAL::THROW_EXCEPTION);
 #endif
   Builtins::initialize();
+
+  if (compute_worker) return compute_worker_main();
 
   auto original_path = fs::current_path();
 
