@@ -516,7 +516,10 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       return 1;
     }
 
-    if (export_format == FileFormat::PNG) {
+    if (export_format == FileFormat::PNG || export_format == FileFormat::NORMALMAP_PNG) {
+      if (export_format == FileFormat::NORMALMAP_PNG && glview) {
+        glview->setAgentLightingMode(AgentLightingMode::Normal);
+      }
       bool success = true;
       bool const wrote = with_output(
         cmd.is_stdout, filename_str,

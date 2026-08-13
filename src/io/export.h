@@ -42,6 +42,7 @@ enum class FileFormat {
   TERM,
   ECHO,
   PNG,
+  NORMALMAP_PNG,
   PDF,
   POV,
   PARAM

@@ -27,6 +27,7 @@ GLView::GLView()
   showaxes = false;
   showcrosshairs = false;
   showscale = false;
+  agent_lighting_mode = AgentLightingMode::Default;
   colorscheme = &ColorMap::instance().defaultColorScheme();
   cam = Camera();
   far_far_away = RenderSettings::inst()->far_gl_clip_limit;
@@ -59,6 +60,24 @@ void GLView::setupShader()
         {"barycentric", glGetAttribLocation(resource.shader_program, "barycentric")},
       },
   });
+
+  auto normal_resource = ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentNormalMap.vert"),
+                                                           ShaderUtils::loadShaderSource("AgentNormalMap.frag"));
+  agent_normal_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
+    .resource = normal_resource,
+    .type = ShaderUtils::ShaderType::NONE,
+    .uniforms = {},
+    .attributes = {},
+  });
+
+  auto coord_resource = ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentCoordinateMap.vert"),
+                                                          ShaderUtils::loadShaderSource("AgentCoordinateMap.frag"));
+  agent_coord_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
+    .resource = coord_resource,
+    .type = ShaderUtils::ShaderType::NONE,
+    .uniforms = {},
+    .attributes = {},
+  });
 }
 
 void GLView::teardownShader()
@@ -72,6 +91,17 @@ void GLView::teardownShader()
   }
   if (edge_shader->resource.fragment_shader) {
     glDeleteShader(edge_shader->resource.fragment_shader);
+  }
+  
+  if (agent_normal_shader && agent_normal_shader->resource.shader_program) {
+    glDeleteProgram(agent_normal_shader->resource.shader_program);
+    glDeleteShader(agent_normal_shader->resource.vertex_shader);
+    glDeleteShader(agent_normal_shader->resource.fragment_shader);
+  }
+  if (agent_coord_shader && agent_coord_shader->resource.shader_program) {
+    glDeleteProgram(agent_coord_shader->resource.shader_program);
+    glDeleteShader(agent_coord_shader->resource.vertex_shader);
+    glDeleteShader(agent_coord_shader->resource.fragment_shader);
   }
 }
 
@@ -209,8 +239,25 @@ void GLView::paintGL()
     // FIXME: This belongs in the OpenCSG renderer, but it doesn't know about this ID yet
     OpenCSG::setContext(this->opencsg_id);
 #endif
-    this->renderer->prepare(edge_shader.get());
-    this->renderer->draw(showedges, edge_shader.get());
+    ShaderUtils::ShaderInfo* active_shader = edge_shader.get();
+    if (agent_lighting_mode == AgentLightingMode::Normal && agent_normal_shader) {
+      active_shader = agent_normal_shader.get();
+      active_shader->type = ShaderUtils::ShaderType::AGENT_RENDERING;
+    } else if (agent_lighting_mode == AgentLightingMode::Coordinate && agent_coord_shader) {
+      active_shader = agent_coord_shader.get();
+      active_shader->type = ShaderUtils::ShaderType::AGENT_RENDERING;
+    }
+
+    bool active_showedges = showedges;
+    if (agent_lighting_mode != AgentLightingMode::Default) {
+      active_showedges = false;
+    }
+    if (agent_lighting_mode == AgentLightingMode::Flat) {
+      glDisable(GL_LIGHTING);
+    }
+
+    this->renderer->prepare(active_shader);
+    this->renderer->draw(active_showedges, active_shader);
   }
   Vector3d eyedir(this->modelview[2], this->modelview[6], this->modelview[10]);
   glColor3f(1, 0, 0);

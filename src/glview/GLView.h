@@ -30,6 +30,8 @@
 #include "core/Selection.h"
 #include "glview/Renderer.h"
 
+enum class AgentLightingMode { Default, Normal, Coordinate, Flat };
+
 class GLView
 {
 public:
@@ -62,11 +64,16 @@ public:
   [[nodiscard]] bool showCrosshairs() const { return this->showcrosshairs; }
   void setShowCrosshairs(bool enabled) { this->showcrosshairs = enabled; }
 
+  [[nodiscard]] AgentLightingMode agentLightingMode() const { return this->agent_lighting_mode; }
+  void setAgentLightingMode(AgentLightingMode mode) { this->agent_lighting_mode = mode; }
+
   virtual bool save(const char *filename) const = 0;
   [[nodiscard]] virtual std::string getRendererInfo() const = 0;
   virtual float getDPI() { return 1.0f; }
 
   std::unique_ptr<ShaderUtils::ShaderInfo> edge_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> agent_normal_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> agent_coord_shader;
   std::shared_ptr<Renderer> renderer;
   const ColorScheme *colorscheme;
   Camera cam;
@@ -76,6 +83,7 @@ public:
   bool showedges;
   bool showcrosshairs;
   bool showscale;
+  AgentLightingMode agent_lighting_mode;
   GLdouble modelview[16];
   GLdouble projection[16];
   std::vector<SelectedObject> selected_obj;
