@@ -1,7 +1,5 @@
 #pragma once
 
-#include "io/depthmap.h"
-
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm.hpp>
 #include <filesystem>
@@ -44,11 +42,6 @@ enum class FileFormat {
   TERM,
   ECHO,
   PNG,
-  DEPTHMAP,
-  PFM,
-  APNG,
-  GIF,
-  AVI,
   PDF,
   POV,
   PARAM
@@ -73,11 +66,6 @@ const FileFormatInfo& info(FileFormat fileFormat);
 bool fromIdentifier(const std::string& identifier, FileFormat& format);
 const std::string& toSuffix(FileFormat format);
 bool canPreview(FileFormat format);
-/*!
-   True for the animation containers, which hold a sequence of rendered frames and are
-   only meaningful together with --animate.
- */
-bool isAnimation(FileFormat format);
 bool is3D(FileFormat format);
 bool is2D(FileFormat format);
 
@@ -305,7 +293,6 @@ struct ExportInfo {
   const Camera *camera;
   const Color4f defaultColor;
   const ColorScheme *colorScheme;
-  int offPrecision = 0;
 
   std::shared_ptr<const ExportPdfOptions> optionsPdf;
   std::shared_ptr<const Export3mfOptions> options3mf;
@@ -351,15 +338,7 @@ struct ViewOptions {
   RenderType renderer{RenderType::OPENCSG};
 
   std::map<std::string, bool> flags{
-    {"axes", false},
-    {"scales", false},
-    {"edges", false},
-    {"crosshairs", false},
-    // Shade the model by distance rather than by lighting. A render toggle, not
-    // an output encoding, which is why it belongs here and the depthmap profile
-    // does not.
-    {"depth", false},
-    {"transparent", false},
+    {"axes", false}, {"scales", false}, {"edges", false}, {"crosshairs", false}, {"transparent", false},
   };
 
   const std::vector<std::string> names()
@@ -378,33 +357,10 @@ class OffscreenView;
 
 std::string get_current_iso8601_date_time_utc();
 
-std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
-                                               const DepthmapOptions& depthOptions = {});
+std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera);
 bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
                 Camera& camera, std::ostream& output);
-//! As above, but carrying the depth options so --view=depth shades with the same
-//! range a depthmap export would encode with.
-bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
-                Camera& camera, const DepthmapOptions& depthOptions, std::ostream& output);
 bool export_png(const OffscreenView& glview, std::ostream& output);
-bool export_depthmap(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
-                     Camera& camera, DepthProfile profile, std::ostream& output);
-bool export_depthmap(const OffscreenView& glview, DepthProfile profile, std::ostream& output);
-bool export_depthmap(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
-                     Camera& camera, const DepthmapOptions& depthOptions, std::ostream& output);
-bool export_depthmap(const OffscreenView& glview, const DepthmapOptions& depthOptions,
-                     std::ostream& output);
-bool export_pfm(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
-                Camera& camera, std::ostream& output);
-bool export_pfm(const OffscreenView& glview, std::ostream& output);
-
-/*!
-   Renders one animation frame and hands its RGBA pixels to `encoder`, instead of
-   writing a still image. The encoder must already be open at the camera's pixel size.
- */
-bool export_video_frame(const OffscreenView& glview, class VideoEncoder& encoder);
-bool export_video_frame(const std::shared_ptr<const class Geometry>& root_geom,
-                        const ViewOptions& options, Camera& camera, class VideoEncoder& encoder);
 bool export_param(SourceFile *root, const fs::path& path, std::ostream& output);
 
 std::unique_ptr<PolySet> createSortedPolySet(const PolySet& ps);

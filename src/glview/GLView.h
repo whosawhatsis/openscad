@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 #include "glview/Camera.h"
-#include "io/depthmap.h"
 #include "glview/ShaderUtils.h"
 #include "geometry/linalg.h"
 #include "glview/ColorMap.h"
@@ -49,8 +48,6 @@ public:
 
   void setCamera(const Camera& cam);
   void setupCamera();
-  void setupDepthShading();
-  void teardownDepthShading();
 
   void setColorScheme(const ColorScheme& cs);
   void setColorScheme(const std::string& cs);
@@ -63,15 +60,9 @@ public:
   [[nodiscard]] bool showEdges() const { return this->showedges; }
   void setShowEdges(bool enabled) { this->showedges = enabled; }
   [[nodiscard]] bool showCrosshairs() const { return this->showcrosshairs; }
-  [[nodiscard]] const ColorScheme& colorScheme() const { return *this->colorscheme; }
   void setShowCrosshairs(bool enabled) { this->showcrosshairs = enabled; }
   [[nodiscard]] bool transparentBackground() const { return this->transparent_background; }
   void setTransparentBackground(bool enabled) { this->transparent_background = enabled; }
-  [[nodiscard]] bool showDepth() const { return this->showdepth; }
-  void setShowDepth(bool enabled) { this->showdepth = enabled; }
-  //! Pin the depth shading to an explicit range instead of the bounding box, so
-  //! the viewport matches an export made with the same range.
-  void setDepthOptions(const DepthmapOptions& options) { this->depthoptions = options; }
 
   virtual bool save(const char *filename) const = 0;
   [[nodiscard]] virtual std::string getRendererInfo() const = 0;
@@ -83,20 +74,11 @@ public:
   Camera cam;
   double far_far_away;
   double aspectratio;
-  //! The clip planes setupCamera() last handed to the projection matrix. Kept
-  //! so depth-buffer readback can linearize without re-deriving the formula -
-  //! two copies of it would drift apart the first time the projection changes.
-  double clipNear{0.0};
-  double clipFar{0.0};
   bool showaxes;
   bool showedges;
   bool showcrosshairs;
   bool showscale;
   bool transparent_background{false};
-  //! Shade the model by distance instead of by lighting - the viewport preview
-  //! of what a depth map export will contain.
-  bool showdepth{false};
-  DepthmapOptions depthoptions{};
   GLdouble modelview[16];
   GLdouble projection[16];
   std::vector<SelectedObject> selected_obj;

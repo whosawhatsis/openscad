@@ -12,8 +12,6 @@
 #include "glview/RenderSettings.h"
 #include "glview/Renderer.h"
 #include "io/export.h"
-#include "io/VideoEncoder.h"
-#include "io/imageutils.h"
 #include "utils/printutils.h"
 
 #ifndef NULLGL
@@ -39,22 +37,17 @@ void setupCamera(Camera& cam, const BoundingBox& bbox)
 
 }  // namespace
 
-namespace {
-
-// Shared by the colour and depth exporters: same scene, same camera, only the
-// readback differs.
-std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const Geometry>& root_geom,
-                                                     const ViewOptions& options, Camera& camera,
-                                                     const DepthmapOptions& depthOptions = {})
+bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
+                Camera& camera, std::ostream& output)
 {
   assert(root_geom != nullptr);
-  PRINTD("prepare_geom_view");
+  PRINTD("export_png geom");
   std::unique_ptr<OffscreenView> glview;
   try {
     glview = std::make_unique<OffscreenView>(camera.pixel_width, camera.pixel_height);
   } catch (const OffscreenViewException& ex) {
     fprintf(stderr, "Can't create OffscreenView: %s.\n", ex.what());
-    return nullptr;
+    return false;
   }
   std::shared_ptr<Renderer> geomRenderer;
 #if defined(USE_POLYSET_FOR_CGAL)
@@ -81,41 +74,12 @@ std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
   glview->setTransparentBackground(options["transparent"]);
-  glview->setShowDepth(options["depth"]);
-  glview->setDepthOptions(depthOptions);
   glview->paintGL();
-  return glview;
-}
-
-}  // namespace
-
-bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                Camera& camera, std::ostream& output)
-{
-  return export_png(root_geom, options, camera, DepthmapOptions{}, output);
-}
-
-bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                Camera& camera, const DepthmapOptions& depthOptions, std::ostream& output)
-{
-  PRINTD("export_png geom");
-  const auto glview = prepare_geometry_view(root_geom, options, camera, depthOptions);
-  if (!glview) return false;
   glview->save(output);
   return true;
 }
 
-bool export_depthmap(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                     Camera& camera, DepthProfile profile, std::ostream& output)
-{
-  PRINTD("export_depthmap geom");
-  const auto glview = prepare_geometry_view(root_geom, options, camera);
-  if (!glview) return false;
-  return glview->saveDepth(output, profile);
-}
-
-std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
-                                               const DepthmapOptions& depthOptions)
+std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera)
 {
   PRINTD("prepare_preview_common");
   CsgInfo csgInfo = CsgInfo();
@@ -160,8 +124,6 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
   glview->setTransparentBackground(options["transparent"]);
-  glview->setShowDepth(options["depth"]);
-  glview->setDepthOptions(depthOptions);
   glview->paintGL();
   return glview;
 }
@@ -173,74 +135,6 @@ bool export_png(const OffscreenView& glview, std::ostream& output)
   return true;
 }
 
-bool export_depthmap(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                     Camera& camera, const DepthmapOptions& depthOptions, std::ostream& output)
-{
-  PRINTD("export_depthmap geom options");
-  const auto glview = prepare_geometry_view(root_geom, options, camera, depthOptions);
-  if (!glview) return false;
-  return glview->saveDepth(output, depthOptions);
-}
-
-bool export_depthmap(const OffscreenView& glview, const DepthmapOptions& depthOptions,
-                     std::ostream& output)
-{
-  PRINTD("export_depthmap_preview_common options");
-  return glview.saveDepth(output, depthOptions);
-}
-
-bool export_depthmap(const OffscreenView& glview, DepthProfile profile, std::ostream& output)
-{
-  PRINTD("export_depthmap_preview_common");
-  return glview.saveDepth(output, profile);
-}
-
-bool export_pfm(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                Camera& camera, std::ostream& output)
-{
-  PRINTD("export_pfm geom");
-  const auto glview = prepare_geometry_view(root_geom, options, camera);
-  if (!glview || !glview->ctx) return false;
-  const bool perspective = glview->cam.projection == Camera::ProjectionType::PERSPECTIVE;
-  const auto mm =
-    linearize_depth(glview->ctx->getDepthbuffer(), glview->clipNear, glview->clipFar, perspective);
-  return export_pfm(output, mm, glview->ctx->width(), glview->ctx->height());
-}
-
-bool export_pfm(const OffscreenView& glview, std::ostream& output)
-{
-  PRINTD("export_pfm preview");
-  if (!glview.ctx) return false;
-  const bool perspective = glview.cam.projection == Camera::ProjectionType::PERSPECTIVE;
-  const auto mm =
-    linearize_depth(glview.ctx->getDepthbuffer(), glview.clipNear, glview.clipFar, perspective);
-  return export_pfm(output, mm, glview.ctx->width(), glview.ctx->height());
-}
-
-bool export_video_frame(const OffscreenView& glview, VideoEncoder& encoder)
-{
-  if (!glview.ctx) return false;
-  const auto pixels = glview.ctx->getFramebuffer();
-  const size_t width = glview.ctx->width();
-  const size_t height = glview.ctx->height();
-  const size_t samplesPerPixel = 4;  // R, G, B and A
-  if (pixels.size() < samplesPerPixel * width * height) return false;
-
-  // Images read from OpenGL buffers are upside-down.
-  std::vector<uint8_t> flipped(samplesPerPixel * width * height);
-  flip_image(pixels.data(), flipped.data(), samplesPerPixel, width, height);
-
-  return encoder.addFrame(flipped.data(), samplesPerPixel * width);
-}
-
-bool export_video_frame(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                        Camera& camera, VideoEncoder& encoder)
-{
-  const auto glview = prepare_geometry_view(root_geom, options, camera);
-  if (!glview) return false;
-  return export_video_frame(*glview, encoder);
-}
-
 #else  // NULLGL
 
 bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
@@ -248,36 +142,11 @@ bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOpti
 {
   return false;
 }
-bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                Camera& camera, const DepthmapOptions& depthOptions, std::ostream& output)
-{
-  return false;
-}
-std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
-                                               const DepthmapOptions& depthOptions)
+std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera)
 {
   return nullptr;
 }
 bool export_png(const OffscreenView& glview, std::ostream& output)
-{
-  return false;
-}
-bool export_depthmap(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                     Camera& camera, DepthProfile profile, std::ostream& output)
-{
-  return false;
-}
-bool export_depthmap(const OffscreenView& glview, DepthProfile profile, std::ostream& output)
-{
-  return false;
-}
-
-bool export_video_frame(const OffscreenView& glview, VideoEncoder& encoder)
-{
-  return false;
-}
-bool export_video_frame(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
-                        Camera& camera, VideoEncoder& encoder)
 {
   return false;
 }

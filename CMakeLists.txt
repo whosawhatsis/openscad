@@ -1596,6 +1596,7 @@ file(GLOB_RECURSE TEST_SOURCES
   # src/io tests must stay headless-safe: unlike GUI_TEST_SOURCES below, these are
   # also built in HEADLESS configurations.
   "src/io/*_test.cc"
+  "src/glview/*_test.cc"
 )
 file(GLOB_RECURSE GUI_TEST_SOURCES
   "src/gui/*_test.cc"

@@ -3,7 +3,6 @@
 #include "glview/ShaderUtils.h"
 #include "core/Selection.h"
 #include "glview/system-gl.h"
-#include "glview/preview/OpenCSGRenderer.h"
 #include "glview/ColorMap.h"
 #include "glview/RenderSettings.h"
 #include "utils/printutils.h"
@@ -11,12 +10,10 @@
 #include "utils/degree_trig.h"
 #include "glview/hershey.h"
 #include "Feature.h"
-#include "io/depthmap.h"
 
 #include <functional>
 #include <memory>
 #include <cmath>
-#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -31,7 +28,6 @@ GLView::GLView()
   showaxes = false;
   showcrosshairs = false;
   showscale = false;
-  showdepth = false;
   colorscheme = &ColorMap::instance().defaultColorScheme();
   cam = Camera();
   far_far_away = RenderSettings::inst()->far_gl_clip_limit;
@@ -133,17 +129,13 @@ void GLView::setupCamera()
   auto dist = cam.zoomValue();
   switch (this->cam.projection) {
   case Camera::ProjectionType::PERSPECTIVE: {
-    this->clipNear = 0.1 * dist;
-    this->clipFar = 100 * dist;
-    gluPerspective(cam.fov, aspectratio, this->clipNear, this->clipFar);
+    gluPerspective(cam.fov, aspectratio, 0.1 * dist, 100 * dist);
     break;
   }
   default:
   case Camera::ProjectionType::ORTHOGONAL: {
     auto height = dist * tan_degrees(cam.fov / 2);
-    this->clipNear = -100 * dist;
-    this->clipFar = +100 * dist;
-    glOrtho(-height * aspectratio, height * aspectratio, -height, height, this->clipNear, this->clipFar);
+    glOrtho(-height * aspectratio, height * aspectratio, -height, height, -100 * dist, +100 * dist);
     break;
   }
   }
@@ -163,82 +155,6 @@ void GLView::setupCamera()
   glGetDoublev(GL_PROJECTION_MATRIX, this->projection);
 }
 
-/*
-   Shade the model by distance instead of by lighting, so the viewport shows what
-   a depth map export will contain.
-
-   This is GL_LINEAR fog with a black fog colour over white geometry: fog blends
-   f*white + (1-f)*black where f is linear in eye-space distance, so the fragment
-   colour *is* the depth. Nothing is read back and no shader is involved.
-
-   Fog distance is eye-space and already linear, so unlike the export path this
-   needs none of linearize_depth()'s unprojection - and none of its precision
-   hazard either.
-
-   The range is pinned to the model's bounding sphere rather than to what is
-   currently on screen, so the shading does not swim while the model is rotated.
- */
-void GLView::setupDepthShading()
-{
-  // Use the bounding box's actual eye-space depth extent rather than a bounding
-  // sphere: a sphere overestimates badly for anything not cube-shaped, and the
-  // wasted range shows up directly as washed-out contrast.
-  double nearest = 0.0;
-  double farthest = 1.0;
-  const BoundingBox bbox = this->renderer ? this->renderer->getBoundingBox() : BoundingBox();
-  if (!bbox.isEmpty()) {
-    bool first = true;
-    for (int i = 0; i < 8; ++i) {
-      const Vector3d corner(i & 1 ? bbox.max().x() : bbox.min().x(),
-                            i & 2 ? bbox.max().y() : bbox.min().y(),
-                            i & 4 ? bbox.max().z() : bbox.min().z());
-      // Eye-space z from the modelview matrix setupCamera() just captured;
-      // distance in front of the eye is -z.
-      const double dist = -(this->modelview[2] * corner.x() + this->modelview[6] * corner.y() +
-                            this->modelview[10] * corner.z() + this->modelview[14]);
-      if (first) {
-        nearest = farthest = dist;
-        first = false;
-      } else {
-        nearest = std::min(nearest, dist);
-        farthest = std::max(farthest, dist);
-      }
-    }
-  }
-  const auto range = resolve_depth_range(this->depthoptions, nearest, farthest);
-
-  const GLfloat fogcolor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-  glFogi(GL_FOG_MODE, GL_LINEAR);
-  glFogf(GL_FOG_START, static_cast<GLfloat>(range.start));
-  glFogf(GL_FOG_END, static_cast<GLfloat>(range.end));
-  glFogfv(GL_FOG_COLOR, fogcolor);
-  glEnable(GL_FOG);
-
-  // Fog blends f*C + (1-f)*fogcolour, so the result is only depth if C is
-  // constant. glColor3f is not enough: the VBO renderers supply per-vertex
-  // colours, which win with lighting off. Instead keep lighting on, take
-  // GL_COLOR_MATERIAL out (so vertex colours stop feeding the material), and
-  // make the material purely emissive white - emission ignores normals, so
-  // every fragment comes out the same white regardless of orientation.
-  const GLfloat white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-  const GLfloat black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-  glEnable(GL_LIGHTING);
-  glDisable(GL_COLOR_MATERIAL);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, white);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, black);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, black);
-}
-
-//! Undo setupDepthShading() so the decorations drawn afterwards, and the next
-//! frame, are not left emissive white inside a fog bank.
-void GLView::teardownDepthShading()
-{
-  const GLfloat black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-  glDisable(GL_FOG);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, black);
-  glEnable(GL_COLOR_MATERIAL);
-}
-
 void GLView::paintGL()
 {
   glDisable(GL_LIGHTING);
@@ -246,17 +162,6 @@ void GLView::paintGL()
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
   auto axescolor = ColorMap::getColor(*this->colorscheme, RenderColor::AXES_COLOR);
   auto crosshaircol = ColorMap::getColor(*this->colorscheme, RenderColor::CROSSHAIR_COLOR);
-
-  if (this->showdepth) {
-    // No geometry is infinitely far, exactly like the depthmap export's
-    // background pixels (which fall out for free there, since the exporter
-    // only ever reads the depth buffer). The far end of the viewport's own
-    // fog is black, so the background must read as black too, not the color
-    // scheme's normal gradient - otherwise "far" means two different things
-    // depending on whether a pixel happened to hit geometry.
-    bgcol = Color4f(0.0f, 0.0f, 0.0f, 1.0f);
-    bgstopcol = bgcol;
-  }
 
   // With transparent compositing the scene is always rendered onto a fully transparent buffer and
   // the background is composited underneath at the end of this function. Clearing to (0,0,0,0)
@@ -325,10 +230,6 @@ void GLView::paintGL()
   glLineWidth(2);
   glColor3d(1.0, 0.0, 0.0);
 
-  // Applies to the model only: the background gradient, axes and crosshairs are
-  // drawn above, and the small axes below, all outside the fog.
-  if (this->showdepth) setupDepthShading();
-
   if (this->renderer) {
 #if defined(ENABLE_OPENCSG)
     // FIXME: This belongs in the OpenCSG renderer, but it doesn't know about this ID yet
@@ -346,7 +247,6 @@ void GLView::paintGL()
   for (const SelectedObject& obj : this->shown_obj) {
     showObject(obj, eyedir);
   }
-  if (this->showdepth) teardownDepthShading();
   glDisable(GL_LIGHTING);
   if (showaxes) GLView::showSmallaxes(axescolor);
 
@@ -375,14 +275,44 @@ void GLView::paintGL()
       glMatrixMode(GL_MODELVIEW);
       glLoadIdentity();
 
-      glBegin(GL_QUADS);
-      glColor4f(bgcol.r(), bgcol.g(), bgcol.b(), 1.0f);
-      glVertex2f(-1.0f, +1.0f);
-      glVertex2f(+1.0f, +1.0f);
-      glColor4f(bgstopcol.r(), bgstopcol.g(), bgstopcol.b(), 1.0f);
-      glVertex2f(+1.0f, -1.0f);
-      glVertex2f(-1.0f, -1.0f);
-      glEnd();
+      if (bgcol.a() < 1.0f) {
+        GLint vp[4];
+        glGetIntegerv(GL_VIEWPORT, vp);
+        const int vp_w = vp[2] > 0 ? vp[2] : 800;
+        const int vp_h = vp[3] > 0 ? vp[3] : 600;
+        const int size = 16;
+        const int cols = (vp_w + size - 1) / size;
+        const int rows = (vp_h + size - 1) / size;
+
+        glBegin(GL_QUADS);
+        for (int r = 0; r < rows; ++r) {
+          float y1 = 1.0f - 2.0f * (r * size) / vp_h;
+          float y2 = 1.0f - 2.0f * std::min((r + 1) * size, vp_h) / vp_h;
+          for (int c = 0; c < cols; ++c) {
+            float x1 = -1.0f + 2.0f * (c * size) / vp_w;
+            float x2 = -1.0f + 2.0f * std::min((c + 1) * size, vp_w) / vp_w;
+            if ((r + c) % 2 == 0) {
+              glColor4f(0.85f, 0.85f, 0.85f, 1.0f);
+            } else {
+              glColor4f(0.70f, 0.70f, 0.70f, 1.0f);
+            }
+            glVertex2f(x1, y1);
+            glVertex2f(x2, y1);
+            glVertex2f(x2, y2);
+            glVertex2f(x1, y2);
+          }
+        }
+        glEnd();
+      } else {
+        glBegin(GL_QUADS);
+        glColor4f(bgcol.r(), bgcol.g(), bgcol.b(), 1.0f);
+        glVertex2f(-1.0f, +1.0f);
+        glVertex2f(+1.0f, +1.0f);
+        glColor4f(bgstopcol.r(), bgstopcol.g(), bgstopcol.b(), 1.0f);
+        glVertex2f(+1.0f, -1.0f);
+        glVertex2f(-1.0f, -1.0f);
+        glEnd();
+      }
 
       glEnable(GL_DEPTH_TEST);
     }
@@ -445,8 +375,6 @@ void GLView::enable_opencsg_shaders()
 
 void GLView::initializeGL()
 {
-  OpenCSGRenderer::clearCache();
-
 #ifdef DEBUG
 /*
    // Requires OpenGL 4.3+
