@@ -895,6 +895,7 @@ static int compute_worker_export(const std::string& input, const std::string& ou
 
 static int compute_worker_main()
 {
+  parser_init();
   std::cout << "ready" << std::endl;
   for (std::string command; std::getline(std::cin, command);) {
     if (command == "ping") {
@@ -907,6 +908,10 @@ static int compute_worker_main()
         const auto operation = request.at("command").get<std::string>();
         const auto preview = operation == "preview";
         if (!preview && operation != "render") throw std::runtime_error("unknown command");
+        Feature::enable_all(false);
+        for (const auto& feature : request.value("features", std::vector<std::string>{})) {
+          Feature::enable_feature(feature);
+        }
         Camera camera;
         const auto values = request.value("camera", std::vector<double>{});
         if (values.size() == 8) {
