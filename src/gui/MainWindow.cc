@@ -1955,9 +1955,13 @@ void MainWindow::actionRenderPreview()
     if (previewRequested) QTimer::singleShot(0, this, &MainWindow::actionRenderPreview);
     return;
   }
-  this->previewRequested = true;
-
-  if (this->computeBusy) return;
+  const auto source = this->activeEditor->toPlainText();
+  if (this->computeBusy) {
+    if (source == this->activePreviewSource) return;
+    this->previewRequested = true;
+    if (this->progresswidget) this->progresswidget->cancel();
+    return;
+  }
 
   bool python;
   QString pythonVenv;
@@ -1965,6 +1969,7 @@ void MainWindow::actionRenderPreview()
 
   this->computeBusy = true;
   this->previewRequested = false;
+  this->activePreviewSource = source;
 
   resetMeasurementsState(false, "Render (not preview) to enable measurements");
 
@@ -1977,7 +1982,7 @@ void MainWindow::actionRenderPreview()
   connect(this->progresswidget, &ProgressWidget::canceled, this->computeWorker, &ComputeWorker::cancel);
   const auto normalizationLimit =
     2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
-  this->computeWorker->startPreview(this->activeEditor->toPlainText(), this->activeEditor->filepath,
+  this->computeWorker->startPreview(source, this->activeEditor->filepath,
                                     this->activeEditor->parameterWidget->exportValues(),
                                     normalizationLimit, this->animateWidget->getAnimTval(),
                                     this->qglview->cam, python, pythonVenv);
