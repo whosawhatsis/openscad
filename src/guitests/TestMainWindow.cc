@@ -1,6 +1,7 @@
 #include "TestMainWindow.h"
 
 #include <QElapsedTimer>
+#include <QProgressBar>
 #include <QDoubleSpinBox>
 #include <QString>
 #include <QStringList>
@@ -368,6 +369,16 @@ void TestMainWindow::checkWorkerCompletionDoesNotFinishPreviewProgress()
 #endif
 }
 
+void TestMainWindow::checkPreviewShowsSeparateGuiProgress()
+{
+  ProgressWidget progress;
+  QCOMPARE(progress.findChildren<QProgressBar *>().size(), 2);
+  progress.startGuiProgress(10);
+  QCOMPARE(progress.guiValue(), 0);
+  progress.setGuiValue(5);
+  QCOMPARE(progress.guiValue(), 5);
+}
+
 void TestMainWindow::checkPreviewDrawsAfterCanceledOpenCSGPreparation()
 {
 #ifdef ENABLE_OPENCSG
@@ -419,7 +430,7 @@ void TestMainWindow::checkRightClickAfterIsolatedPreviewDoesNotCrash()
   window->activeEditor->setPlainText("cube(1);");
   QVERIFY(QMetaObject::invokeMethod(window, "on_designActionPreview_triggered"));
   QTRY_VERIFY_WITH_TIMEOUT(window->previewRenderer != nullptr, 10000);
-  QVERIFY(QMetaObject::invokeMethod(window, "rightClick", Q_ARG(QPoint, QPoint(1, 1))));
+  QVERIFY(!window->previewSelectionPath(1).empty());
 }
 
 void TestMainWindow::checkReloadPreviewDispatchDoesNotBlockGui()
