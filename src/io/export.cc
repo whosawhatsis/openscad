@@ -98,6 +98,8 @@ Containers& containers()
     add_item(*containers, {FileFormat::APNG, "apng", "apng", "Animated PNG"});
     add_item(*containers, {FileFormat::GIF, "gif", "gif", "Animated GIF"});
     add_item(*containers, {FileFormat::AVI, "avi", "avi", "MJPEG AVI"});
+    add_item(*containers, {FileFormat::DEPTHMAP, "depthmap", "png", "Depthmap PNG"});
+    add_item(*containers, {FileFormat::PFM, "pfm", "pfm", "Portable Float Map"});
     add_item(*containers, {FileFormat::PDF, "pdf", "pdf", "PDF"});
     add_item(*containers, {FileFormat::POV, "pov", "pov", "POV"});
 
@@ -165,7 +167,7 @@ bool canPreview(FileFormat format)
 {
   return (format == FileFormat::AST || format == FileFormat::CSG || format == FileFormat::PARAM ||
           format == FileFormat::ECHO || format == FileFormat::TERM || format == FileFormat::PNG ||
-          isAnimation(format));
+          format == FileFormat::DEPTHMAP || isAnimation(format));
 }
 
 bool isAnimation(FileFormat format)
