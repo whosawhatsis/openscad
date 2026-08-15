@@ -1593,8 +1593,6 @@ endif()
 file(GLOB_RECURSE TEST_SOURCES
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
-  # src/io tests must stay headless-safe: unlike GUI_TEST_SOURCES below, these are
-  # also built in HEADLESS configurations.
   "src/io/*_test.cc"
   "src/glview/*_test.cc"
 )
