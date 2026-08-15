@@ -37,6 +37,7 @@
 #include "core/Context.h"
 #include "core/SourceFile.h"
 #include "glview/Camera.h"
+#include "glview/CsgInfo.h"
 #include "glview/Renderer.h"
 #ifdef STATIC_QT_SVG_PLUGIN
 #include <QtPlugin>
@@ -44,7 +45,8 @@ Q_IMPORT_PLUGIN(QSvgPlugin)
 #endif
 
 class BuiltinContext;
-class CGALWorker;
+class ComputeWorker;
+class GeometryWorker;
 class CSGNode;
 class CSGProducts;
 class FontListDialog;
@@ -81,9 +83,14 @@ class MainWindow : public QMainWindow, public Ui::MainWindow, public InputEventH
 public:
   Preferences *prefs;
 
+  static void setProcessIsolation(bool enabled);
+
   QTimer *consoleUpdater;
 
   bool isPreview;
+  bool previewRequested = false;
+  QString activePreviewSource;
+  QMap<QString, QString> workerDependencies;
 
   QTimer *autoReloadTimer;
   QTimer *waitAfterReloadTimer;
@@ -99,6 +106,8 @@ public:
   std::string untrusted_edit_document_name;
   bool trust_python_file(const std::string& file, const std::string& content);
 #endif
+  bool prepareWorkerPython(bool& python, QString& pythonVenv);
+  std::vector<CsgInfo::SourceNode> previewSelectionPath(int index) const;
   Tree tree;
   EditorInterface *activeEditor = nullptr;
   TabManager *tabManager;
@@ -126,8 +135,15 @@ public:
 
   MainWindow(const QStringList& filenames);
   ~MainWindow() override;
+  qint64 computeWorkerProcessId() const;
+#ifdef ENABLE_GUI_TESTS
+  void exitComputeWorkerForTest();
+  int compilationErrorCount() const { return compileErrors; }
+  int compilationWarningCount() const { return compileWarnings; }
+#endif
 
 private:
+  static bool processIsolation;
   RubberBandManager rubberBandManager;
 
   std::vector<std::pair<Dock *, QString>> docks;
@@ -351,7 +367,9 @@ private slots:
   void sendToExternalTool(class ExternalToolInterface& externalToolService);
   void on_designActionRender_triggered();
   void actionRenderDone(const std::shared_ptr<const Geometry>&);
+  void actionPreviewDone(const std::shared_ptr<CsgInfo>& products);
   void cgalRender();
+  void isolatedRender(bool python, const QString& pythonVenv);
   void handleMeasurementClicked(QAction *clickedAction);
   void on_designCheckValidity_triggered();
   void on_designActionDisplayAST_triggered();
@@ -453,13 +471,16 @@ private:
   std::shared_ptr<CSGProducts> rootProduct;
   std::shared_ptr<CSGProducts> highlightsProducts;
   std::shared_ptr<CSGProducts> backgroundProducts;
+  std::vector<CsgInfo::SourceNode> previewSourceNodes;
   int currentlySelectedObject{-1};
 
   char const *afterCompileSlot;
   bool procevents{false};
   QTemporaryFile *tempFile{nullptr};
   ProgressWidget *progresswidget{nullptr};
-  CGALWorker *cgalworker;
+  ComputeWorker *computeWorker = nullptr;
+  bool computeBusy = false;
+  GeometryWorker *geometryWorker = nullptr;
   QMutex consolemutex;
   EditorInterface *renderedEditor;  // stores pointer to editor which has been most recently rendered
   time_t includesMTime{0};          // latest include mod time

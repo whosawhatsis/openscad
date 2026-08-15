@@ -1,3 +1,5 @@
+#include <QCoreApplication>
+#include <QEvent>
 #include <QTest>
 #include <iostream>
 
@@ -22,7 +24,12 @@ int runAllTest(MainWindow *window)
             << std::endl;
   totalTestFailures += runTests<TestTabManager>(window);
   totalTestFailures += runTests<TestMainWindow>(window);
-  totalTestFailures += runTests<TestModuleCache>(window);
+  MainWindow::setProcessIsolation(false);
+  auto *legacyWindow = new MainWindow({});
+  totalTestFailures += runTests<TestModuleCache>(legacyWindow);
+  legacyWindow->close();
+  QCoreApplication::sendPostedEvents(legacyWindow, QEvent::DeferredDelete);
+  MainWindow::setProcessIsolation(true);
   totalTestFailures += runTests<TestExportImage>(window);
   std::cout << "********************************** RESULTS *********************************"
             << std::endl;

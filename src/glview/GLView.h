@@ -63,6 +63,7 @@ public:
   [[nodiscard]] bool showEdges() const { return this->showedges; }
   void setShowEdges(bool enabled) { this->showedges = enabled; }
   [[nodiscard]] bool showCrosshairs() const { return this->showcrosshairs; }
+  [[nodiscard]] const ColorScheme& colorScheme() const { return *this->colorscheme; }
   void setShowCrosshairs(bool enabled) { this->showcrosshairs = enabled; }
   [[nodiscard]] bool transparentBackground() const { return this->transparent_background; }
   void setTransparentBackground(bool enabled) { this->transparent_background = enabled; }
