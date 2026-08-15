@@ -12,6 +12,7 @@
 #include "io/export.h"
 #include "io/import.h"
 #include "json/json.hpp"
+#include "utils/printutils.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -30,6 +31,8 @@ json write_chain(const std::vector<CSGChainObject>& chain, const std::string& fi
       std::ofstream stream(fs::u8path(path));
       stream << std::setprecision(std::numeric_limits<double>::max_digits10);
       export_off(object.leaf->polyset, stream);
+      stream.flush();
+      stream.close();
       geometry = geometries.emplace(object.leaf->polyset.get(), path).first;
     }
 
@@ -75,7 +78,15 @@ std::vector<CSGChainObject> read_chain(const json& input,
     auto geometry = geometries.find(path);
     if (geometry == geometries.end()) {
       auto imported = import_off(path, Location::NONE);
-      if (imported && item.contains("convexity")) {
+      if (!imported) {
+        // Abort rather than emplacing a null PolySet, which renders as a silently missing
+        // object. Name the leaf that failed: an empty viewport is otherwise indistinguishable
+        // from a model that legitimately produced no geometry.
+        LOG(message_group::Error,
+            "Could not read compute worker geometry '%1$s'; the preview is incomplete.", path);
+        return {};
+      }
+      if (item.contains("convexity")) {
         imported->setConvexity(item["convexity"].get<int>());
       }
       geometry = geometries.emplace(path, std::shared_ptr<const PolySet>(std::move(imported))).first;
@@ -122,37 +133,57 @@ bool CsgInfo::write_products(const std::string& filename) const
               {"background", ::write_products(background_products, filename, geometries)}};
   output["nodes"] = json::array();
   for (const auto& node : source_nodes) {
-    output["nodes"].push_back({{"index", node.index}, {"parent", node.parent}, {"name", node.name},
-                               {"file", node.file}, {"line", node.line}, {"column", node.column}});
+    output["nodes"].push_back({{"index", node.index},
+                               {"parent", node.parent},
+                               {"name", node.name},
+                               {"file", node.file},
+                               {"line", node.line},
+                               {"column", node.column}});
   }
   if (camera_info.has_camera) {
-    output["camera"] = {
-      {"noauto", camera_info.noauto},
-      {"vpr", {camera_info.vpr[0], camera_info.vpr[1], camera_info.vpr[2]}},
-      {"vpt", {camera_info.vpt[0], camera_info.vpt[1], camera_info.vpt[2]}},
-      {"vpd", camera_info.vpd},
-      {"vpf", camera_info.vpf}
-    };
+    output["camera"] = {{"noauto", camera_info.noauto},
+                        {"vpr", {camera_info.vpr[0], camera_info.vpr[1], camera_info.vpr[2]}},
+                        {"vpt", {camera_info.vpt[0], camera_info.vpt[1], camera_info.vpt[2]}},
+                        {"vpd", camera_info.vpd},
+                        {"vpf", camera_info.vpf}};
   }
   std::ofstream stream(fs::u8path(filename));
   stream << output;
-  return stream.good();
+  // Close before checking: the destructor would otherwise flush after good() was read, so a
+  // short write went unnoticed and the GUI was handed a truncated product list.
+  stream.flush();
+  stream.close();
+  if (!stream.good()) {
+    LOG(message_group::Error, "Could not write preview products to '%1$s'.", filename);
+    return false;
+  }
+  return true;
 }
 
-bool CsgInfo::read_products(const std::string& filename,
-                            const std::function<bool()>& continue_loading)
+bool CsgInfo::read_products(const std::string& filename, const std::function<bool()>& continue_loading)
 {
   std::ifstream stream(fs::u8path(filename));
   json input;
-  stream >> input;
-  if (!stream.good() && !stream.eof()) return false;
+  // A truncated or absent products file is exactly what a crashed or half-flushed worker
+  // leaves behind; nlohmann throws on it, and this runs inside a Qt slot where an escaping
+  // exception would take the window down instead of reporting a failed preview.
+  try {
+    stream >> input;
+  } catch (const json::exception& e) {
+    LOG(message_group::Error, "Could not parse preview products in '%1$s': %2$s", filename, e.what());
+    return false;
+  }
+  if (!stream.good() && !stream.eof()) {
+    LOG(message_group::Error, "Could not read preview products from '%1$s'.", filename);
+    return false;
+  }
   std::map<std::string, std::shared_ptr<const PolySet>> geometries;
   root_products = ::read_products(input["root"], geometries, continue_loading);
   highlights_products = ::read_products(input["highlights"], geometries, continue_loading);
   background_products = ::read_products(input["background"], geometries, continue_loading);
   for (const auto& node : input.value("nodes", json::array())) {
-    source_nodes.push_back({node["index"], node["parent"], node["name"], node["file"], node["line"],
-                            node["column"]});
+    source_nodes.push_back(
+      {node["index"], node["parent"], node["name"], node["file"], node["line"], node["column"]});
   }
   if (input.contains("camera")) {
     const auto& cam = input["camera"];
