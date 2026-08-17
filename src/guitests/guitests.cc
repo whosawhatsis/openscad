@@ -24,12 +24,17 @@ int runAllTest(MainWindow *window)
             << std::endl;
   totalTestFailures += runTests<TestTabManager>(window);
   totalTestFailures += runTests<TestMainWindow>(window);
+  const bool isolated = MainWindow::isProcessIsolation();
   MainWindow::setProcessIsolation(false);
   auto *legacyWindow = new MainWindow({});
   totalTestFailures += runTests<TestModuleCache>(legacyWindow);
   legacyWindow->close();
   QCoreApplication::sendPostedEvents(legacyWindow, QEvent::DeferredDelete);
-  MainWindow::setProcessIsolation(true);
+  // Restore the mode the suite was invoked in, then run the image-export tests under it.
+  // The integrated branch forced isolation on at this point, from before row 29 made the
+  // suite runnable in both modes; keeping that would make a legacy-mode run silently
+  // isolated from here on.
+  MainWindow::setProcessIsolation(isolated);
   totalTestFailures += runTests<TestExportImage>(window);
   std::cout << "********************************** RESULTS *********************************"
             << std::endl;
