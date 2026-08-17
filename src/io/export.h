@@ -51,7 +51,11 @@ enum class FileFormat {
   PFM,
   PDF,
   POV,
-  PARAM
+  PARAM,
+  // Internal only: the binary payload a window and its private compute worker exchange.
+  // Deliberately absent from the identifier table in export.cc, so it is not selectable
+  // as an --export-format and cannot end up in a user's file.
+  IPC_GEOMETRY
 };
 
 struct FileFormatInfo {
