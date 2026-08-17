@@ -122,6 +122,10 @@ std::vector<std::string> SourceFile::dependencyPaths() const
   std::set<std::string> visited;
   std::function<void(const SourceFile *)> collect = [&](const SourceFile *file) {
     if (!file || !visited.insert(file->getFullpath()).second) return;
+    // Paths go out in generic form. Consumers must compare them as paths, not as strings:
+    // Windows spells the same file "C:/dir/part.scad" or "C:\dir\part.scad" depending on who
+    // is asking, and QFileInfo accepts either. A string comparison here is what made the
+    // worker protocol test pass under MSYS2's Python and fail under CI's native Python.
     for (const auto& include : file->includes) output.push_back(include.second);
     for (const auto& library : file->usedlibs) {
       auto path = fs::path(library);
