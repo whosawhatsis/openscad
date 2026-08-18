@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <functional>
+#include <string>
 #include <vector>
 
 #include "core/CSGNode.h"
@@ -17,14 +19,42 @@
 class CsgInfo
 {
 public:
+  struct SourceNode {
+    int index;
+    int parent;
+    std::string name;
+    std::string file;
+    int line;
+    int column;
+  };
+  struct CameraInfo {
+    bool has_camera = false;
+    bool noauto = false;
+    double vpr[3] = {0, 0, 0};
+    double vpt[3] = {0, 0, 0};
+    double vpd = 0;
+    double vpf = 0;
+  };
   CsgInfo() = default;
   std::shared_ptr<class CSGProducts> root_products;
   std::shared_ptr<CSGProducts> highlights_products;
   std::shared_ptr<CSGProducts> background_products;
+  std::vector<SourceNode> source_nodes;
+  CameraInfo camera_info;
 
-  bool compile_products(const Tree& tree)
+  bool write_products(const std::string& filename) const;
+  bool read_products(const std::string& filename, const std::function<bool()>& continue_loading = {});
+
+  bool compile_products(const Tree& tree, size_t normalization_limit = 0)
   {
     auto& root_node = tree.root();
+    const auto collect_source_nodes = [this](const auto& self, const auto& node, int parent) -> void {
+      const auto& location = node->modinst ? node->modinst->location() : Location::NONE;
+      source_nodes.push_back({node->index(), parent, node->verbose_name(), location.fileName(),
+                              location.firstLine(), location.firstColumn()});
+      for (const auto& child : node->getChildren()) self(self, child, node->index());
+    };
+    collect_source_nodes(collect_source_nodes, root_node, -1);
     GeometryEvaluator geomevaluator(tree);
     CSGTreeEvaluator evaluator(tree, &geomevaluator);
     const std::shared_ptr<CSGNode> csgRoot = evaluator.buildCSGTree(*root_node);
@@ -32,7 +62,8 @@ public:
     std::vector<std::shared_ptr<CSGNode>> backgroundNodes = evaluator.getBackgroundNodes();
 
     LOG("Compiling design (CSG Products normalization)...");
-    CSGTreeNormalizer normalizer(RenderSettings::inst()->openCSGTermLimit);
+    CSGTreeNormalizer normalizer(normalization_limit ? normalization_limit
+                                                     : RenderSettings::inst()->openCSGTermLimit);
     if (csgRoot) {
       const std::shared_ptr<CSGNode> normalizedRoot = normalizer.normalize(csgRoot);
       if (normalizedRoot) {
