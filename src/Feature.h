@@ -25,6 +25,7 @@ public:
   static const Feature ExperimentalAiFeatures;
   static const Feature ExperimentalTransparentCompositing;
   static const Feature ExperimentalProcessIsolation;
+  static const Feature ExperimentalStreamingPreview;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif
