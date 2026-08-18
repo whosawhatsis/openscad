@@ -1631,6 +1631,8 @@ if(OPENSCAD_BINPATH)
     CONFIGURATIONS Default
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/test_compute_worker_streaming.py
+      ${OPENSCAD_BINPATH}
+  )
   add_test(NAME compute_worker_cache
     CONFIGURATIONS Default
     COMMAND ${Python3_EXECUTABLE}
