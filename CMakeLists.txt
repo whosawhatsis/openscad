@@ -1091,6 +1091,7 @@ set(CORE_SOURCES
   src/handle_dep.cc
   src/io/DxfData.cc
   src/io/dxfdim.cc
+  src/io/coordinatemap.cc
   src/io/export.cc
   src/io/export_amf.cc
   src/io/export_dxf.cc
@@ -1577,6 +1578,8 @@ endif()
 file(GLOB_RECURSE TEST_SOURCES
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
+  "src/io/*_test.cc"
+  "src/glview/*_test.cc"
 )
 file(GLOB_RECURSE GUI_TEST_SOURCES
   "src/gui/*_test.cc"

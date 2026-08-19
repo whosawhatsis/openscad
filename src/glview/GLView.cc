@@ -61,23 +61,63 @@ void GLView::setupShader()
       },
   });
 
-  auto normal_resource = ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentNormalMap.vert"),
-                                                           ShaderUtils::loadShaderSource("AgentNormalMap.frag"));
+  auto normal_resource =
+    ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentNormalMap.vert"),
+                                      ShaderUtils::loadShaderSource("AgentNormalMap.frag"));
   agent_normal_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
     .resource = normal_resource,
-    .type = ShaderUtils::ShaderType::NONE,
+    .type = ShaderUtils::ShaderType::AGENT_RENDERING,
     .uniforms = {},
     .attributes = {},
   });
 
-  auto coord_resource = ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentCoordinateMap.vert"),
-                                                          ShaderUtils::loadShaderSource("AgentCoordinateMap.frag"));
+  auto coord_resource =
+    ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentCoordinateMap.vert"),
+                                      ShaderUtils::loadShaderSource("AgentCoordinateMap.frag"));
   agent_coord_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
     .resource = coord_resource,
-    .type = ShaderUtils::ShaderType::NONE,
-    .uniforms = {},
+    .type = ShaderUtils::ShaderType::AGENT_RENDERING,
+    .uniforms =
+      {
+        {"coordMin", glGetUniformLocation(coord_resource.shader_program, "coordMin")},
+        {"coordExtent", glGetUniformLocation(coord_resource.shader_program, "coordExtent")},
+        {"coordDegenerate", glGetUniformLocation(coord_resource.shader_program, "coordDegenerate")},
+      },
     .attributes = {},
   });
+}
+
+CoordinateBounds GLView::coordinateBounds() const
+{
+  // Pinned to the model's own bounding box, not to what is currently on screen:
+  // a box recomputed per frame would make the same point encode differently at
+  // two camera angles, and the sidecar would describe only one of them.
+  if (!this->renderer) {
+    const double unit_min[3] = {0.0, 0.0, 0.0};
+    const double unit_max[3] = {1.0, 1.0, 1.0};
+    return coordinate_bounds(unit_min, unit_max);
+  }
+  const BoundingBox bbox = this->renderer->getBoundingBox();
+  if (bbox.isEmpty()) {
+    const double unit_min[3] = {0.0, 0.0, 0.0};
+    const double unit_max[3] = {1.0, 1.0, 1.0};
+    return coordinate_bounds(unit_min, unit_max);
+  }
+  const double bmin[3] = {bbox.min().x(), bbox.min().y(), bbox.min().z()};
+  const double bmax[3] = {bbox.max().x(), bbox.max().y(), bbox.max().z()};
+  return coordinate_bounds(bmin, bmax);
+}
+
+void GLView::applyCoordinateBounds(ShaderUtils::ShaderInfo *shader) const
+{
+  const CoordinateBounds bounds = coordinateBounds();
+  glUseProgram(shader->resource.shader_program);
+  glUniform3f(shader->uniforms.at("coordMin"), static_cast<GLfloat>(bounds.min[0]),
+              static_cast<GLfloat>(bounds.min[1]), static_cast<GLfloat>(bounds.min[2]));
+  glUniform3f(shader->uniforms.at("coordExtent"), static_cast<GLfloat>(bounds.extent[0]),
+              static_cast<GLfloat>(bounds.extent[1]), static_cast<GLfloat>(bounds.extent[2]));
+  glUniform3f(shader->uniforms.at("coordDegenerate"), bounds.degenerate[0] ? 1.0f : 0.0f,
+              bounds.degenerate[1] ? 1.0f : 0.0f, bounds.degenerate[2] ? 1.0f : 0.0f);
 }
 
 void GLView::teardownShader()
@@ -92,7 +132,7 @@ void GLView::teardownShader()
   if (edge_shader->resource.fragment_shader) {
     glDeleteShader(edge_shader->resource.fragment_shader);
   }
-  
+
   if (agent_normal_shader && agent_normal_shader->resource.shader_program) {
     glDeleteProgram(agent_normal_shader->resource.shader_program);
     glDeleteShader(agent_normal_shader->resource.vertex_shader);
@@ -189,6 +229,14 @@ void GLView::paintGL()
   glDisable(GL_LIGHTING);
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
+  if (agent_lighting_mode != AgentLightingMode::Default) {
+    // An agent image is data, so its background must not depend on which colour
+    // scheme the user happens to have selected, and must not be a gradient - both
+    // would decode as varying "surface" values where there is no surface. Black,
+    // flat, and documented as the no-geometry marker.
+    bgcol = Color4f(0.0f, 0.0f, 0.0f, 1.0f);
+    bgstopcol = bgcol;
+  }
   auto axescolor = ColorMap::getColor(*this->colorscheme, RenderColor::AXES_COLOR);
   auto crosshaircol = ColorMap::getColor(*this->colorscheme, RenderColor::CROSSHAIR_COLOR);
 
@@ -239,13 +287,12 @@ void GLView::paintGL()
     // FIXME: This belongs in the OpenCSG renderer, but it doesn't know about this ID yet
     OpenCSG::setContext(this->opencsg_id);
 #endif
-    ShaderUtils::ShaderInfo* active_shader = edge_shader.get();
+    ShaderUtils::ShaderInfo *active_shader = edge_shader.get();
     if (agent_lighting_mode == AgentLightingMode::Normal && agent_normal_shader) {
       active_shader = agent_normal_shader.get();
-      active_shader->type = ShaderUtils::ShaderType::AGENT_RENDERING;
     } else if (agent_lighting_mode == AgentLightingMode::Coordinate && agent_coord_shader) {
       active_shader = agent_coord_shader.get();
-      active_shader->type = ShaderUtils::ShaderType::AGENT_RENDERING;
+      applyCoordinateBounds(active_shader);
     }
 
     bool active_showedges = showedges;

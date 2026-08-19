@@ -29,6 +29,7 @@
 #include "glview/system-gl.h"
 #include "core/Selection.h"
 #include "glview/Renderer.h"
+#include "io/coordinatemap.h"
 
 enum class AgentLightingMode { Default, Normal, Coordinate, Flat };
 
@@ -66,6 +67,10 @@ public:
 
   [[nodiscard]] AgentLightingMode agentLightingMode() const { return this->agent_lighting_mode; }
   void setAgentLightingMode(AgentLightingMode mode) { this->agent_lighting_mode = mode; }
+  //! The box the coordinate map normalizes against, for the sidecar.
+  [[nodiscard]] CoordinateBounds coordinateBounds() const;
+
+  void applyCoordinateBounds(ShaderUtils::ShaderInfo *shader) const;
 
   virtual bool save(const char *filename) const = 0;
   [[nodiscard]] virtual std::string getRendererInfo() const = 0;

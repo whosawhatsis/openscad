@@ -105,6 +105,7 @@
 #include "glview/OffscreenView.h"
 #include "glview/RenderSettings.h"
 #include "handle_dep.h"
+#include "io/coordinatemap.h"
 #include "io/export.h"
 #include "openscad_gui.h"
 #include "openscad_mimalloc.h"
@@ -387,6 +388,40 @@ Camera get_camera(const po::variables_map& vm)
   return camera;
 }
 
+//! The lighting mode an export format asks the preview shader for, or Default
+//! for every format that is not one of the AgentSCAD image outputs.
+static AgentLightingMode agent_lighting_mode_for(FileFormat format)
+{
+  switch (format) {
+  case FileFormat::NORMALMAP_PNG:     return AgentLightingMode::Normal;
+  case FileFormat::COORDINATEMAP_PNG: return AgentLightingMode::Coordinate;
+  case FileFormat::FLATMAP_PNG:       return AgentLightingMode::Flat;
+  default:                            return AgentLightingMode::Default;
+  }
+}
+
+/*!
+   Write the bounding box a coordinate map decodes against, if asked for with
+   -O coordinatemap/bounds=<path>. Without it the image is a picture rather than
+   data, so a failure to write it fails the export instead of being warned about.
+ */
+static bool write_coordinate_bounds_sidecar(const OffscreenView& glview,
+                                            const CmdLineExportOptions& exportOptions)
+{
+  const auto section = exportOptions.find("coordinatemap");
+  if (section == exportOptions.end()) return true;
+  const auto entry = section->second.find("bounds");
+  if (entry == section->second.end() || entry->second.empty()) return true;
+
+  std::ofstream sidecar(entry->second);
+  if (!sidecar.is_open()) {
+    LOG(message_group::Error, "Unable to open coordinate bounds file \"%1$s\"", entry->second);
+    return false;
+  }
+  sidecar << serialize_bounds_json(glview.coordinateBounds());
+  return sidecar.good();
+}
+
 int do_export(const CommandLine& cmd, const RenderVariables& render_variables, FileFormat export_format,
               SourceFile *root_file)
 {
@@ -477,11 +512,12 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     GeometryEvaluator geomevaluator(tree);
     std::unique_ptr<OffscreenView> glview;
     std::shared_ptr<const Geometry> root_geom;
-    if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG || export_format == FileFormat::NORMALMAP_PNG) &&
+    if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG ||
+         agent_lighting_mode_for(export_format) != AgentLightingMode::Default) &&
         (cmd.viewOptions.renderer == RenderType::OPENCSG ||
          cmd.viewOptions.renderer == RenderType::THROWNTOGETHER)) {
       // OpenCSG or throwntogether png -> just render a preview
-      glview = prepare_preview(tree, cmd.viewOptions, camera);
+      glview = prepare_preview(tree, cmd.viewOptions, camera, agent_lighting_mode_for(export_format));
       if (!glview) return 1;
     } else {
       // Force creation of concrete geometry (mostly for testing)
@@ -516,9 +552,26 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       return 1;
     }
 
-    if (export_format == FileFormat::PNG || export_format == FileFormat::NORMALMAP_PNG) {
-      if (export_format == FileFormat::NORMALMAP_PNG && glview) {
-        glview->setAgentLightingMode(AgentLightingMode::Normal);
+    const AgentLightingMode agent_mode = agent_lighting_mode_for(export_format);
+    if (export_format == FileFormat::PNG || agent_mode != AgentLightingMode::Default) {
+      if (agent_mode != AgentLightingMode::Default) {
+        if (!glview) {
+          // These formats are produced by a shader on the preview path. --render
+          // routes to export_png(root_geom, ...), which builds its own view and
+          // would silently write an ordinary shaded image instead - a wrong
+          // answer is worse here than a refusal, since the output looks
+          // plausible and decodes to nonsense.
+          LOG(message_group::Error,
+              "%1$s export requires the preview renderer; drop --render or use "
+              "--preview=throwntogether.",
+              fileformat::info(export_format).identifier);
+          return 1;
+        }
+        // The mode was already applied by prepare_preview, before it painted.
+        if (agent_mode == AgentLightingMode::Coordinate &&
+            !write_coordinate_bounds_sidecar(*glview, cmd.exportOptions)) {
+          return 1;
+        }
       }
       bool success = true;
       bool const wrote = with_output(
