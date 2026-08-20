@@ -181,9 +181,11 @@ void GLView::drawChromaticGauge()
                 flipped.begin() + static_cast<long>(y * row_bytes));
   }
 
+  // Bottom-right, not bottom-left: the axes indicator and scale markers live in
+  // the bottom-left of the viewport and the gauge would sit on top of them.
   const int margin = static_cast<int>(size) / 8;
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glWindowPos2i(margin, margin);
+  glWindowPos2i(cam.pixel_width - static_cast<int>(size) - margin, margin);
   glDrawPixels(static_cast<GLsizei>(size), static_cast<GLsizei>(size), GL_RGBA, GL_UNSIGNED_BYTE,
                flipped.data());
 
