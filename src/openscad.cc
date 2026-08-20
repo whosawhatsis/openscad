@@ -391,14 +391,14 @@ Camera get_camera(const po::variables_map& vm)
 
 //! The lighting mode an export format asks the preview shader for, or Default
 //! for every format that is not one of the AgentSCAD image outputs.
-static AgentLightingMode agent_lighting_mode_for(FileFormat format)
+static AnalysisMode analysis_mode_for(FileFormat format)
 {
   switch (format) {
-  case FileFormat::NORMALMAP_PNG:     return AgentLightingMode::Normal;
-  case FileFormat::COORDINATEMAP_PNG: return AgentLightingMode::Coordinate;
-  case FileFormat::FLATMAP_PNG:       return AgentLightingMode::Flat;
-  case FileFormat::CHROMATIC_PNG:     return AgentLightingMode::Chromatic;
-  default:                            return AgentLightingMode::Default;
+  case FileFormat::NORMALMAP_PNG:     return AnalysisMode::Normal;
+  case FileFormat::COORDINATEMAP_PNG: return AnalysisMode::Coordinate;
+  case FileFormat::FLATMAP_PNG:       return AnalysisMode::Flat;
+  case FileFormat::CHROMATIC_PNG:     return AnalysisMode::Chromatic;
+  default:                            return AnalysisMode::Default;
   }
 }
 
@@ -568,13 +568,13 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
 
     if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG ||
          export_format == FileFormat::DEPTHMAP || export_format == FileFormat::PFM ||
-         agent_lighting_mode_for(export_format) != AgentLightingMode::Default) &&
+         analysis_mode_for(export_format) != AnalysisMode::Default) &&
         (cmd.viewOptions.renderer == RenderType::OPENCSG ||
          cmd.viewOptions.renderer == RenderType::THROWNTOGETHER)) {
       // OpenCSG or throwntogether png -> just render a preview
-      glview = prepare_preview(tree, cmd.viewOptions, camera, depthmapOptions,
-                               agent_lighting_mode_for(export_format),
-                               export_option_flag(cmd.exportOptions, "chromatic", "gauge", true));
+      glview =
+        prepare_preview(tree, cmd.viewOptions, camera, depthmapOptions, analysis_mode_for(export_format),
+                        export_option_flag(cmd.exportOptions, "chromatic", "gauge", true));
       if (!glview) return 1;
     } else {
       // Force creation of concrete geometry (mostly for testing)
@@ -645,7 +645,8 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       }
     }
 
-    if (export_format == FileFormat::PFM) {      bool success = true;
+    if (export_format == FileFormat::PFM) {
+      bool success = true;
       bool const wrote = with_output(
         cmd.is_stdout, filename_str,
         [&success, &root_geom, &cmd, &camera, &glview](std::ostream& stream) {
@@ -662,9 +663,9 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       }
     }
 
-    const AgentLightingMode agent_mode = agent_lighting_mode_for(export_format);
-    if (export_format == FileFormat::PNG || agent_mode != AgentLightingMode::Default) {
-      if (agent_mode != AgentLightingMode::Default) {
+    const AnalysisMode agent_mode = analysis_mode_for(export_format);
+    if (export_format == FileFormat::PNG || agent_mode != AnalysisMode::Default) {
+      if (agent_mode != AnalysisMode::Default) {
         if (!glview) {
           // These formats are produced by a shader on the preview path. --render
           // routes to export_png(root_geom, ...), which builds its own view and
@@ -678,11 +679,11 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
           return 1;
         }
         // The mode was already applied by prepare_preview, before it painted.
-        if (agent_mode == AgentLightingMode::Coordinate &&
+        if (agent_mode == AnalysisMode::Coordinate &&
             !write_coordinate_bounds_sidecar(*glview, cmd.exportOptions)) {
           return 1;
         }
-        if (agent_mode == AgentLightingMode::Chromatic &&
+        if (agent_mode == AnalysisMode::Chromatic &&
             !write_chromatic_lights_sidecar(cmd.exportOptions)) {
           return 1;
         }

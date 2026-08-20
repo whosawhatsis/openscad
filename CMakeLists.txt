@@ -1549,7 +1549,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestModuleCache.h
     src/guitests/TestTabManager.h
     src/guitests/TestMainWindow.h
-    src/guitests/TestAgentLighting.h
+    src/guitests/TestAnalysisView.h
     src/guitests/UXTest.h
   )
 
@@ -1558,7 +1558,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestModuleCache.cc
     src/guitests/TestTabManager.cc
     src/guitests/TestMainWindow.cc
-    src/guitests/TestAgentLighting.cc
+    src/guitests/TestAnalysisView.cc
     src/guitests/UXTest.cc
   )
 

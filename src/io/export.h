@@ -383,7 +383,7 @@ std::string get_current_iso8601_date_time_utc();
  */
 std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
                                                const DepthmapOptions& depthOptions = {},
-                                               AgentLightingMode agentMode = AgentLightingMode::Default,
+                                               AnalysisMode agentMode = AnalysisMode::Default,
                                                bool chromaticGauge = true);
 bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
                 Camera& camera, std::ostream& output);

@@ -399,19 +399,19 @@ public slots:
   void viewModeRender();
 #ifdef ENABLE_OPENCSG
   void viewModePreview();
-  void setAgentLightingMode(AgentLightingMode mode);
+  void setAnalysisMode(AnalysisMode mode);
   void on_viewActionPreview_triggered();
 #endif
   void viewModeThrownTogether();
-  void on_viewActionAgentLightingDefault_triggered();
-  void on_viewActionAgentLightingNormal_triggered();
-  void on_viewActionAgentLightingCoordinate_triggered();
-  void on_viewActionAgentLightingFlat_triggered();
-  void on_viewActionAgentLightingChromatic_triggered();
+  void on_viewActionAnalysisViewDefault_triggered();
+  void on_viewActionAnalysisViewNormal_triggered();
+  void on_viewActionAnalysisViewCoordinate_triggered();
+  void on_viewActionAnalysisViewFlat_triggered();
+  void on_viewActionAnalysisViewChromatic_triggered();
   void on_viewActionThrownTogether_triggered();
   void updateViewModeAfterGLInit();
   void on_viewActionShowEdges_toggled(bool checked);
-  void on_viewActionShowDepth_toggled(bool checked);
+  void on_viewActionAnalysisViewDepth_triggered();
   void on_viewActionShowAxes_toggled(bool checked);
   void on_viewActionShowScaleProportional_toggled(bool checked);
   void on_viewActionShowCrosshairs_toggled(bool checked);
@@ -488,7 +488,7 @@ private:
 
   QActionGroup *viewActionProjectionGroup;
   QActionGroup *previewModeGroup;
-  QActionGroup *agentLightingGroup;
+  QActionGroup *analysisViewGroup;
 
 signals:
   void highlightError(int);

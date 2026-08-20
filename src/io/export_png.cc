@@ -77,7 +77,7 @@ std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const
   glview->setShowAxes(options["axes"]);
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
-  glview->setShowDepth(options["depth"]);
+  if (options["depth"]) glview->setAnalysisMode(AnalysisMode::Depth);
   glview->setDepthOptions(depthOptions);
   glview->paintGL();
   return glview;
@@ -112,7 +112,7 @@ bool export_depthmap(const std::shared_ptr<const Geometry>& root_geom, const Vie
 
 std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
                                                const DepthmapOptions& depthOptions,
-                                               AgentLightingMode agentMode, bool chromaticGauge)
+                                               AnalysisMode agentMode, bool chromaticGauge)
 {
   PRINTD("prepare_preview_common");
   CsgInfo csgInfo = CsgInfo();
@@ -156,9 +156,14 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
   glview->setShowAxes(options["axes"]);
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
-  glview->setShowDepth(options["depth"]);
   glview->setDepthOptions(depthOptions);
-  glview->setAgentLightingMode(agentMode);
+  // One decision, not two writes to the same field: an analysis export format
+  // names the mode outright, and --view=depth only applies when the format did
+  // not. Setting both in sequence silently let the second win, which made
+  // --view=depth a no-op for an ordinary PNG.
+  AnalysisMode mode = agentMode;
+  if (mode == AnalysisMode::Default && options["depth"]) mode = AnalysisMode::Depth;
+  glview->setAnalysisMode(mode);
   glview->setChromaticGauge(chromaticGauge);
   glview->paintGL();
   return glview;
@@ -229,7 +234,7 @@ bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOpti
 }
 std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
                                                const DepthmapOptions& depthOptions,
-                                               AgentLightingMode agentMode, bool chromaticGauge)
+                                               AnalysisMode agentMode, bool chromaticGauge)
 {
   return nullptr;
 }
