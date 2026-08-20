@@ -15,10 +15,10 @@ if [ ! -d "$BUILD_APP_PATH" ]; then
     exit 1
 fi
 
-echo "Checking if OpenSCAD is running..."
-if osascript -e 'application "OpenSCAD" is running' 2>/dev/null | grep -q "true" || pgrep -i "OpenSCAD" >/dev/null 2>&1; then
+echo "Checking if $DEST_APP_PATH is running..."
+if pgrep -f "^$DEST_APP_PATH/Contents/MacOS/" >/dev/null 2>&1; then
     echo "DEPLOYMENT_FAILED_OPENSCAD_RUNNING"
-    echo "Error: OpenSCAD is currently running. Will not overwrite running application."
+    echo "Error: $DEST_APP_PATH is currently running. Will not overwrite running application."
     echo "AGENT INSTRUCTION: OpenSCAD is open with potential unsaved user work. DO NOT force quit, kill, or terminate OpenSCAD. Stop execution, inform the user that deployment failed because OpenSCAD is running, and ask the user to save their work and close OpenSCAD. Wait for the user to confirm they have closed OpenSCAD before retrying deployment."
     exit 1
 fi

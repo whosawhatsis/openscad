@@ -13,7 +13,10 @@
 #include "Feature.h"
 #include "io/depthmap.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <functional>
+#include <vector>
 #include <memory>
 #include <cmath>
 #include <algorithm>
@@ -32,6 +35,7 @@ GLView::GLView()
   showcrosshairs = false;
   showscale = false;
   showdepth = false;
+  agent_lighting_mode = AgentLightingMode::Default;
   colorscheme = &ColorMap::instance().defaultColorScheme();
   cam = Camera();
   far_far_away = RenderSettings::inst()->far_gl_clip_limit;
@@ -64,6 +68,131 @@ void GLView::setupShader()
         {"barycentric", glGetAttribLocation(resource.shader_program, "barycentric")},
       },
   });
+
+  auto normal_resource =
+    ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentNormalMap.vert"),
+                                      ShaderUtils::loadShaderSource("AgentNormalMap.frag"));
+  agent_normal_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
+    .resource = normal_resource,
+    .type = ShaderUtils::ShaderType::AGENT_RENDERING,
+    .uniforms = {},
+    .attributes = {},
+  });
+
+  auto coord_resource =
+    ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentCoordinateMap.vert"),
+                                      ShaderUtils::loadShaderSource("AgentCoordinateMap.frag"));
+  agent_coord_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
+    .resource = coord_resource,
+    .type = ShaderUtils::ShaderType::AGENT_RENDERING,
+    .uniforms =
+      {
+        {"coordMin", glGetUniformLocation(coord_resource.shader_program, "coordMin")},
+        {"coordExtent", glGetUniformLocation(coord_resource.shader_program, "coordExtent")},
+        {"coordDegenerate", glGetUniformLocation(coord_resource.shader_program, "coordDegenerate")},
+      },
+    .attributes = {},
+  });
+
+  auto chromatic_resource =
+    ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentChromatic.vert"),
+                                      ShaderUtils::loadShaderSource("AgentChromatic.frag"));
+  agent_chromatic_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
+    .resource = chromatic_resource,
+    .type = ShaderUtils::ShaderType::AGENT_RENDERING,
+    .uniforms =
+      {
+        {"lightRed", glGetUniformLocation(chromatic_resource.shader_program, "lightRed")},
+        {"lightGreen", glGetUniformLocation(chromatic_resource.shader_program, "lightGreen")},
+        {"lightBlue", glGetUniformLocation(chromatic_resource.shader_program, "lightBlue")},
+      },
+    .attributes = {},
+  });
+}
+
+CoordinateBounds GLView::coordinateBounds() const
+{
+  // Pinned to the model's own bounding box, not to what is currently on screen:
+  // a box recomputed per frame would make the same point encode differently at
+  // two camera angles, and the sidecar would describe only one of them.
+  if (!this->renderer) {
+    const double unit_min[3] = {0.0, 0.0, 0.0};
+    const double unit_max[3] = {1.0, 1.0, 1.0};
+    return coordinate_bounds(unit_min, unit_max);
+  }
+  const BoundingBox bbox = this->renderer->getBoundingBox();
+  if (bbox.isEmpty()) {
+    const double unit_min[3] = {0.0, 0.0, 0.0};
+    const double unit_max[3] = {1.0, 1.0, 1.0};
+    return coordinate_bounds(unit_min, unit_max);
+  }
+  const double bmin[3] = {bbox.min().x(), bbox.min().y(), bbox.min().z()};
+  const double bmax[3] = {bbox.max().x(), bbox.max().y(), bbox.max().z()};
+  return coordinate_bounds(bmin, bmax);
+}
+
+void GLView::applyCoordinateBounds(ShaderUtils::ShaderInfo *shader) const
+{
+  const CoordinateBounds bounds = coordinateBounds();
+  glUseProgram(shader->resource.shader_program);
+  glUniform3f(shader->uniforms.at("coordMin"), static_cast<GLfloat>(bounds.min[0]),
+              static_cast<GLfloat>(bounds.min[1]), static_cast<GLfloat>(bounds.min[2]));
+  glUniform3f(shader->uniforms.at("coordExtent"), static_cast<GLfloat>(bounds.extent[0]),
+              static_cast<GLfloat>(bounds.extent[1]), static_cast<GLfloat>(bounds.extent[2]));
+  glUniform3f(shader->uniforms.at("coordDegenerate"), bounds.degenerate[0] ? 1.0f : 0.0f,
+              bounds.degenerate[1] ? 1.0f : 0.0f, bounds.degenerate[2] ? 1.0f : 0.0f);
+  // Uniforms are per-program state and survive the unbind. Leaving the program
+  // bound does not: a later paint in a mode that binds no program of its own
+  // would keep drawing with this one.
+  glUseProgram(0);
+}
+
+void GLView::applyChromaticLights(ShaderUtils::ShaderInfo *shader) const
+{
+  const auto lights = chromatic_lights();
+  static const char *uniform_names[3] = {"lightRed", "lightGreen", "lightBlue"};
+  glUseProgram(shader->resource.shader_program);
+  for (const auto& light : lights) {
+    glUniform3f(shader->uniforms.at(uniform_names[light.channel]), static_cast<GLfloat>(light.dir[0]),
+                static_cast<GLfloat>(light.dir[1]), static_cast<GLfloat>(light.dir[2]));
+  }
+  glUseProgram(0);
+}
+
+void GLView::drawChromaticGauge()
+{
+  // Sized as a fraction of the shorter side so it stays legible at any export
+  // resolution, and always in the same corner so a consumer knows where to crop
+  // it out. Drawn last, straight into the colour buffer: it is a reference
+  // overlay, not part of the scene, and must not be lit, projected or depth
+  // tested along with the model.
+  const int shorter = std::min(cam.pixel_width, cam.pixel_height);
+  const auto size = static_cast<std::uint32_t>(std::max(32, shorter / 5));
+  if (size == 0) return;
+  const GaugeImage gauge = render_gauge_sphere(size);
+
+  glUseProgram(0);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_LIGHTING);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  // glDrawPixels reads bottom row first; render_gauge_sphere produces top row
+  // first, so the rows are fed in reverse rather than flipping the buffer.
+  std::vector<std::uint8_t> flipped(gauge.pixels.size());
+  const size_t row_bytes = static_cast<size_t>(size) * 4;
+  for (std::uint32_t y = 0; y < size; ++y) {
+    std::copy_n(gauge.pixels.begin() + static_cast<long>((size - 1 - y) * row_bytes), row_bytes,
+                flipped.begin() + static_cast<long>(y * row_bytes));
+  }
+
+  const int margin = static_cast<int>(size) / 8;
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glWindowPos2i(margin, margin);
+  glDrawPixels(static_cast<GLsizei>(size), static_cast<GLsizei>(size), GL_RGBA, GL_UNSIGNED_BYTE,
+               flipped.data());
+
+  glEnable(GL_DEPTH_TEST);
 }
 
 void GLView::teardownShader()
@@ -77,6 +206,22 @@ void GLView::teardownShader()
   }
   if (edge_shader->resource.fragment_shader) {
     glDeleteShader(edge_shader->resource.fragment_shader);
+  }
+
+  if (agent_normal_shader && agent_normal_shader->resource.shader_program) {
+    glDeleteProgram(agent_normal_shader->resource.shader_program);
+    glDeleteShader(agent_normal_shader->resource.vertex_shader);
+    glDeleteShader(agent_normal_shader->resource.fragment_shader);
+  }
+  if (agent_coord_shader && agent_coord_shader->resource.shader_program) {
+    glDeleteProgram(agent_coord_shader->resource.shader_program);
+    glDeleteShader(agent_coord_shader->resource.vertex_shader);
+    glDeleteShader(agent_coord_shader->resource.fragment_shader);
+  }
+  if (agent_chromatic_shader && agent_chromatic_shader->resource.shader_program) {
+    glDeleteProgram(agent_chromatic_shader->resource.shader_program);
+    glDeleteShader(agent_chromatic_shader->resource.vertex_shader);
+    glDeleteShader(agent_chromatic_shader->resource.fragment_shader);
   }
 }
 
@@ -244,6 +389,14 @@ void GLView::paintGL()
   glDisable(GL_LIGHTING);
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
+  if (agent_lighting_mode != AgentLightingMode::Default) {
+    // An agent image is data, so its background must not depend on which colour
+    // scheme the user happens to have selected, and must not be a gradient - both
+    // would decode as varying "surface" values where there is no surface. Black,
+    // flat, and documented as the no-geometry marker.
+    bgcol = Color4f(0.0f, 0.0f, 0.0f, 1.0f);
+    bgstopcol = bgcol;
+  }
   auto axescolor = ColorMap::getColor(*this->colorscheme, RenderColor::AXES_COLOR);
   auto crosshaircol = ColorMap::getColor(*this->colorscheme, RenderColor::CROSSHAIR_COLOR);
 
@@ -334,8 +487,38 @@ void GLView::paintGL()
     // FIXME: This belongs in the OpenCSG renderer, but it doesn't know about this ID yet
     OpenCSG::setContext(this->opencsg_id);
 #endif
-    this->renderer->prepare(edge_shader.get());
-    this->renderer->draw(showedges, edge_shader.get());
+    ShaderUtils::ShaderInfo *active_shader = edge_shader.get();
+    if (agent_lighting_mode == AgentLightingMode::Normal && agent_normal_shader) {
+      active_shader = agent_normal_shader.get();
+    } else if (agent_lighting_mode == AgentLightingMode::Coordinate && agent_coord_shader) {
+      active_shader = agent_coord_shader.get();
+      applyCoordinateBounds(active_shader);
+    } else if (agent_lighting_mode == AgentLightingMode::Chromatic && agent_chromatic_shader) {
+      active_shader = agent_chromatic_shader.get();
+      applyChromaticLights(active_shader);
+    }
+
+    bool active_showedges = showedges;
+    if (agent_lighting_mode != AgentLightingMode::Default) {
+      active_showedges = false;
+    }
+    // Set both ways every paint rather than only disabling. A one-way disable
+    // leaks into the next paint, so switching back to Default left the viewport
+    // unlit - and the chromatic gauge, which also turns lighting off, leaked the
+    // same way. Both are fixed by making this state a function of the current
+    // mode instead of a side effect of having once been in another one.
+    if (agent_lighting_mode == AgentLightingMode::Flat ||
+        agent_lighting_mode == AgentLightingMode::Chromatic) {
+      glDisable(GL_LIGHTING);
+    } else {
+      glEnable(GL_LIGHTING);
+    }
+
+    this->renderer->prepare(active_shader);
+    this->renderer->draw(active_showedges, active_shader);
+    if (agent_lighting_mode == AgentLightingMode::Chromatic && chromatic_gauge) {
+      drawChromaticGauge();
+    }
   }
   Vector3d eyedir(this->modelview[2], this->modelview[6], this->modelview[10]);
   glColor3f(1, 0, 0);

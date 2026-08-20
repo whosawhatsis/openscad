@@ -329,6 +329,7 @@ void Preferences::init()
         params["context_limit"] = 10;
         params["payload_limit"] = 50000;
         params["auto_attach_viewport"] = false;
+        params["max_auto_turns"] = 5;
       }
       prof["params"] = params;
       prof["apiKey"] = "";
@@ -1515,6 +1516,7 @@ void Preferences::on_pushButtonAINewProfile_clicked()
   params["context_limit"] = 10;
   params["payload_limit"] = 50000;
   params["auto_attach_viewport"] = false;
+  params["max_auto_turns"] = 5;
   newProfile["params"] = params;
 
   profilesObj[trimmed.toStdString()] = newProfile;
@@ -1640,6 +1642,9 @@ void Preferences::loadAIParams(const QString& profileName)
   }
   if (!paramsObj.contains("auto_attach_viewport")) {
     paramsObj["auto_attach_viewport"] = false;
+  }
+  if (!paramsObj.contains("max_auto_turns")) {
+    paramsObj["max_auto_turns"] = 5;
   }
 
   std::string sysPrompt = paramsObj.value("system_prompt", "");

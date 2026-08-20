@@ -3,6 +3,7 @@
 #include <QTest>
 #include <iostream>
 
+#include "TestAgentLighting.h"
 #include "TestExportImage.h"
 #include "TestMainWindow.h"
 #include "TestModuleCache.h"
@@ -36,6 +37,7 @@ int runAllTest(MainWindow *window)
   // isolated from here on.
   MainWindow::setProcessIsolation(isolated);
   totalTestFailures += runTests<TestExportImage>(window);
+  totalTestFailures += runTests<TestAgentLighting>(window);
   std::cout << "********************************** RESULTS *********************************"
             << std::endl;
   std::cout << "Failures: " << totalTestFailures << std::endl;

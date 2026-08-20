@@ -19,6 +19,7 @@
 #include "geometry/Geometry.h"
 #include "geometry/linalg.h"
 #include "glview/Camera.h"
+#include "glview/GLView.h"
 #include "glview/ColorMap.h"
 #include "io/export_enums.h"
 
@@ -49,6 +50,10 @@ enum class FileFormat {
   AVI,
   DEPTHMAP,
   PFM,
+  NORMALMAP_PNG,
+  COORDINATEMAP_PNG,
+  FLATMAP_PNG,
+  CHROMATIC_PNG,
   PDF,
   POV,
   PARAM,
@@ -382,8 +387,19 @@ class OffscreenView;
 
 std::string get_current_iso8601_date_time_utc();
 
+/*!
+   Build and paint an offscreen preview.
+
+   `agentMode` must be supplied here rather than set on the returned view: this
+   function paints, and export_png(const OffscreenView&) only saves the
+   framebuffer it left behind. A mode applied afterwards never reaches a paint
+   and the export silently writes an ordinary shaded image. The same is true of
+   `depthOptions` and of every other setting on this list.
+ */
 std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
-                                               const DepthmapOptions& depthOptions = {});
+                                               const DepthmapOptions& depthOptions = {},
+                                               AgentLightingMode agentMode = AgentLightingMode::Default,
+                                               bool chromaticGauge = true);
 bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
                 Camera& camera, std::ostream& output);
 //! As above, but carrying the depth options so --view=depth shades with the same
