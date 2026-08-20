@@ -47,6 +47,17 @@ TEST_CASE("metric profile encodes linear millimetres, near dark", "[Depthmap]")
   CHECK(img.maxDepth == Catch::Approx(100.0));
 }
 
+TEST_CASE("viewport depth polarity matches the selected profile", "[Depthmap]")
+{
+  const auto metric = depth_preview_polarity(DEPTHMAP_METRIC_SCALE);
+  CHECK(metric.geometry == 0.0f);
+  CHECK(metric.background == 1.0f);
+
+  const auto visual = depth_preview_polarity(0.0);
+  CHECK(visual.geometry == 1.0f);
+  CHECK(visual.background == 0.0f);
+}
+
 TEST_CASE("metric profile clamps beyond the representable range", "[Depthmap]")
 {
   const std::vector<float> depths = {-5.0f, 70000.0f};

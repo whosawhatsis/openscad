@@ -361,12 +361,8 @@ void GLView::setupDepthShading()
     range.end = 65534.0 / units;
   }
 
-  // The metric preview shows the file's *scale*, not its polarity: near reads
-  // bright here while the file stores near dark. Inverting it needs the geometry
-  // drawn black against white fog, and in that configuration the renderer's own
-  // material wins and the frame comes out uniformly white - unresolved, and not
-  // worth a shader until these previews earn their place.
-  const GLfloat fogcolor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+  const auto polarity = depth_preview_polarity(units);
+  const GLfloat fogcolor[4] = {polarity.background, polarity.background, polarity.background, 1.0f};
   glFogi(GL_FOG_MODE, GL_LINEAR);
   glFogf(GL_FOG_START, static_cast<GLfloat>(range.start));
   glFogf(GL_FOG_END, static_cast<GLfloat>(range.end));
@@ -377,13 +373,13 @@ void GLView::setupDepthShading()
   // constant. glColor3f is not enough: the VBO renderers supply per-vertex
   // colours, which win with lighting off. Instead keep lighting on, take
   // GL_COLOR_MATERIAL out (so vertex colours stop feeding the material), and
-  // make the material purely emissive white - emission ignores normals, so
-  // every fragment comes out the same white regardless of orientation.
-  const GLfloat white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  // make the material purely emissive - emission ignores normals, so every
+  // fragment gets the profile's constant geometry value regardless of orientation.
+  const GLfloat geometry[4] = {polarity.geometry, polarity.geometry, polarity.geometry, 1.0f};
   const GLfloat black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
   glEnable(GL_LIGHTING);
   glDisable(GL_COLOR_MATERIAL);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, white);
+  glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, geometry);
   glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, black);
   glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, black);
 }
