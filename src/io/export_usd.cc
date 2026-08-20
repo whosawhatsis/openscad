@@ -195,7 +195,7 @@ void writeMaterial(std::ostream& output, size_t index, const Color4f& color)
 //! Emits `attribute = value` for a still, or `attribute.timeSamples = { t: value, ... }`.
 template <typename Format>
 void writeAttribute(std::ostream& output, const std::string& declaration, const Scene& scene,
-                    size_t material, bool animated, Format&& format)
+                    size_t material, bool animated, bool hold, Format&& format)
 {
   if (!animated) {
     output << "        " << declaration << " = " << format(scene.meshes[0][material]) << "\n";
@@ -204,6 +204,11 @@ void writeAttribute(std::ostream& output, const std::string& declaration, const 
   output << "        " << declaration << ".timeSamples = {\n";
   for (size_t frame = 0; frame < scene.meshes.size(); ++frame) {
     output << "            " << frame << ": " << format(scene.meshes[frame][material]) << ",\n";
+    // USD only offers held/linear time interpolation at stage scope. Repeat recalculated mesh
+    // values just before the next frame so hybrid stages can keep interpolating rigid transforms.
+    if (hold && frame + 1 < scene.meshes.size()) {
+      output << "            " << frame << ".999: " << format(scene.meshes[frame][material]) << ",\n";
+    }
   }
   output << "        }\n";
 }
@@ -216,11 +221,11 @@ void writeMesh(std::ostream& output, const Scene& scene, size_t material, bool a
   output << "    )\n";
   output << "    {\n";
 
-  writeAttribute(output, "int[] faceVertexCounts", scene, material, animated,
+  writeAttribute(output, "int[] faceVertexCounts", scene, material, animated, false,
                  [](const MeshData& m) { return formatList(m.faceVertexCounts); });
-  writeAttribute(output, "int[] faceVertexIndices", scene, material, animated,
+  writeAttribute(output, "int[] faceVertexIndices", scene, material, animated, false,
                  [](const MeshData& m) { return formatList(m.faceVertexIndices); });
-  writeAttribute(output, "point3f[] points", scene, material, animated,
+  writeAttribute(output, "point3f[] points", scene, material, animated, true,
                  [](const MeshData& m) { return formatPoints(m.points); });
 
   output << "        rel material:binding = </root/Materials/mat" << material << ">\n";
@@ -324,7 +329,7 @@ MeshData buildObjectMesh(const PolySet& polyset)
 
 template <typename Format>
 void writeObjectAttribute(std::ostream& output, const std::string& declaration,
-                          const std::vector<MeshData>& meshes, bool stable, Format&& format)
+                          const std::vector<MeshData>& meshes, bool stable, bool hold, Format&& format)
 {
   if (stable) {
     output << "            " << declaration << " = " << format(meshes[0]) << "\n";
@@ -333,6 +338,9 @@ void writeObjectAttribute(std::ostream& output, const std::string& declaration,
   output << "            " << declaration << ".timeSamples = {\n";
   for (size_t frame = 0; frame < meshes.size(); ++frame) {
     output << "                " << frame << ": " << format(meshes[frame]) << ",\n";
+    if (hold && frame + 1 < meshes.size()) {
+      output << "                " << frame << ".999: " << format(meshes[frame]) << ",\n";
+    }
   }
   output << "            }\n";
 }
@@ -401,11 +409,11 @@ void writeTransformStage(const std::vector<UsdAnimationFrame>& frames, unsigned 
            << "            prepend apiSchemas = [\"MaterialBindingAPI\"]\n"
            << "        )\n"
            << "        {\n";
-    writeObjectAttribute(output, "int[] faceVertexCounts", meshes, stable,
+    writeObjectAttribute(output, "int[] faceVertexCounts", meshes, stable, false,
                          [](const MeshData& mesh) { return formatList(mesh.faceVertexCounts); });
-    writeObjectAttribute(output, "int[] faceVertexIndices", meshes, stable,
+    writeObjectAttribute(output, "int[] faceVertexIndices", meshes, stable, false,
                          [](const MeshData& mesh) { return formatList(mesh.faceVertexIndices); });
-    writeObjectAttribute(output, "point3f[] points", meshes, stable,
+    writeObjectAttribute(output, "point3f[] points", meshes, stable, true,
                          [](const MeshData& mesh) { return formatPoints(mesh.points); });
     output << "            rel material:binding = </root/Materials/mat" << i << ">\n"
            << "            uniform token subdivisionScheme = \"none\"\n"

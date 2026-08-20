@@ -237,6 +237,18 @@ TEST_CASE("Animated USDA time-samples topology, not just points", "[export][usd]
   REQUIRE(usda.find("0: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
 }
 
+TEST_CASE("Animated USDA holds recalculated meshes until the next frame", "[export][usd]")
+{
+  const std::string usda = exportAnimationToString(makeVaryingTopologyFrames());
+
+  // CSG recalculation does not preserve vertex correspondence. Repeating each mesh just before
+  // the next integer time prevents USD from morphing unrelated points across the whole frame.
+  REQUIRE(usda.find("0.999: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
+  // Integer topology arrays are already held; duplicating them would only inflate the file.
+  REQUIRE(usda.find("0.999: [3],") == std::string::npos);
+  REQUIRE(usda.find("0.999: [0, 1, 2],") == std::string::npos);
+}
+
 TEST_CASE("Animated USDA reuses cache-stable geometry and samples only its transform", "[export][usd]")
 {
   const auto triangle = std::shared_ptr<const PolySet>(makeTriangle());
