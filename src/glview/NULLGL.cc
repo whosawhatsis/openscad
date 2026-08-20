@@ -61,6 +61,12 @@ CoordinateBounds GLView::coordinateBounds() const
 void GLView::applyCoordinateBounds(ShaderUtils::ShaderInfo * /*shader*/) const
 {
 }
+void GLView::applyChromaticLights(ShaderUtils::ShaderInfo * /*shader*/) const
+{
+}
+void GLView::drawChromaticGauge()
+{
+}
 void GLView::paintGL()
 {
 }

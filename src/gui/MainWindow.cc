@@ -2722,6 +2722,40 @@ void MainWindow::viewModePreview()
 
 #endif /* ENABLE_OPENCSG */
 
+void MainWindow::setAgentLightingMode(AgentLightingMode mode)
+{
+  this->qglview->setAgentLightingMode(mode);
+  // The viewport paints on its own schedule, so unlike the CLI export path the
+  // mode only has to be set before the next paint rather than before a
+  // particular one - but it still has to force that paint.
+  this->qglview->update();
+}
+
+void MainWindow::on_viewActionAgentLightingDefault_triggered()
+{
+  setAgentLightingMode(AgentLightingMode::Default);
+}
+
+void MainWindow::on_viewActionAgentLightingNormal_triggered()
+{
+  setAgentLightingMode(AgentLightingMode::Normal);
+}
+
+void MainWindow::on_viewActionAgentLightingCoordinate_triggered()
+{
+  setAgentLightingMode(AgentLightingMode::Coordinate);
+}
+
+void MainWindow::on_viewActionAgentLightingFlat_triggered()
+{
+  setAgentLightingMode(AgentLightingMode::Flat);
+}
+
+void MainWindow::on_viewActionAgentLightingChromatic_triggered()
+{
+  setAgentLightingMode(AgentLightingMode::Chromatic);
+}
+
 void MainWindow::updateViewModeAfterGLInit()
 {
 #ifdef ENABLE_OPENCSG
@@ -3911,6 +3945,17 @@ void MainWindow::setupMenusAndActions()
   previewModeGroup->setExclusive(true);
   previewModeGroup->addAction(this->viewActionPreview);
   previewModeGroup->addAction(this->viewActionThrownTogether);
+
+  // Exclusive: the modes are alternative ways of drawing the same view, not
+  // toggles that compose.
+  agentLightingGroup = new QActionGroup(this);
+  agentLightingGroup->setExclusive(true);
+  agentLightingGroup->addAction(this->viewActionAgentLightingDefault);
+  agentLightingGroup->addAction(this->viewActionAgentLightingNormal);
+  agentLightingGroup->addAction(this->viewActionAgentLightingCoordinate);
+  agentLightingGroup->addAction(this->viewActionAgentLightingFlat);
+  agentLightingGroup->addAction(this->viewActionAgentLightingChromatic);
+  this->viewActionAgentLightingDefault->setChecked(true);
   if (this->qglview->hasOpenCSGSupport()) {
     this->viewActionPreview->setChecked(true);
   } else {

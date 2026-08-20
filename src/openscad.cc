@@ -105,6 +105,7 @@
 #include "glview/OffscreenView.h"
 #include "glview/RenderSettings.h"
 #include "handle_dep.h"
+#include "io/chromatic.h"
 #include "io/coordinatemap.h"
 #include "io/export.h"
 #include "openscad_gui.h"
@@ -396,8 +397,46 @@ static AgentLightingMode agent_lighting_mode_for(FileFormat format)
   case FileFormat::NORMALMAP_PNG:     return AgentLightingMode::Normal;
   case FileFormat::COORDINATEMAP_PNG: return AgentLightingMode::Coordinate;
   case FileFormat::FLATMAP_PNG:       return AgentLightingMode::Flat;
+  case FileFormat::CHROMATIC_PNG:     return AgentLightingMode::Chromatic;
   default:                            return AgentLightingMode::Default;
   }
+}
+
+//! Read a boolean -O option, defaulting when it is absent or unparseable.
+static bool export_option_flag(const CmdLineExportOptions& exportOptions, const std::string& section,
+                               const std::string& name, bool fallback)
+{
+  const auto s = exportOptions.find(section);
+  if (s == exportOptions.end()) return fallback;
+  const auto entry = s->second.find(name);
+  if (entry == s->second.end()) return fallback;
+  const std::string& v = entry->second;
+  if (v == "0" || v == "false" || v == "no" || v == "off") return false;
+  if (v == "1" || v == "true" || v == "yes" || v == "on") return true;
+  LOG(message_group::Warning, "Unrecognized value \"%1$s\" for %2$s/%3$s; using the default.", v,
+      section, name);
+  return fallback;
+}
+
+/*!
+   Write the light directions a chromatic image was lit by, if asked for with
+   -O chromatic/lights=<path>. A consumer that does not know which direction lit
+   which channel cannot interpret the image, so a failed write fails the export.
+ */
+static bool write_chromatic_lights_sidecar(const CmdLineExportOptions& exportOptions)
+{
+  const auto section = exportOptions.find("chromatic");
+  if (section == exportOptions.end()) return true;
+  const auto entry = section->second.find("lights");
+  if (entry == section->second.end() || entry->second.empty()) return true;
+
+  std::ofstream sidecar(entry->second);
+  if (!sidecar.is_open()) {
+    LOG(message_group::Error, "Unable to open chromatic lights file \"%1$s\"", entry->second);
+    return false;
+  }
+  sidecar << serialize_lights_json(chromatic_lights());
+  return sidecar.good();
 }
 
 /*!
@@ -517,7 +556,8 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
         (cmd.viewOptions.renderer == RenderType::OPENCSG ||
          cmd.viewOptions.renderer == RenderType::THROWNTOGETHER)) {
       // OpenCSG or throwntogether png -> just render a preview
-      glview = prepare_preview(tree, cmd.viewOptions, camera, agent_lighting_mode_for(export_format));
+      glview = prepare_preview(tree, cmd.viewOptions, camera, agent_lighting_mode_for(export_format),
+                               export_option_flag(cmd.exportOptions, "chromatic", "gauge", true));
       if (!glview) return 1;
     } else {
       // Force creation of concrete geometry (mostly for testing)
@@ -570,6 +610,10 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
         // The mode was already applied by prepare_preview, before it painted.
         if (agent_mode == AgentLightingMode::Coordinate &&
             !write_coordinate_bounds_sidecar(*glview, cmd.exportOptions)) {
+          return 1;
+        }
+        if (agent_mode == AgentLightingMode::Chromatic &&
+            !write_chromatic_lights_sidecar(cmd.exportOptions)) {
           return 1;
         }
       }

@@ -29,9 +29,10 @@
 #include "glview/system-gl.h"
 #include "core/Selection.h"
 #include "glview/Renderer.h"
+#include "io/chromatic.h"
 #include "io/coordinatemap.h"
 
-enum class AgentLightingMode { Default, Normal, Coordinate, Flat };
+enum class AgentLightingMode { Default, Normal, Coordinate, Flat, Chromatic };
 
 class GLView
 {
@@ -71,6 +72,16 @@ public:
   [[nodiscard]] CoordinateBounds coordinateBounds() const;
 
   void applyCoordinateBounds(ShaderUtils::ShaderInfo *shader) const;
+  void applyChromaticLights(ShaderUtils::ShaderInfo *shader) const;
+  //! Blit the analytic calibration sphere into the corner, after the model is drawn.
+  void drawChromaticGauge();
+
+public:
+  //! Whether the chromatic mode draws its calibration sphere. On by default: the
+  //! gauge is what makes the image interpretable, so suppressing it is the
+  //! deliberate choice, taken when the overlay would occlude the geometry.
+  void setChromaticGauge(bool enabled) { this->chromatic_gauge = enabled; }
+  [[nodiscard]] bool chromaticGauge() const { return this->chromatic_gauge; }
 
   virtual bool save(const char *filename) const = 0;
   [[nodiscard]] virtual std::string getRendererInfo() const = 0;
@@ -79,6 +90,7 @@ public:
   std::unique_ptr<ShaderUtils::ShaderInfo> edge_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_normal_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_coord_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> agent_chromatic_shader;
   std::shared_ptr<Renderer> renderer;
   const ColorScheme *colorscheme;
   Camera cam;
@@ -89,6 +101,7 @@ public:
   bool showcrosshairs;
   bool showscale;
   AgentLightingMode agent_lighting_mode;
+  bool chromatic_gauge = true;
   GLdouble modelview[16];
   GLdouble projection[16];
   std::vector<SelectedObject> selected_obj;

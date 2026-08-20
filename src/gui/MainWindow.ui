@@ -337,8 +337,19 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
+    <widget class="QMenu" name="menuAgentLighting">
+     <property name="title">
+      <string>&amp;Agent Lighting</string>
+     </property>
+     <addaction name="viewActionAgentLightingDefault"/>
+     <addaction name="viewActionAgentLightingNormal"/>
+     <addaction name="viewActionAgentLightingCoordinate"/>
+     <addaction name="viewActionAgentLightingFlat"/>
+     <addaction name="viewActionAgentLightingChromatic"/>
+    </widget>
     <addaction name="viewActionPreview"/>
     <addaction name="viewActionThrownTogether"/>
+    <addaction name="menuAgentLighting"/>
     <addaction name="separator"/>
     <addaction name="viewActionShowEdges"/>
     <addaction name="viewActionShowAxes"/>
@@ -1128,6 +1139,46 @@
    </property>
    <property name="shortcut">
     <string>F12</string>
+   </property>
+  </action>
+  <action name="viewActionAgentLightingDefault">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Default (shaded)</string>
+   </property>
+  </action>
+  <action name="viewActionAgentLightingNormal">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Normal Map</string>
+   </property>
+  </action>
+  <action name="viewActionAgentLightingCoordinate">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Coordinate Map</string>
+   </property>
+  </action>
+  <action name="viewActionAgentLightingFlat">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Flat / Unshaded</string>
+   </property>
+  </action>
+  <action name="viewActionAgentLightingChromatic">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>C&amp;hromatic 3-Point</string>
    </property>
   </action>
   <action name="viewActionShowEdges">

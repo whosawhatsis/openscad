@@ -1,0 +1,139 @@
+#include "TestAgentLighting.h"
+
+#include <QAction>
+#include <QImage>
+#include <QString>
+#include <QTest>
+
+#include "platform/PlatformUtils.h"
+
+namespace {
+
+QImage grabViewport(MainWindow *window)
+{
+  // grabFramebuffer() returns a null image until the widget has actually been
+  // exposed and has a valid GL context. Without waiting for that, the first grab
+  // comes back null and every "differs from the shaded view" check below passes
+  // vacuously - which is exactly what happened the first time this test ran.
+  window->show();
+  QTest::qWaitForWindowExposed(window);
+  // repaint() rather than update(): update() only schedules, so a grab can land
+  // on a frame that is still being composed.
+  window->qglview->repaint();
+  QTest::qWait(150);
+  // .copy() is not redundant: the returned image's buffer is owned by the widget
+  // and is reused by the next grab, so a retained QImage silently becomes a
+  // dangling reference - which showed up first as nonsense metadata and then as
+  // a segfault when its bits were read.
+  return window->qglview->grabFramebuffer().copy();
+}
+
+/*!
+   Compare what was drawn, not how it is labelled.
+
+   QCOMPARE on QImage checks devicePixelRatio first, and two grabs of the same
+   viewport can disagree on it (the first grab of a not-yet-exposed widget
+   carries a different ratio from later ones) while holding identical pixels.
+   That is metadata about the display, not about the render this test is here to
+   check.
+ */
+bool sameRender(const QImage& a, const QImage& b)
+{
+  if (a.isNull() || b.isNull() || a.size() != b.size()) return false;
+  // Sampled through QImage::pixel() rather than memcmp over constBits(): the
+  // raw-buffer route segfaulted here, and a grid of samples is enough to tell
+  // one render mode from another - these images differ across whole faces, not
+  // in single pixels.
+  for (int y = 0; y < a.height(); y += 8) {
+    for (int x = 0; x < a.width(); x += 8) {
+      if (a.pixel(x, y) != b.pixel(x, y)) return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+void TestAgentLighting::checkMenuActionsSetTheMode()
+{
+  restoreWindowInitialState();
+
+  // Triggering the action, rather than calling the handler directly: the failure
+  // this guards against is a name mismatch that leaves Qt's auto-connection
+  // silently unbound, which calling the handler would not catch.
+  window->viewActionAgentLightingNormal->trigger();
+  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Normal);
+
+  window->viewActionAgentLightingCoordinate->trigger();
+  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Coordinate);
+
+  window->viewActionAgentLightingFlat->trigger();
+  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Flat);
+
+  window->viewActionAgentLightingChromatic->trigger();
+  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Chromatic);
+
+  window->viewActionAgentLightingDefault->trigger();
+  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Default);
+}
+
+void TestAgentLighting::checkModesAreMutuallyExclusive()
+{
+  restoreWindowInitialState();
+
+  window->viewActionAgentLightingNormal->trigger();
+  QVERIFY(window->viewActionAgentLightingNormal->isChecked());
+  QVERIFY(!window->viewActionAgentLightingDefault->isChecked());
+
+  window->viewActionAgentLightingChromatic->trigger();
+  QVERIFY(window->viewActionAgentLightingChromatic->isChecked());
+  QVERIFY(!window->viewActionAgentLightingNormal->isChecked());
+}
+
+void TestAgentLighting::checkModesChangeTheRender()
+{
+  restoreWindowInitialState();
+
+  const QString filename =
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+  window->tabManager->open(filename);
+
+  window->viewActionAgentLightingDefault->trigger();
+  grabViewport(window);  // discard: the first paint after exposure is not settled
+  const QImage shaded = grabViewport(window);
+  QVERIFY(!shaded.isNull());
+  QVERIFY(shaded.width() > 0 && shaded.height() > 0);
+
+  // Everything below reads a difference between two grabs as evidence about a
+  // mode. That inference is only valid if two grabs of the *same* mode agree, so
+  // establish that first - otherwise a flaky viewport would masquerade as a
+  // state leak, and did during development.
+  QVERIFY2(sameRender(grabViewport(window), shaded),
+           "two consecutive grabs of the same view differ; this test cannot "
+           "distinguish a mode change from viewport noise");
+
+  struct ModeCase {
+    QAction *action;
+    const char *name;
+  };
+  const ModeCase cases[] = {
+    {window->viewActionAgentLightingNormal, "Normal"},
+    {window->viewActionAgentLightingCoordinate, "Coordinate"},
+    {window->viewActionAgentLightingFlat, "Flat"},
+    {window->viewActionAgentLightingChromatic, "Chromatic"},
+  };
+
+  // Each mode is checked round trip on its own, so a state leak names the mode
+  // that leaked instead of failing at the end of a chain.
+  for (const auto& c : cases) {
+    c.action->trigger();
+    QVERIFY2(!sameRender(grabViewport(window), shaded),
+             qPrintable(QString("%1 mode did not change the render").arg(c.name)));
+
+    window->viewActionAgentLightingDefault->trigger();
+    QVERIFY2(sameRender(grabViewport(window), shaded),
+             qPrintable(QString("returning to Default after %1 did not restore the view - "
+                                "that mode leaks GL state")
+                          .arg(c.name)));
+  }
+}

@@ -46,6 +46,7 @@ enum class FileFormat {
   NORMALMAP_PNG,
   COORDINATEMAP_PNG,
   FLATMAP_PNG,
+  CHROMATIC_PNG,
   PDF,
   POV,
   PARAM
@@ -373,7 +374,8 @@ std::string get_current_iso8601_date_time_utc();
    and the export silently writes an ordinary shaded image.
  */
 std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
-                                               AgentLightingMode agentMode = AgentLightingMode::Default);
+                                               AgentLightingMode agentMode = AgentLightingMode::Default,
+                                               bool chromaticGauge = true);
 bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
                 Camera& camera, std::ostream& output);
 bool export_png(const OffscreenView& glview, std::ostream& output);

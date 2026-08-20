@@ -399,9 +399,15 @@ public slots:
   void viewModeRender();
 #ifdef ENABLE_OPENCSG
   void viewModePreview();
+  void setAgentLightingMode(AgentLightingMode mode);
   void on_viewActionPreview_triggered();
 #endif
   void viewModeThrownTogether();
+  void on_viewActionAgentLightingDefault_triggered();
+  void on_viewActionAgentLightingNormal_triggered();
+  void on_viewActionAgentLightingCoordinate_triggered();
+  void on_viewActionAgentLightingFlat_triggered();
+  void on_viewActionAgentLightingChromatic_triggered();
   void on_viewActionThrownTogether_triggered();
   void updateViewModeAfterGLInit();
   void on_viewActionShowEdges_toggled(bool checked);
@@ -481,6 +487,7 @@ private:
 
   QActionGroup *viewActionProjectionGroup;
   QActionGroup *previewModeGroup;
+  QActionGroup *agentLightingGroup;
 
 signals:
   void highlightError(int);
