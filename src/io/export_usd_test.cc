@@ -221,30 +221,32 @@ TEST_CASE("Animated USDA declares the time range and rate", "[export][usd]")
   REQUIRE(usda.find("timeCodesPerSecond = 30") != std::string::npos);
 }
 
-TEST_CASE("Animated USDA switches complete frame meshes with visibility", "[export][usd]")
+TEST_CASE("Animated USDA time-samples topology, not just points", "[export][usd]")
 {
   const std::string usda = exportAnimationToString(makeVaryingTopologyFrames());
 
-  // Recalculated CSG frames have no vertex correspondence, so they must be distinct static
-  // meshes rather than time samples that a USD reader is entitled to interpolate.
-  REQUIRE(usda.find("point3f[] points.timeSamples") == std::string::npos);
-  REQUIRE(usda.find("int[] faceVertexCounts.timeSamples") == std::string::npos);
-  REQUIRE(usda.find("int[] faceVertexIndices.timeSamples") == std::string::npos);
-  REQUIRE(countOccurrences(usda, "def Mesh \"mesh0_frame") == 2);
-  REQUIRE(countOccurrences(usda, "token visibility.timeSamples = {") == 2);
+  // All three must be time-sampled. Sampling points alone would be a constant-topology
+  // deformation, which cannot represent a frame whose vertex count changed.
+  REQUIRE(usda.find("point3f[] points.timeSamples = {") != std::string::npos);
+  REQUIRE(usda.find("int[] faceVertexCounts.timeSamples = {") != std::string::npos);
+  REQUIRE(usda.find("int[] faceVertexIndices.timeSamples = {") != std::string::npos);
 
   // Frame 0: a triangle. Frame 1: a quad.
-  REQUIRE(usda.find("int[] faceVertexCounts = [3]") != std::string::npos);
-  REQUIRE(usda.find("int[] faceVertexCounts = [4]") != std::string::npos);
+  REQUIRE(usda.find("0: [3],") != std::string::npos);
+  REQUIRE(usda.find("1: [4],") != std::string::npos);
+  REQUIRE(usda.find("0: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
 }
 
-TEST_CASE("Animated USDA never morphs recalculated mesh points", "[export][usd]")
+TEST_CASE("Animated USDA holds recalculated meshes until the next frame", "[export][usd]")
 {
   const std::string usda = exportAnimationToString(makeVaryingTopologyFrames());
 
-  REQUIRE(usda.find(".999:") == std::string::npos);
-  REQUIRE(usda.find("0: \"inherited\"") != std::string::npos);
-  REQUIRE(usda.find("1: \"invisible\"") != std::string::npos);
+  // CSG recalculation does not preserve vertex correspondence. Repeating each mesh just before
+  // the next integer time prevents USD from morphing unrelated points across the whole frame.
+  REQUIRE(usda.find("0.999: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
+  // Integer topology arrays are already held; duplicating them would only inflate the file.
+  REQUIRE(usda.find("0.999: [3],") == std::string::npos);
+  REQUIRE(usda.find("0.999: [0, 1, 2],") == std::string::npos);
 }
 
 TEST_CASE("Animated USDA reuses cache-stable geometry and samples only its transform", "[export][usd]")
@@ -295,11 +297,9 @@ TEST_CASE("Animated USDA optimizes stable objects beside changing geometry", "[e
 
   const std::string usda = exportAnimationToString(frames);
 
-  REQUIRE(countOccurrences(usda, "point3f[] points =") == 3);
-  REQUIRE(usda.find("point3f[] points.timeSamples") == std::string::npos);
-  REQUIRE(countOccurrences(usda, "token visibility.timeSamples = {") == 2);
-  REQUIRE(usda.find("point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]") !=
-          std::string::npos);
+  REQUIRE(countOccurrences(usda, "point3f[] points =") == 1);
+  REQUIRE(countOccurrences(usda, "point3f[] points.timeSamples = {") == 1);
+  REQUIRE(usda.find("1: [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],") != std::string::npos);
 }
 
 TEST_CASE("Animated USDA keeps overlapping union members on the flattened fallback", "[export][usd]")
@@ -317,8 +317,7 @@ TEST_CASE("Animated USDA keeps overlapping union members on the flattened fallba
   const std::string usda = exportAnimationToString(frames);
 
   REQUIRE(usda.find("xformOp:") == std::string::npos);
-  REQUIRE(countOccurrences(usda, "def Mesh \"mesh0_frame") == 2);
-  REQUIRE(countOccurrences(usda, "token visibility.timeSamples = {") == 2);
+  REQUIRE(usda.find("point3f[] points.timeSamples = {") != std::string::npos);
 }
 
 TEST_CASE("Animated USDA keeps per-colour materials across frames", "[export][usd]")
@@ -354,7 +353,7 @@ TEST_CASE("A single-frame animation still emits time samples", "[export][usd]")
 
   REQUIRE(usda.find("startTimeCode = 0") != std::string::npos);
   REQUIRE(usda.find("endTimeCode = 0") != std::string::npos);
-  REQUIRE(usda.find("token visibility.timeSamples = {") != std::string::npos);
+  REQUIRE(usda.find(".timeSamples = {") != std::string::npos);
 }
 
 TEST_CASE("Static USDA has no time samples at all", "[export][usd]")
