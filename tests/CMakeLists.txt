@@ -874,6 +874,16 @@ add_cmdline_test(export-normalmap     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING
 add_cmdline_test(export-coordinatemap OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=coordinatemap)
 add_cmdline_test(export-flatmap       OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=flatmap)
 add_cmdline_test(export-chromatic     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=chromatic)
+# Depth map range stability. Depth is normalized across the model's bounding
+# sphere capped at the viewing distance (capped_sphere_range() in
+# src/io/depthmap.h), which is orientation invariant - so these two views of one
+# long model must grade against the same range. The side view is deliberately the
+# unflattering one: invariance costs contrast exactly where a model is thin in
+# depth, and that cost belongs in the suite rather than only in the argument for
+# it.
+set(DEPTHMAP_ELONGATED ${TEST_SCAD_DIR}/misc/depthmap-elongated.scad)
+add_cmdline_test(export-depthmap-endon  OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,90,400)
+add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,0,400)
 
 # Note: we're missing coverage for ${PREVIEW_DIFFERENT_EXPECTATIONS} files for throwntogether
 add_cmdline_test(throwntogether-cgal  OPENSCAD FILES ${ALL_THROWNTOGETHER_FILES} SUFFIX png EXPECTEDDIR throwntogether ARGS --preview=throwntogether --backend=cgal)

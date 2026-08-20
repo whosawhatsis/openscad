@@ -312,3 +312,47 @@ bool export_pfm(std::ostream& out, const std::vector<float>& depths, std::uint32
   }
   return out.good();
 }
+
+EyeDepthExtent eye_depth_extent(const double bboxMin[3], const double bboxMax[3],
+                                const double modelview[16])
+{
+  EyeDepthExtent extent;
+  bool first = true;
+  for (int i = 0; i < 8; ++i) {
+    const double corner[3] = {i & 1 ? bboxMax[0] : bboxMin[0], i & 2 ? bboxMax[1] : bboxMin[1],
+                              i & 4 ? bboxMax[2] : bboxMin[2]};
+    // Eye-space z from the modelview; distance in front of the eye is -z.
+    const double dist =
+      -(modelview[2] * corner[0] + modelview[6] * corner[1] + modelview[10] * corner[2] + modelview[14]);
+    if (first) {
+      extent.nearest = extent.farthest = dist;
+      first = false;
+    } else {
+      extent.nearest = std::min(extent.nearest, dist);
+      extent.farthest = std::max(extent.farthest, dist);
+    }
+  }
+  return extent;
+}
+
+DepthRange capped_sphere_range(const double bboxMin[3], const double bboxMax[3],
+                               const double modelview[16])
+{
+  double centre[3];
+  double radius2 = 0.0;
+  for (int i = 0; i < 3; ++i) {
+    centre[i] = 0.5 * (bboxMin[i] + bboxMax[i]);
+    const double half = 0.5 * (bboxMax[i] - bboxMin[i]);
+    radius2 += half * half;
+  }
+  const double radius = std::sqrt(radius2);
+
+  // Distance from the eye to the sphere centre; -z is in front of the eye.
+  const double dist =
+    -(modelview[2] * centre[0] + modelview[6] * centre[1] + modelview[10] * centre[2] + modelview[14]);
+
+  // Cap the diameter at the viewing distance, so the near end stays in front of
+  // the eye however large the model is relative to the camera.
+  const double capped = std::min(radius, std::max(0.0, dist) / 2.0);
+  return depth_range_for_bounds(dist - capped, dist + capped);
+}
