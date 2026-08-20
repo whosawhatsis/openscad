@@ -59,8 +59,16 @@ inline constexpr double DEPTHMAP_METRIC_SCALE = 1.0;
  */
 inline constexpr double DEPTHMAP_FINE_SCALE = 100.0;
 
-//! Units per millimetre for a profile, or 0 for the profiles that do not encode
-//! absolute distance.
+/*!
+   Units per millimetre for a profile, or 0 for the profiles that do not encode
+   absolute distance.
+
+   A non-zero answer also means the output is 16-bit: 8 bits of absolute depth is
+   not worth offering, since 256 levels across any range wide enough to hold a
+   scene is coarser than the geometry being described. Two things depend on that
+   invariant - the encoder's bytes-per-pixel, and the embedded metadata, which is
+   only possible on the 16-bit writer.
+ */
 inline constexpr double depth_units_per_mm(DepthProfile profile)
 {
   switch (profile) {

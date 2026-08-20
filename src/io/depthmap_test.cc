@@ -575,3 +575,21 @@ TEST_CASE("background is the same sentinel in both metric profiles", "[Depthmap]
     CHECK(value == 65535);
   }
 }
+
+TEST_CASE("every absolute-scale profile is 16-bit", "[Depthmap]")
+{
+  // 8 bits of absolute depth is not worth offering: 256 levels over any range
+  // wide enough to hold a scene is coarser than the geometry it describes. So a
+  // profile that encodes real distance is always 16-bit, and the metadata design
+  // leans on it - the 16-bit writer is lodepng everywhere, while the 8-bit path
+  // is CoreGraphics on macOS and cannot carry arbitrary text chunks.
+  const std::vector<float> depths = {10.0f};
+  for (const auto profile : {DepthProfile::metric, DepthProfile::metricFine, DepthProfile::visual}) {
+    const auto img = encode_depthmap(depths, 1, 1, profile);
+    if (depth_units_per_mm(profile) > 0.0) {
+      CHECK(img.bytesPerPixel == 2);
+    } else {
+      CHECK(img.bytesPerPixel > 2);  // normalized profiles are RGBA, never absolute
+    }
+  }
+}
