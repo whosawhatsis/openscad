@@ -203,6 +203,13 @@ std::string exportAnimationToString(const std::vector<std::shared_ptr<const Geom
   return out.str();
 }
 
+std::string exportAnimationToString(const std::vector<UsdAnimationFrame>& frames, unsigned fps = 30)
+{
+  std::ostringstream out;
+  export_usda_animation(frames, fps, out, usdaExportInfo());
+  return out.str();
+}
+
 }  // namespace
 
 TEST_CASE("Animated USDA declares the time range and rate", "[export][usd]")
@@ -228,6 +235,77 @@ TEST_CASE("Animated USDA time-samples topology, not just points", "[export][usd]
   REQUIRE(usda.find("0: [3],") != std::string::npos);
   REQUIRE(usda.find("1: [4],") != std::string::npos);
   REQUIRE(usda.find("0: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
+}
+
+TEST_CASE("Animated USDA reuses cache-stable geometry and samples only its transform", "[export][usd]")
+{
+  const auto triangle = std::shared_ptr<const PolySet>(makeTriangle());
+  Transform3d moved = Transform3d::Identity();
+  moved.translate(Vector3d(10, 20, 30));
+
+  const std::vector<UsdAnimationFrame> frames{
+    {.geometry = triangle,
+     .objects = {{.geometry = triangle,
+                  .transform = Transform3d::Identity(),
+                  .color = Color4f(1, 0, 0, 1),
+                  .nodeIndex = 7}}},
+    {.geometry = triangle,
+     .objects =
+       {{.geometry = triangle, .transform = moved, .color = Color4f(1, 0, 0, 1), .nodeIndex = 7}}},
+  };
+
+  const std::string usda = exportAnimationToString(frames);
+
+  REQUIRE(usda.find("double3 xformOp:translate.timeSamples = {") != std::string::npos);
+  REQUIRE(usda.find("quatf xformOp:orient.timeSamples = {") != std::string::npos);
+  REQUIRE(usda.find("uniform token[] xformOpOrder = [\"xformOp:translate\", \"xformOp:orient\"]") !=
+          std::string::npos);
+  REQUIRE(usda.find("matrix4d xformOp:transform") == std::string::npos);
+  REQUIRE(usda.find("point3f[] points.timeSamples") == std::string::npos);
+  REQUIRE(countOccurrences(usda, "point3f[] points =") == 1);
+}
+
+TEST_CASE("Animated USDA optimizes stable objects beside changing geometry", "[export][usd]")
+{
+  const auto stable = std::shared_ptr<const PolySet>(makeTriangle());
+  const auto changing0 = std::shared_ptr<const PolySet>(makeTriangle());
+  auto quad = std::make_shared<PolySet>(3);
+  quad->vertices = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}};
+  quad->indices = {{0, 1, 2, 3}};
+
+  const auto object = [](const std::shared_ptr<const PolySet>& geometry, int nodeIndex, double x) {
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(Vector3d(x, 0, 0));
+    return UsdAnimationObject{geometry, transform, Color4f(1, 0, 0, 1), nodeIndex};
+  };
+  const std::vector<UsdAnimationFrame> frames{
+    {.geometry = stable, .objects = {object(stable, 1, 0), object(changing0, 2, 10)}},
+    {.geometry = stable, .objects = {object(stable, 1, 0), object(quad, 2, 10)}},
+  };
+
+  const std::string usda = exportAnimationToString(frames);
+
+  REQUIRE(countOccurrences(usda, "point3f[] points =") == 1);
+  REQUIRE(countOccurrences(usda, "point3f[] points.timeSamples = {") == 1);
+  REQUIRE(usda.find("1: [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],") != std::string::npos);
+}
+
+TEST_CASE("Animated USDA keeps overlapping union members on the flattened fallback", "[export][usd]")
+{
+  const auto first = std::shared_ptr<const PolySet>(makeTriangle());
+  const auto second = std::shared_ptr<const PolySet>(makeTriangle());
+  const auto object = [](const std::shared_ptr<const PolySet>& geometry, int nodeIndex) {
+    return UsdAnimationObject{geometry, Transform3d::Identity(), Color4f(1, 0, 0, 1), nodeIndex};
+  };
+  const std::vector<UsdAnimationFrame> frames{
+    {.geometry = first, .objects = {object(first, 1), object(second, 2)}},
+    {.geometry = first, .objects = {object(first, 1), object(second, 2)}},
+  };
+
+  const std::string usda = exportAnimationToString(frames);
+
+  REQUIRE(usda.find("xformOp:") == std::string::npos);
+  REQUIRE(usda.find("point3f[] points.timeSamples = {") != std::string::npos);
 }
 
 TEST_CASE("Animated USDA keeps per-colour materials across frames", "[export][usd]")

@@ -25,6 +25,18 @@ using S3MF = Settings::SettingsExport3mf;
 
 class PolySet;
 
+struct UsdAnimationObject {
+  std::shared_ptr<const PolySet> geometry;
+  Transform3d transform;
+  Color4f color;
+  int nodeIndex;
+};
+
+struct UsdAnimationFrame {
+  std::shared_ptr<const Geometry> geometry;
+  std::vector<UsdAnimationObject> objects;
+};
+
 enum class FileFormat {
   ASCII_STL,
   BINARY_STL,
@@ -348,6 +360,10 @@ void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& outp
 void export_usda_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo);
 void export_usdz_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo);
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);

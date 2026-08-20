@@ -914,6 +914,7 @@ list(APPEND EXPORT_POV_TEST_FILES ${TEST_SCAD_DIR}/pov/pov-export.scad)
 
 list(APPEND EXPORT_USD_TEST_FILES ${TEST_SCAD_DIR}/usd/usd-export.scad)
 list(APPEND EXPORT_USD_ANIM_TEST_FILES ${TEST_SCAD_DIR}/usd/usd-export-animated.scad)
+list(APPEND EXPORT_USD_TRANSFORM_ANIM_TEST_FILES ${TEST_SCAD_DIR}/usd/usd-export-transform-animated.scad)
 
 list(APPEND EXPORT_IMPORT_3D_FILES
 ${TEST_SCAD_DIR}/3D/features/mirror-tests.scad
@@ -996,6 +997,7 @@ add_cmdline_test(export-pov-all          EXPERIMENTAL OPENSCAD SUFFIX pov FILES 
 
 add_cmdline_test(export-usda             EXPERIMENTAL OPENSCAD SUFFIX usda FILES ${EXPORT_USD_TEST_FILES} ARGS --enable=predictible-output --backend=manifold)
 add_cmdline_test(export-usda-animated    EXPERIMENTAL OPENSCAD SUFFIX usda FILES ${EXPORT_USD_ANIM_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --animate 3 --animate_fps 24)
+add_cmdline_test(export-usda-transform-animated EXPERIMENTAL OPENSCAD SUFFIX usda FILES ${EXPORT_USD_TRANSFORM_ANIM_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --animate 3 --animate_fps 24)
 
 add_cmdline_test(export-param            OPENSCAD SUFFIX json FILES "${TEST_SCAD_DIR}/issues/issue6597.scad" ARGS --export-format param)
 

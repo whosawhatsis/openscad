@@ -396,9 +396,25 @@ Camera get_camera(const po::variables_map& vm)
   return camera;
 }
 
+bool collectUsdAnimationObjects(const std::shared_ptr<CSGNode>& node,
+                                std::vector<UsdAnimationObject>& objects)
+{
+  if (!node || node->isEmptySet()) return true;
+  if (const auto leaf = std::dynamic_pointer_cast<CSGLeaf>(node)) {
+    if (leaf->polyset) {
+      objects.push_back({leaf->polyset, leaf->matrix, leaf->color, leaf->index});
+    }
+    return true;
+  }
+  const auto operation = std::dynamic_pointer_cast<CSGOperation>(node);
+  if (!operation || operation->getType() != OpenSCADOperator::UNION) return false;
+  return collectUsdAnimationObjects(operation->left(), objects) &&
+         collectUsdAnimationObjects(operation->right(), objects);
+}
+
 int do_export(const CommandLine& cmd, const RenderVariables& render_variables, FileFormat export_format,
               SourceFile *root_file, VideoEncoder *videoEncoder,
-              std::vector<std::shared_ptr<const Geometry>> *geomFrames)
+              std::vector<UsdAnimationFrame> *usdFrames)
 {
   auto filename_str = fs::path(cmd.output_file).generic_string();
   // Avoid possibility of fs::absolute throwing when passed an empty path
@@ -523,7 +539,7 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
                                              input_filename, &cmd.camera, cmd.exportOptions);
-    if (geomFrames != nullptr) {
+    if (usdFrames != nullptr) {
       /*
          Animated USD: one stage covers every frame, so the geometry is collected here and
          the caller writes the single file once the loop has finished.
@@ -531,7 +547,12 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
          accumulator abstraction over both. Unify them if a third frame-collecting format
          ever appears -- two is not yet a pattern.
        */
-      geomFrames->push_back(root_geom);
+      GeometryEvaluator usdGeometryEvaluator(tree);
+      CSGTreeEvaluator usdCsgEvaluator(tree, &usdGeometryEvaluator);
+      std::vector<UsdAnimationObject> objects;
+      const auto csgRoot = usdCsgEvaluator.buildCSGTree(*tree.root());
+      if (!collectUsdAnimationObjects(csgRoot, objects)) objects.clear();
+      usdFrames->push_back({root_geom, std::move(objects)});
     } else if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
       return 1;
     }
@@ -699,7 +720,7 @@ int cmdline(const CommandLine& cmd)
        USD is animatable but not an animation-only container: it collects the frames'
        geometry and writes one time-sampled stage at the end.
      */
-    std::vector<std::shared_ptr<const Geometry>> geomFrames;
+    std::vector<UsdAnimationFrame> usdFrames;
     const bool collectsGeometry =
       fileformat::canAnimate(export_format) && !fileformat::isAnimation(export_format);
     if (fileformat::isAnimation(export_format)) {
@@ -735,7 +756,7 @@ int cmdline(const CommandLine& cmd)
       LOG("Exporting %1$s...", cmd.filename);
 
       int const r = do_export(frame_cmd, render_variables, export_format, root_file, encoder.get(),
-                              collectsGeometry ? &geomFrames : nullptr);
+                              collectsGeometry ? &usdFrames : nullptr);
       if (r != 0) {
         return r;
       }
@@ -749,9 +770,9 @@ int cmdline(const CommandLine& cmd)
         false, fs::path(cmd.output_file).generic_string(),
         [&](std::ostream& stream) {
           if (export_format == FileFormat::USDZ) {
-            export_usdz_animation(geomFrames, cmd.animate.fps, stream, exportInfo);
+            export_usdz_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
           } else {
-            export_usda_animation(geomFrames, cmd.animate.fps, stream, exportInfo);
+            export_usda_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
           }
         },
         std::ios::out | std::ios::binary);
