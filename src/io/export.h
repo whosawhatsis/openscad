@@ -44,6 +44,8 @@ enum class FileFormat {
   PNG,
   PDF,
   POV,
+  USDA,
+  USDZ,
   PARAM
 };
 
@@ -320,6 +322,10 @@ void export_svg(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
                 const ExportInfo& exportInfo);
 void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
+void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo);
+void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo);
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_nefdbg(const std::shared_ptr<const Geometry>& geom, std::ostream& output);

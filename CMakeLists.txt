@@ -1101,6 +1101,7 @@ set(CORE_SOURCES
   src/io/export_stl.cc
   src/io/export_svg.cc
   src/io/export_pov.cc
+  src/io/export_usd.cc
   src/io/export_param.cc
   src/io/export_wrl.cc
   src/io/fileutils.cc
@@ -1577,6 +1578,8 @@ endif()
 file(GLOB_RECURSE TEST_SOURCES
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
+  "src/io/*_test.cc"
+  "src/glview/*_test.cc"
 )
 file(GLOB_RECURSE GUI_TEST_SOURCES
   "src/gui/*_test.cc"
