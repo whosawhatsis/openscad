@@ -866,11 +866,13 @@ add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_COMMON_FIL
 add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_DIFFERENT_EXPECTATIONS} ARGS --backend=manifold)
 endif()
 
-# Depth map orientation dependence. The visual profile normalizes across the
-# bounding box's depth extent along the current view axis, so a long model grades
-# over a very different range end-on than side-on. Both views are pinned: the
-# behaviour is a deliberate trade (see eye_depth_extent() in src/io/depthmap.h),
-# and a silent change to either one is a change users will see.
+# Depth map range stability. Depth is normalized across the model's bounding
+# sphere capped at the viewing distance (capped_sphere_range() in
+# src/io/depthmap.h), which is orientation invariant - so these two views of one
+# long model must grade against the same range. The side view is deliberately the
+# unflattering one: invariance costs contrast exactly where a model is thin in
+# depth, and that cost belongs in the suite rather than only in the argument for
+# it.
 set(DEPTHMAP_ELONGATED ${TEST_SCAD_DIR}/misc/depthmap-elongated.scad)
 add_cmdline_test(export-depthmap-endon  OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,90,400)
 add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,0,400)
