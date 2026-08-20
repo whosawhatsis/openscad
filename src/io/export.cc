@@ -99,8 +99,7 @@ Containers& containers()
     add_item(*containers, {FileFormat::PNG, "png", "png", "PNG"});
     add_item(*containers, {FileFormat::APNG, "apng", "apng", "Animated PNG"});
     add_item(*containers, {FileFormat::GIF, "gif", "gif", "Animated GIF"});
-    add_item(*containers, {FileFormat::AVI, "avi", "avi", "MJPEG AVI"});
-    add_item(*containers, {FileFormat::DEPTHMAP, "depthmap", "png", "Depthmap PNG"});
+    add_item(*containers, {FileFormat::AVI, "avi", "avi", "MJPEG AVI"});    add_item(*containers, {FileFormat::DEPTHMAP, "depthmap", "png", "Depthmap PNG"});
     add_item(*containers, {FileFormat::PFM, "pfm", "pfm", "Portable Float Map"});
     add_item(*containers, {FileFormat::NORMALMAP_PNG, "normalmap", "png", "Normal Map PNG"});
     add_item(*containers, {FileFormat::COORDINATEMAP_PNG, "coordinatemap", "png", "Coordinate Map PNG"});
@@ -180,8 +179,7 @@ bool canPreview(FileFormat format)
 
 bool isAnimation(FileFormat format)
 {
-  return format == FileFormat::APNG || format == FileFormat::GIF || format == FileFormat::AVI;
-}
+  return format == FileFormat::APNG || format == FileFormat::GIF || format == FileFormat::AVI;}
 
 bool is3D(FileFormat format)
 {

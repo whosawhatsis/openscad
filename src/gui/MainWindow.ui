@@ -337,22 +337,22 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
-    <widget class="QMenu" name="menuAgentLighting">
+    <widget class="QMenu" name="menuAnalysisView">
      <property name="title">
-      <string>&amp;Agent Lighting</string>
+      <string>Analysis &amp;View</string>
      </property>
-     <addaction name="viewActionAgentLightingDefault"/>
-     <addaction name="viewActionAgentLightingNormal"/>
-     <addaction name="viewActionAgentLightingCoordinate"/>
-     <addaction name="viewActionAgentLightingFlat"/>
-     <addaction name="viewActionAgentLightingChromatic"/>
+     <addaction name="viewActionAnalysisViewDefault"/>
+     <addaction name="viewActionAnalysisViewDepth"/>
+     <addaction name="viewActionAnalysisViewNormal"/>
+     <addaction name="viewActionAnalysisViewCoordinate"/>
+     <addaction name="viewActionAnalysisViewFlat"/>
+     <addaction name="viewActionAnalysisViewChromatic"/>
     </widget>
     <addaction name="viewActionPreview"/>
     <addaction name="viewActionThrownTogether"/>
-    <addaction name="menuAgentLighting"/>
+    <addaction name="menuAnalysisView"/>
     <addaction name="separator"/>
     <addaction name="viewActionShowEdges"/>
-    <addaction name="viewActionShowDepth"/>
     <addaction name="viewActionShowAxes"/>
     <addaction name="viewActionShowScaleProportional"/>
     <addaction name="viewActionShowCrosshairs"/>
@@ -1142,18 +1142,18 @@
     <string>F12</string>
    </property>
   </action>
-  <action name="viewActionShowDepth">
+  <action name="viewActionAnalysisViewDepth">
    <property name="checkable">
     <bool>true</bool>
    </property>
    <property name="text">
-    <string>Shade by Depth</string>
+    <string>De&amp;pth</string>
    </property>
    <property name="toolTip">
     <string>Shade the model by distance from the camera, previewing a depth map export</string>
    </property>
   </action>
-  <action name="viewActionAgentLightingDefault">
+  <action name="viewActionAnalysisViewDefault">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -1161,7 +1161,7 @@
     <string>&amp;Default (shaded)</string>
    </property>
   </action>
-  <action name="viewActionAgentLightingNormal">
+  <action name="viewActionAnalysisViewNormal">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -1169,7 +1169,7 @@
     <string>&amp;Normal Map</string>
    </property>
   </action>
-  <action name="viewActionAgentLightingCoordinate">
+  <action name="viewActionAnalysisViewCoordinate">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -1177,7 +1177,7 @@
     <string>&amp;Coordinate Map</string>
    </property>
   </action>
-  <action name="viewActionAgentLightingFlat">
+  <action name="viewActionAnalysisViewFlat">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -1185,7 +1185,7 @@
     <string>&amp;Flat / Unshaded</string>
    </property>
   </action>
-  <action name="viewActionAgentLightingChromatic">
+  <action name="viewActionAnalysisViewChromatic">
    <property name="checkable">
     <bool>true</bool>
    </property>

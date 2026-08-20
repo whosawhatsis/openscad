@@ -34,8 +34,7 @@ GLView::GLView()
   showaxes = false;
   showcrosshairs = false;
   showscale = false;
-  showdepth = false;
-  agent_lighting_mode = AgentLightingMode::Default;
+  analysis_mode = AnalysisMode::Default;
   colorscheme = &ColorMap::instance().defaultColorScheme();
   cam = Camera();
   far_far_away = RenderSettings::inst()->far_gl_clip_limit;
@@ -381,7 +380,7 @@ void GLView::paintGL()
   glDisable(GL_LIGHTING);
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
-  if (agent_lighting_mode != AgentLightingMode::Default) {
+  if (analysis_mode != AnalysisMode::Default) {
     // An agent image is data, so its background must not depend on which colour
     // scheme the user happens to have selected, and must not be a gradient - both
     // would decode as varying "surface" values where there is no surface. Black,
@@ -392,7 +391,7 @@ void GLView::paintGL()
   auto axescolor = ColorMap::getColor(*this->colorscheme, RenderColor::AXES_COLOR);
   auto crosshaircol = ColorMap::getColor(*this->colorscheme, RenderColor::CROSSHAIR_COLOR);
 
-  if (this->showdepth) {
+  if (showDepth()) {
     // No geometry is infinitely far, exactly like the depthmap export's
     // background pixels (which fall out for free there, since the exporter
     // only ever reads the depth buffer). The far end of the viewport's own
@@ -472,7 +471,7 @@ void GLView::paintGL()
 
   // Applies to the model only: the background gradient, axes and crosshairs are
   // drawn above, and the small axes below, all outside the fog.
-  if (this->showdepth) setupDepthShading();
+  if (showDepth()) setupDepthShading();
 
   if (this->renderer) {
 #if defined(ENABLE_OPENCSG)
@@ -480,18 +479,18 @@ void GLView::paintGL()
     OpenCSG::setContext(this->opencsg_id);
 #endif
     ShaderUtils::ShaderInfo *active_shader = edge_shader.get();
-    if (agent_lighting_mode == AgentLightingMode::Normal && agent_normal_shader) {
+    if (analysis_mode == AnalysisMode::Normal && agent_normal_shader) {
       active_shader = agent_normal_shader.get();
-    } else if (agent_lighting_mode == AgentLightingMode::Coordinate && agent_coord_shader) {
+    } else if (analysis_mode == AnalysisMode::Coordinate && agent_coord_shader) {
       active_shader = agent_coord_shader.get();
       applyCoordinateBounds(active_shader);
-    } else if (agent_lighting_mode == AgentLightingMode::Chromatic && agent_chromatic_shader) {
+    } else if (analysis_mode == AnalysisMode::Chromatic && agent_chromatic_shader) {
       active_shader = agent_chromatic_shader.get();
       applyChromaticLights(active_shader);
     }
 
     bool active_showedges = showedges;
-    if (agent_lighting_mode != AgentLightingMode::Default) {
+    if (analysis_mode != AnalysisMode::Default) {
       active_showedges = false;
     }
     // Set both ways every paint rather than only disabling. A one-way disable
@@ -499,8 +498,7 @@ void GLView::paintGL()
     // unlit - and the chromatic gauge, which also turns lighting off, leaked the
     // same way. Both are fixed by making this state a function of the current
     // mode instead of a side effect of having once been in another one.
-    if (agent_lighting_mode == AgentLightingMode::Flat ||
-        agent_lighting_mode == AgentLightingMode::Chromatic) {
+    if (analysis_mode == AnalysisMode::Flat || analysis_mode == AnalysisMode::Chromatic) {
       glDisable(GL_LIGHTING);
     } else {
       glEnable(GL_LIGHTING);
@@ -508,7 +506,7 @@ void GLView::paintGL()
 
     this->renderer->prepare(active_shader);
     this->renderer->draw(active_showedges, active_shader);
-    if (agent_lighting_mode == AgentLightingMode::Chromatic && chromatic_gauge) {
+    if (analysis_mode == AnalysisMode::Chromatic && chromatic_gauge) {
       drawChromaticGauge();
     }
   }
@@ -521,7 +519,7 @@ void GLView::paintGL()
   for (const SelectedObject& obj : this->shown_obj) {
     showObject(obj, eyedir);
   }
-  if (this->showdepth) teardownDepthShading();
+  if (showDepth()) teardownDepthShading();
   glDisable(GL_LIGHTING);
   if (showaxes) GLView::showSmallaxes(axescolor);
 

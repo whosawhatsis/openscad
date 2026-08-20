@@ -515,7 +515,7 @@ void MainWindow::loadViewSettings()
     viewActionShowEdges->setChecked(true);
   }
   if (settings.value("view/showDepth").toBool()) {
-    viewActionShowDepth->setChecked(true);
+    viewActionAnalysisViewDepth->trigger();
   }
   if (settings.value("view/showAxes", true).toBool()) {
     viewActionShowAxes->setChecked(true);
@@ -3057,38 +3057,43 @@ void MainWindow::viewModePreview()
 
 #endif /* ENABLE_OPENCSG */
 
-void MainWindow::setAgentLightingMode(AgentLightingMode mode)
+void MainWindow::setAnalysisMode(AnalysisMode mode)
 {
-  this->qglview->setAgentLightingMode(mode);
+  if (mode != AnalysisMode::Depth) {
+    // Otherwise the persisted preference outlives the choice that replaced it
+    // and the next launch reopens in Depth.
+    QSettingsCached().setValue("view/showDepth", false);
+  }
+  this->qglview->setAnalysisMode(mode);
   // The viewport paints on its own schedule, so unlike the CLI export path the
   // mode only has to be set before the next paint rather than before a
   // particular one - but it still has to force that paint.
   this->qglview->update();
 }
 
-void MainWindow::on_viewActionAgentLightingDefault_triggered()
+void MainWindow::on_viewActionAnalysisViewDefault_triggered()
 {
-  setAgentLightingMode(AgentLightingMode::Default);
+  setAnalysisMode(AnalysisMode::Default);
 }
 
-void MainWindow::on_viewActionAgentLightingNormal_triggered()
+void MainWindow::on_viewActionAnalysisViewNormal_triggered()
 {
-  setAgentLightingMode(AgentLightingMode::Normal);
+  setAnalysisMode(AnalysisMode::Normal);
 }
 
-void MainWindow::on_viewActionAgentLightingCoordinate_triggered()
+void MainWindow::on_viewActionAnalysisViewCoordinate_triggered()
 {
-  setAgentLightingMode(AgentLightingMode::Coordinate);
+  setAnalysisMode(AnalysisMode::Coordinate);
 }
 
-void MainWindow::on_viewActionAgentLightingFlat_triggered()
+void MainWindow::on_viewActionAnalysisViewFlat_triggered()
 {
-  setAgentLightingMode(AgentLightingMode::Flat);
+  setAnalysisMode(AnalysisMode::Flat);
 }
 
-void MainWindow::on_viewActionAgentLightingChromatic_triggered()
+void MainWindow::on_viewActionAnalysisViewChromatic_triggered()
 {
-  setAgentLightingMode(AgentLightingMode::Chromatic);
+  setAnalysisMode(AnalysisMode::Chromatic);
 }
 
 void MainWindow::updateViewModeAfterGLInit()
@@ -3123,12 +3128,11 @@ void MainWindow::on_viewActionShowEdges_toggled(bool checked)
   this->qglview->update();
 }
 
-void MainWindow::on_viewActionShowDepth_toggled(bool checked)
+void MainWindow::on_viewActionAnalysisViewDepth_triggered()
 {
   QSettingsCached settings;
-  settings.setValue("view/showDepth", checked);
-  this->qglview->setShowDepth(checked);
-  this->qglview->update();
+  settings.setValue("view/showDepth", true);
+  setAnalysisMode(AnalysisMode::Depth);
 }
 
 void MainWindow::on_viewActionShowAxes_toggled(bool checked)
@@ -4329,14 +4333,15 @@ void MainWindow::setupMenusAndActions()
 
   // Exclusive: the modes are alternative ways of drawing the same view, not
   // toggles that compose.
-  agentLightingGroup = new QActionGroup(this);
-  agentLightingGroup->setExclusive(true);
-  agentLightingGroup->addAction(this->viewActionAgentLightingDefault);
-  agentLightingGroup->addAction(this->viewActionAgentLightingNormal);
-  agentLightingGroup->addAction(this->viewActionAgentLightingCoordinate);
-  agentLightingGroup->addAction(this->viewActionAgentLightingFlat);
-  agentLightingGroup->addAction(this->viewActionAgentLightingChromatic);
-  this->viewActionAgentLightingDefault->setChecked(true);
+  analysisViewGroup = new QActionGroup(this);
+  analysisViewGroup->setExclusive(true);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDefault);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepth);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewNormal);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewCoordinate);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewFlat);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewChromatic);
+  this->viewActionAnalysisViewDefault->setChecked(true);
   if (this->qglview->hasOpenCSGSupport()) {
     this->viewActionPreview->setChecked(true);
   } else {

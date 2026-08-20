@@ -33,7 +33,17 @@
 #include "io/chromatic.h"
 #include "io/coordinatemap.h"
 
-enum class AgentLightingMode { Default, Normal, Coordinate, Flat, Chromatic };
+/*!
+   How the viewport (and the matching image exports) draw the model: ordinary
+   shading, or one of the analysis views that encode data instead of appearance.
+
+   One enum rather than a set of toggles because these are alternatives, not
+   layers. Depth shading used to be a separate `bool showdepth`, which let the
+   GUI show "Shade by Depth" checked while an agent lighting mode was active and
+   the renderer silently ignored the fog - a state the UI could express and the
+   renderer could not.
+ */
+enum class AnalysisMode { Default, Depth, Normal, Coordinate, Flat, Chromatic };
 
 class GLView
 {
@@ -71,14 +81,15 @@ public:
   void setShowCrosshairs(bool enabled) { this->showcrosshairs = enabled; }
   [[nodiscard]] bool transparentBackground() const { return this->transparent_background; }
   void setTransparentBackground(bool enabled) { this->transparent_background = enabled; }
-  [[nodiscard]] bool showDepth() const { return this->showdepth; }
-  void setShowDepth(bool enabled) { this->showdepth = enabled; }
+  //! Depth shading is AnalysisMode::Depth; kept as a named helper because the
+  //! draw path asks this question in three places.
+  [[nodiscard]] bool showDepth() const { return this->analysis_mode == AnalysisMode::Depth; }
   //! Pin the depth shading to an explicit range instead of the bounding box, so
   //! the viewport matches an export made with the same range.
   void setDepthOptions(const DepthmapOptions& options) { this->depthoptions = options; }
 
-  [[nodiscard]] AgentLightingMode agentLightingMode() const { return this->agent_lighting_mode; }
-  void setAgentLightingMode(AgentLightingMode mode) { this->agent_lighting_mode = mode; }
+  [[nodiscard]] AnalysisMode analysisMode() const { return this->analysis_mode; }
+  void setAnalysisMode(AnalysisMode mode) { this->analysis_mode = mode; }
   //! The box the coordinate map normalizes against, for the sidecar.
   [[nodiscard]] CoordinateBounds coordinateBounds() const;
 
@@ -117,11 +128,8 @@ public:
   bool showcrosshairs;
   bool showscale;
   bool transparent_background{false};
-  //! Shade the model by distance instead of by lighting - the viewport preview
-  //! of what a depth map export will contain.
-  bool showdepth{false};
   DepthmapOptions depthoptions{};
-  AgentLightingMode agent_lighting_mode;
+  AnalysisMode analysis_mode;
   bool chromatic_gauge = true;
   GLdouble modelview[16];
   GLdouble projection[16];

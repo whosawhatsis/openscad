@@ -1564,8 +1564,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestTabManager.h
     src/guitests/TestMainWindow.h
     src/guitests/TestExportImage.h
-    src/guitests/TestAgentLighting.h
-    src/guitests/UXTest.h
+    src/guitests/TestAnalysisView.h    src/guitests/UXTest.h
   )
 
   set(GUITESTS_SOURCES
@@ -1574,8 +1573,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestTabManager.cc
     src/guitests/TestMainWindow.cc
     src/guitests/TestExportImage.cc
-    src/guitests/TestAgentLighting.cc
-    src/guitests/UXTest.cc
+    src/guitests/TestAnalysisView.cc    src/guitests/UXTest.cc
   )
 
   list(APPEND Sources ${GUITESTS_SOURCES} ${GUITESTS_HEADERS})

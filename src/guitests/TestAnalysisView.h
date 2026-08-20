@@ -2,7 +2,7 @@
 
 #include "UXTest.h"
 
-class TestAgentLighting : public UXTest
+class TestAnalysisView : public UXTest
 {
   Q_OBJECT;
 private slots:
@@ -12,4 +12,8 @@ private slots:
   void checkModesAreMutuallyExclusive();
   //! The mode has to change what is actually drawn, not just a member.
   void checkModesChangeTheRender();
+  //! Depth shading is one of these modes, not an independent toggle layered on
+  //! top of them. While it was a separate bool, selecting it alongside another
+  //! mode left the menu item checked and the renderer ignoring it.
+  void checkDepthIsOneOfTheModes();
 };

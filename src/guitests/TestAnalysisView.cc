@@ -1,4 +1,4 @@
-#include "TestAgentLighting.h"
+#include "TestAnalysisView.h"
 
 #include <QAction>
 #include <QImage>
@@ -54,43 +54,43 @@ bool sameRender(const QImage& a, const QImage& b)
 
 }  // namespace
 
-void TestAgentLighting::checkMenuActionsSetTheMode()
+void TestAnalysisView::checkMenuActionsSetTheMode()
 {
   restoreWindowInitialState();
 
   // Triggering the action, rather than calling the handler directly: the failure
   // this guards against is a name mismatch that leaves Qt's auto-connection
   // silently unbound, which calling the handler would not catch.
-  window->viewActionAgentLightingNormal->trigger();
-  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Normal);
+  window->viewActionAnalysisViewNormal->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Normal);
 
-  window->viewActionAgentLightingCoordinate->trigger();
-  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Coordinate);
+  window->viewActionAnalysisViewCoordinate->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Coordinate);
 
-  window->viewActionAgentLightingFlat->trigger();
-  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Flat);
+  window->viewActionAnalysisViewFlat->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Flat);
 
-  window->viewActionAgentLightingChromatic->trigger();
-  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Chromatic);
+  window->viewActionAnalysisViewChromatic->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Chromatic);
 
-  window->viewActionAgentLightingDefault->trigger();
-  QCOMPARE(window->qglview->agentLightingMode(), AgentLightingMode::Default);
+  window->viewActionAnalysisViewDefault->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Default);
 }
 
-void TestAgentLighting::checkModesAreMutuallyExclusive()
+void TestAnalysisView::checkModesAreMutuallyExclusive()
 {
   restoreWindowInitialState();
 
-  window->viewActionAgentLightingNormal->trigger();
-  QVERIFY(window->viewActionAgentLightingNormal->isChecked());
-  QVERIFY(!window->viewActionAgentLightingDefault->isChecked());
+  window->viewActionAnalysisViewNormal->trigger();
+  QVERIFY(window->viewActionAnalysisViewNormal->isChecked());
+  QVERIFY(!window->viewActionAnalysisViewDefault->isChecked());
 
-  window->viewActionAgentLightingChromatic->trigger();
-  QVERIFY(window->viewActionAgentLightingChromatic->isChecked());
-  QVERIFY(!window->viewActionAgentLightingNormal->isChecked());
+  window->viewActionAnalysisViewChromatic->trigger();
+  QVERIFY(window->viewActionAnalysisViewChromatic->isChecked());
+  QVERIFY(!window->viewActionAnalysisViewNormal->isChecked());
 }
 
-void TestAgentLighting::checkModesChangeTheRender()
+void TestAnalysisView::checkModesChangeTheRender()
 {
   restoreWindowInitialState();
 
@@ -98,7 +98,7 @@ void TestAgentLighting::checkModesChangeTheRender()
     QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
   window->tabManager->open(filename);
 
-  window->viewActionAgentLightingDefault->trigger();
+  window->viewActionAnalysisViewDefault->trigger();
   grabViewport(window);  // discard: the first paint after exposure is not settled
   const QImage shaded = grabViewport(window);
   QVERIFY(!shaded.isNull());
@@ -117,10 +117,10 @@ void TestAgentLighting::checkModesChangeTheRender()
     const char *name;
   };
   const ModeCase cases[] = {
-    {window->viewActionAgentLightingNormal, "Normal"},
-    {window->viewActionAgentLightingCoordinate, "Coordinate"},
-    {window->viewActionAgentLightingFlat, "Flat"},
-    {window->viewActionAgentLightingChromatic, "Chromatic"},
+    {window->viewActionAnalysisViewNormal, "Normal"},
+    {window->viewActionAnalysisViewCoordinate, "Coordinate"},
+    {window->viewActionAnalysisViewFlat, "Flat"},
+    {window->viewActionAnalysisViewChromatic, "Chromatic"},
   };
 
   // Each mode is checked round trip on its own, so a state leak names the mode
@@ -130,10 +130,30 @@ void TestAgentLighting::checkModesChangeTheRender()
     QVERIFY2(!sameRender(grabViewport(window), shaded),
              qPrintable(QString("%1 mode did not change the render").arg(c.name)));
 
-    window->viewActionAgentLightingDefault->trigger();
+    window->viewActionAnalysisViewDefault->trigger();
     QVERIFY2(sameRender(grabViewport(window), shaded),
              qPrintable(QString("returning to Default after %1 did not restore the view - "
                                 "that mode leaks GL state")
                           .arg(c.name)));
   }
+}
+
+void TestAnalysisView::checkDepthIsOneOfTheModes()
+{
+  restoreWindowInitialState();
+
+  // Depth belongs to the same exclusive group as the rest.
+  window->viewActionAnalysisViewDepth->trigger();
+  QVERIFY(window->viewActionAnalysisViewDepth->isChecked());
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Depth);
+
+  // Selecting another mode must deselect it - the failure this replaces was a
+  // checked "Shade by Depth" that the renderer silently discarded because an
+  // agent lighting mode was also active.
+  window->viewActionAnalysisViewNormal->trigger();
+  QVERIFY(!window->viewActionAnalysisViewDepth->isChecked());
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Normal);
+
+  window->viewActionAnalysisViewDefault->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Default);
 }

@@ -47,8 +47,7 @@ enum class FileFormat {
   PNG,
   APNG,
   GIF,
-  AVI,
-  DEPTHMAP,
+  AVI,  DEPTHMAP,
   PFM,
   NORMALMAP_PNG,
   COORDINATEMAP_PNG,
@@ -390,15 +389,14 @@ std::string get_current_iso8601_date_time_utc();
 /*!
    Build and paint an offscreen preview.
 
-   `agentMode` must be supplied here rather than set on the returned view: this
-   function paints, and export_png(const OffscreenView&) only saves the
-   framebuffer it left behind. A mode applied afterwards never reaches a paint
-   and the export silently writes an ordinary shaded image. The same is true of
-   `depthOptions` and of every other setting on this list.
+   Every setting here must be supplied to this call rather than set on the view it
+   returns: this function paints, and export_png(const OffscreenView&) only saves
+   the framebuffer that paint left behind. Anything applied afterwards never
+   reaches a paint, and the export silently writes an ordinary shaded image.
  */
 std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
                                                const DepthmapOptions& depthOptions = {},
-                                               AgentLightingMode agentMode = AgentLightingMode::Default,
+                                               AnalysisMode agentMode = AnalysisMode::Default,
                                                bool chromaticGauge = true);
 bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
                 Camera& camera, std::ostream& output);
