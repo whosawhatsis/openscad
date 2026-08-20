@@ -28,6 +28,18 @@ using S3MF = Settings::SettingsExport3mf;
 
 class PolySet;
 
+struct UsdAnimationObject {
+  std::shared_ptr<const PolySet> geometry;
+  Transform3d transform;
+  Color4f color;
+  int nodeIndex;
+};
+
+struct UsdAnimationFrame {
+  std::shared_ptr<const Geometry> geometry;
+  std::vector<UsdAnimationObject> objects;
+};
+
 enum class FileFormat {
   ASCII_STL,
   BINARY_STL,
@@ -47,7 +59,8 @@ enum class FileFormat {
   PNG,
   APNG,
   GIF,
-  AVI,  DEPTHMAP,
+  AVI,
+  DEPTHMAP,
   PFM,
   NORMALMAP_PNG,
   COORDINATEMAP_PNG,
@@ -59,7 +72,9 @@ enum class FileFormat {
   // Internal only: the binary payload a window and its private compute worker exchange.
   // Deliberately absent from the identifier table in export.cc, so it is not selectable
   // as an --export-format and cannot end up in a user's file.
-  IPC_GEOMETRY
+  IPC_GEOMETRY,
+  USDA,
+  USDZ
 };
 
 struct FileFormatInfo {
@@ -86,6 +101,12 @@ bool canPreview(FileFormat format);
    only meaningful together with --animate.
  */
 bool isAnimation(FileFormat format);
+/*!
+   True for the formats that fold every --animate frame into a single output file. A
+   superset of isAnimation(): the video containers are meaningless without --animate,
+   whereas USD is equally valid as a still, so it is animatable without requiring it.
+ */
+bool canAnimate(FileFormat format);
 bool is3D(FileFormat format);
 bool is2D(FileFormat format);
 
@@ -341,6 +362,23 @@ void export_svg(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
                 const ExportInfo& exportInfo);
 void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
+void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo);
+void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo);
+/*!
+   Writes one USD stage covering every animation frame. OpenSCAD re-evaluates the script per
+   frame, so topology may change between frames; USD represents that natively by
+   time-sampling points/faceVertexCounts/faceVertexIndices.
+ */
+void export_usda_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usdz_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_nefdbg(const std::shared_ptr<const Geometry>& geom, std::ostream& output);

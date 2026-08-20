@@ -99,7 +99,8 @@ Containers& containers()
     add_item(*containers, {FileFormat::PNG, "png", "png", "PNG"});
     add_item(*containers, {FileFormat::APNG, "apng", "apng", "Animated PNG"});
     add_item(*containers, {FileFormat::GIF, "gif", "gif", "Animated GIF"});
-    add_item(*containers, {FileFormat::AVI, "avi", "avi", "MJPEG AVI"});    add_item(*containers, {FileFormat::DEPTHMAP, "depthmap", "png", "Depthmap PNG"});
+    add_item(*containers, {FileFormat::AVI, "avi", "avi", "MJPEG AVI"});
+    add_item(*containers, {FileFormat::DEPTHMAP, "depthmap", "png", "Depthmap PNG"});
     add_item(*containers, {FileFormat::PFM, "pfm", "pfm", "Portable Float Map"});
     add_item(*containers, {FileFormat::NORMALMAP_PNG, "normalmap", "png", "Normal Map PNG"});
     add_item(*containers, {FileFormat::COORDINATEMAP_PNG, "coordinatemap", "png", "Coordinate Map PNG"});
@@ -107,6 +108,8 @@ Containers& containers()
     add_item(*containers, {FileFormat::CHROMATIC_PNG, "chromatic", "png", "Chromatic 3-Point PNG"});
     add_item(*containers, {FileFormat::PDF, "pdf", "pdf", "PDF"});
     add_item(*containers, {FileFormat::POV, "pov", "pov", "POV"});
+    add_item(*containers, {FileFormat::USDA, "usda", "usda", "USDA"});
+    add_item(*containers, {FileFormat::USDZ, "usdz", "usdz", "USDZ"});
 
     // Alias
     containers->identifierToInfo["stl"] = containers->identifierToInfo["asciistl"];
@@ -172,14 +175,20 @@ bool canPreview(FileFormat format)
 {
   return (format == FileFormat::AST || format == FileFormat::CSG || format == FileFormat::PARAM ||
           format == FileFormat::ECHO || format == FileFormat::TERM || format == FileFormat::PNG ||
-          format == FileFormat::DEPTHMAP || isAnimation(format) ||
-          format == FileFormat::NORMALMAP_PNG || format == FileFormat::COORDINATEMAP_PNG ||
-          format == FileFormat::FLATMAP_PNG || format == FileFormat::CHROMATIC_PNG);
+          format == FileFormat::DEPTHMAP || isAnimation(format) || format == FileFormat::NORMALMAP_PNG ||
+          format == FileFormat::COORDINATEMAP_PNG || format == FileFormat::FLATMAP_PNG ||
+          format == FileFormat::CHROMATIC_PNG);
 }
 
 bool isAnimation(FileFormat format)
 {
-  return format == FileFormat::APNG || format == FileFormat::GIF || format == FileFormat::AVI;}
+  return format == FileFormat::APNG || format == FileFormat::GIF || format == FileFormat::AVI;
+}
+
+bool canAnimate(FileFormat format)
+{
+  return isAnimation(format) || format == FileFormat::USDA || format == FileFormat::USDZ;
+}
 
 bool is3D(FileFormat format)
 {
@@ -189,7 +198,7 @@ bool is3D(FileFormat format)
          format == FileFormat::NEF3 || format == FileFormat::POV ||
          // Internal worker transport: 3D for dispatch purposes, but absent from the identifier
          // table, so all3D() (which iterates that table) still never offers it to a user.
-         format == FileFormat::IPC_GEOMETRY;
+         format == FileFormat::IPC_GEOMETRY || format == FileFormat::USDA || format == FileFormat::USDZ;
 }
 
 bool is2D(FileFormat format)
@@ -250,6 +259,8 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
   case FileFormat::PDF:          export_pdf(root_geom, output, exportInfo); break;
   case FileFormat::POV:          export_pov(root_geom, output, exportInfo); break;
   case FileFormat::IPC_GEOMETRY: export_ipc_geometry(root_geom, output); break;
+  case FileFormat::USDA:         export_usda(root_geom, output, exportInfo); break;
+  case FileFormat::USDZ:         export_usdz(root_geom, output, exportInfo); break;
 #ifdef ENABLE_CGAL
   case FileFormat::NEFDBG: export_nefdbg(root_geom, output); break;
   case FileFormat::NEF3:   export_nef3(root_geom, output); break;

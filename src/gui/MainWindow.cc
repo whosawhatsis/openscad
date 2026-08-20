@@ -89,6 +89,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <fstream>
 #include <utility>
 #include <vector>
 
@@ -201,6 +202,20 @@ std::string SHA256HashString(std::string aString)
 }
 
 #endif  // ifdef ENABLE_PYTHON
+
+static bool collectUsdAnimationObjects(const std::shared_ptr<CSGNode>& node,
+                                       std::vector<UsdAnimationObject>& objects)
+{
+  if (!node || node->isEmptySet()) return true;
+  if (const auto leaf = std::dynamic_pointer_cast<CSGLeaf>(node)) {
+    if (leaf->polyset) objects.push_back({leaf->polyset, leaf->matrix, leaf->color, leaf->index});
+    return true;
+  }
+  const auto operation = std::dynamic_pointer_cast<CSGOperation>(node);
+  if (!operation || operation->getType() != OpenSCADOperator::UNION) return false;
+  return collectUsdAnimationObjects(operation->left(), objects) &&
+         collectUsdAnimationObjects(operation->right(), objects);
+}
 
 #include "gui/PrintService.h"
 #include "input/MouseConfigWidget.h"
@@ -2178,10 +2193,34 @@ void MainWindow::csgRender()
 
   if (animateWidget->dumpPictures()) {
     animateWidget->nextFrame();
-    animateWidget->saveFrame(this->qglview->grabFrame());
+    if (animateWidget->recordsGeometry()) animateWidget->saveFrame(usdAnimationFrame());
+    else animateWidget->saveFrame(this->qglview->grabFrame());
   }
 
   compileEnded();
+}
+
+UsdAnimationFrame MainWindow::usdAnimationFrame()
+{
+  if (!this->rootNode) return {};
+  GeometryEvaluator evaluator(this->tree);
+  std::vector<UsdAnimationObject> objects;
+  if (!collectUsdAnimationObjects(this->csgRoot, objects)) objects.clear();
+  return {evaluator.evaluateGeometry(*this->rootNode, true), std::move(objects)};
+}
+
+bool MainWindow::writeUsdAnimation(const QString& path, const std::vector<UsdAnimationFrame>& frames,
+                                   unsigned fps)
+{
+  const auto suffix = outputSuffix(path.toStdString());
+  const auto format = suffix == "usdz" ? FileFormat::USDZ : FileFormat::USDA;
+  const auto exportInfo = createExportInfo(format, fileformat::info(format),
+                                           activeEditor->filepath.toStdString(), &qglview->cam, {});
+  std::ofstream stream(std::filesystem::u8path(path.toStdString()), std::ios::out | std::ios::binary);
+  if (!stream) return false;
+  if (format == FileFormat::USDZ) export_usdz_animation(frames, fps, stream, exportInfo);
+  else export_usda_animation(frames, fps, stream, exportInfo);
+  return stream.good();
 }
 
 void MainWindow::sendToExternalTool(ExternalToolInterface& externalToolService)
@@ -4307,6 +4346,8 @@ void MainWindow::setupMenusAndActions()
   exportMap[FileFormat::OFF] = this->fileActionExportOFF;
   exportMap[FileFormat::WRL] = this->fileActionExportWRL;
   exportMap[FileFormat::POV] = this->fileActionExportPOV;
+  exportMap[FileFormat::USDA] = this->fileActionExportUSDA;
+  exportMap[FileFormat::USDZ] = this->fileActionExportUSDZ;
   exportMap[FileFormat::AMF] = this->fileActionExportAMF;
   exportMap[FileFormat::DXF] = this->fileActionExportDXF;
   exportMap[FileFormat::SVG] = this->fileActionExportSVG;

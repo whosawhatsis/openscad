@@ -515,8 +515,25 @@ static bool write_coordinate_bounds_sidecar(const OffscreenView& glview,
   return sidecar.good();
 }
 
+bool collectUsdAnimationObjects(const std::shared_ptr<CSGNode>& node,
+                                std::vector<UsdAnimationObject>& objects)
+{
+  if (!node || node->isEmptySet()) return true;
+  if (const auto leaf = std::dynamic_pointer_cast<CSGLeaf>(node)) {
+    if (leaf->polyset) {
+      objects.push_back({leaf->polyset, leaf->matrix, leaf->color, leaf->index});
+    }
+    return true;
+  }
+  const auto operation = std::dynamic_pointer_cast<CSGOperation>(node);
+  if (!operation || operation->getType() != OpenSCADOperator::UNION) return false;
+  return collectUsdAnimationObjects(operation->left(), objects) &&
+         collectUsdAnimationObjects(operation->right(), objects);
+}
+
 int do_export(const CommandLine& cmd, const RenderVariables& render_variables, FileFormat export_format,
-              SourceFile *root_file, VideoEncoder *videoEncoder)
+              SourceFile *root_file, VideoEncoder *videoEncoder,
+              std::vector<UsdAnimationFrame> *usdFrames)
 {
   auto filename_str = fs::path(cmd.output_file).generic_string();
   // Avoid possibility of fs::absolute throwing when passed an empty path
@@ -702,7 +719,21 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
                                              input_filename, &cmd.camera, cmd.exportOptions);
-    if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
+    if (usdFrames != nullptr) {
+      /*
+         Animated USD: one stage covers every frame, so the geometry is collected here and
+         the caller writes the single file once the loop has finished.
+         ponytail: a second nullable out-parameter alongside videoEncoder, rather than an
+         accumulator abstraction over both. Unify them if a third frame-collecting format
+         ever appears -- two is not yet a pattern.
+       */
+      GeometryEvaluator usdGeometryEvaluator(tree);
+      CSGTreeEvaluator usdCsgEvaluator(tree, &usdGeometryEvaluator);
+      std::vector<UsdAnimationObject> objects;
+      const auto csgRoot = usdCsgEvaluator.buildCSGTree(*tree.root());
+      if (!collectUsdAnimationObjects(csgRoot, objects)) objects.clear();
+      usdFrames->push_back({root_geom, std::move(objects)});
+    } else if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
       return 1;
     }
 
@@ -1159,7 +1190,7 @@ int cmdline(const CommandLine& cmd)
       return 1;
     }
     render_variables.time = cmd.time;
-    return do_export(cmd, render_variables, export_format, root_file, nullptr);
+    return do_export(cmd, render_variables, export_format, root_file, nullptr, nullptr);
   } else if (cmd.animate.processes > 1) {
     // Hand the frames to worker processes. This process renders none of them itself;
     // it only combines what the workers produced.
@@ -1174,6 +1205,13 @@ int cmdline(const CommandLine& cmd)
        numbered file per frame as before.
      */
     std::unique_ptr<VideoEncoder> encoder;
+    /*
+       USD is animatable but not an animation-only container: it collects the frames'
+       geometry and writes one time-sampled stage at the end.
+     */
+    std::vector<UsdAnimationFrame> usdFrames;
+    const bool collectsGeometry =
+      fileformat::canAnimate(export_format) && !fileformat::isAnimation(export_format);
     if (fileformat::isAnimation(export_format)) {
       if (cmd.is_stdout) {
         LOG(message_group::Error, "Animation output cannot be written to stdout.");
@@ -1207,7 +1245,7 @@ int cmdline(const CommandLine& cmd)
       render_variables.time = frame * (1.0 / cmd.animate.frames);
 
       CommandLine frame_cmd = cmd;
-      if (!encoder) {
+      if (!encoder && !collectsGeometry) {
         std::ostringstream oss;
         oss << std::setw(5) << std::setfill('0') << frame;
 
@@ -1221,9 +1259,30 @@ int cmdline(const CommandLine& cmd)
 
       LOG("Exporting %1$s...", cmd.filename);
 
-      int const r = do_export(frame_cmd, render_variables, export_format, root_file, encoder.get());
+      int const r = do_export(frame_cmd, render_variables, export_format, root_file, encoder.get(),
+                              collectsGeometry ? &usdFrames : nullptr);
       if (r != 0) {
         return r;
+      }
+    }
+
+    if (collectsGeometry) {
+      const std::string input_filename = cmd.is_stdin ? "<stdin>" : cmd.filename;
+      const ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
+                                                     input_filename, &cmd.camera, cmd.exportOptions);
+      const bool wrote = with_output(
+        false, fs::path(cmd.output_file).generic_string(),
+        [&](std::ostream& stream) {
+          if (export_format == FileFormat::USDZ) {
+            export_usdz_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
+          } else {
+            export_usda_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
+          }
+        },
+        std::ios::out | std::ios::binary);
+      if (!wrote) {
+        LOG(message_group::Error, "Can't open %1$s for writing.", cmd.output_file);
+        return 1;
       }
     }
 
@@ -1653,7 +1712,7 @@ int openscad_main(int argc, char **argv)
     ("preview", po::value<std::string>()->implicit_value(""),
       "[=throwntogether] -for ThrownTogether preview png")
     ("animate", po::value<unsigned>(), "export N animated frames")
-    ("animate_fps", po::value<unsigned>(), "frame rate for animation container formats (gif, apng, avi); default 30")
+    ("animate_fps", po::value<unsigned>(), "frame rate for formats that fold the frames into one file (gif, apng, avi, usda, usdz); default 30")
     ("animate-processes", po::value<unsigned>(),
       "render the frames of --animate in N worker processes instead of one, then combine the "
       "results. Each worker renders its own share of the frames, so this uses N cores.")

@@ -230,6 +230,8 @@
      <addaction name="fileActionExportBinarySTL"/>
      <addaction name="fileActionExportOBJ"/>
      <addaction name="fileActionExportPOV"/>
+     <addaction name="fileActionExportUSDA"/>
+     <addaction name="fileActionExportUSDZ"/>
      <addaction name="fileActionExportOFF"/>
      <addaction name="fileActionExportWRL"/>
      <addaction name="fileActionExportAMF"/>
@@ -1096,6 +1098,16 @@
    </property>
    <property name="text">
     <string>Export as &amp;POV...</string>
+   </property>
+  </action>
+  <action name="fileActionExportUSDA">
+   <property name="text">
+    <string>Export as &amp;USD...</string>
+   </property>
+  </action>
+  <action name="fileActionExportUSDZ">
+   <property name="text">
+    <string>Export as USD&amp;Z...</string>
    </property>
   </action>
   <action name="fileActionExportOFF">
