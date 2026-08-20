@@ -192,7 +192,9 @@ bool OffscreenView::saveDepth(std::ostream& output, const DepthmapOptions& optio
       const double bmax[3] = {bbox.max().x(), bbox.max().y(), bbox.max().z()};
       double mv[16];
       for (int i = 0; i < 16; ++i) mv[i] = static_cast<double>(this->modelview[i]);
-      const DepthRange r = capped_sphere_range(bmin, bmax, mv);
+      const Eigen::Vector3d vpt = this->cam.getVpt();
+      const double centre[3] = {vpt.x(), vpt.y(), vpt.z()};
+      const DepthRange r = capped_sphere_range(bmin, bmax, centre, mv);
       effective.has_explicit_range = true;
       effective.explicit_near = r.start;
       effective.explicit_far = r.end;

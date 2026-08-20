@@ -13,6 +13,10 @@
 
 namespace {
 
+//! Rotation centre for the cases below: the models are centred on the origin,
+//! which is also where the viewport rotates about after a View All.
+const double kOrigin[3] = {0.0, 0.0, 0.0};
+
 constexpr float BG = std::numeric_limits<float>::infinity();
 
 std::uint16_t grey16(const DepthImage& img, size_t pixel)
@@ -396,7 +400,7 @@ TEST_CASE("a resolved range is always usable by fog", "[Depthmap]")
 }
 
 // ---------------------------------------------------------------------------
-// Eye-space depth extent of a bounding box.
+// Depth range helpers.
 //
 // Reported from dogfooding 2026-08-20: on a long, thin model ("extruder
 // illustration", which sticks far out in one direction) the viewport depth
@@ -435,65 +439,6 @@ std::array<double, 16> viewDownX(double dist)
 
 }  // namespace
 
-TEST_CASE("eye depth extent spans the box along the view axis", "[Depthmap]")
-{
-  const double bmin[3] = {-2.0, -2.0, -5.0};
-  const double bmax[3] = {2.0, 2.0, 5.0};
-  const auto mv = viewDownZ(100.0);
-  const auto extent = eye_depth_extent(bmin, bmax, mv.data());
-  // Nearest face at z=+5 is 95 away, farthest at z=-5 is 105.
-  CHECK(extent.nearest == Catch::Approx(95.0));
-  CHECK(extent.farthest == Catch::Approx(105.0));
-}
-
-TEST_CASE("a long model measures its length when pointed at the camera", "[Depthmap]")
-{
-  // The dogfooding case: 200 long on X, 8 across. Side-on the depth extent is
-  // the 8; end-on it is the 200. The shading normalizes across whichever it is,
-  // so the same geometry is graded over a range 25x wider in one view than the
-  // other - which is why the image visibly rebalances as the model is turned.
-  const double bmin[3] = {-100.0, -4.0, -4.0};
-  const double bmax[3] = {100.0, 4.0, 4.0};
-
-  const auto sideOn = eye_depth_extent(bmin, bmax, viewDownZ(500.0).data());
-  const auto endOn = eye_depth_extent(bmin, bmax, viewDownX(500.0).data());
-
-  CHECK(sideOn.farthest - sideOn.nearest == Catch::Approx(8.0));
-  CHECK(endOn.farthest - endOn.nearest == Catch::Approx(200.0));
-  CHECK((endOn.farthest - endOn.nearest) / (sideOn.farthest - sideOn.nearest) == Catch::Approx(25.0));
-}
-
-TEST_CASE("eye depth extent is measured from the box, not its centre", "[Depthmap]")
-{
-  // A bounding sphere would report the same extent in every orientation - the
-  // stable alternative, rejected for cost in contrast. Recorded as a test so the
-  // difference is explicit if anyone revisits the choice.
-  const double bmin[3] = {-1.0, -1.0, -1.0};
-  const double bmax[3] = {1.0, 1.0, 1.0};
-  const auto faceOn = eye_depth_extent(bmin, bmax, viewDownZ(10.0).data());
-  CHECK(faceOn.farthest - faceOn.nearest == Catch::Approx(2.0));
-
-  // Corner-on: the third row of the modelview is the unit diagonal, so the
-  // extent grows to the body diagonal, 2*sqrt(3).
-  std::array<double, 16> mv{};
-  const double k = 1.0 / std::sqrt(3.0);
-  mv[2] = k;
-  mv[6] = k;
-  mv[10] = k;
-  mv[15] = 1.0;
-  mv[14] = -10.0;
-  const auto cornerOn = eye_depth_extent(bmin, bmax, mv.data());
-  CHECK(cornerOn.farthest - cornerOn.nearest == Catch::Approx(2.0 * std::sqrt(3.0)));
-}
-
-TEST_CASE("eye depth extent never inverts", "[Depthmap]")
-{
-  const double bmin[3] = {0.0, 0.0, 0.0};
-  const double bmax[3] = {0.0, 0.0, 0.0};
-  const auto extent = eye_depth_extent(bmin, bmax, viewDownZ(1.0).data());
-  CHECK(extent.farthest >= extent.nearest);
-}
-
 // ---------------------------------------------------------------------------
 // Capped bounding-sphere range (the user's design decision, 2026-08-20).
 // ---------------------------------------------------------------------------
@@ -503,9 +448,28 @@ TEST_CASE("the sphere range spans the model's bounding sphere", "[Depthmap]")
   const double bmin[3] = {-1.0, -1.0, -1.0};
   const double bmax[3] = {1.0, 1.0, 1.0};
   const double R = std::sqrt(3.0);  // half the body diagonal
-  const auto range = capped_sphere_range(bmin, bmax, viewDownZ(100.0).data());
+  const auto range = capped_sphere_range(bmin, bmax, kOrigin, viewDownZ(100.0).data());
   CHECK(range.start == Catch::Approx(100.0 - R));
   CHECK(range.end == Catch::Approx(100.0 + R));
+}
+
+TEST_CASE("shading is independent of viewing distance while the cap is idle", "[Depthmap]")
+{
+  // The property the whole design rests on: with range = [d-R, d+R], a surface a
+  // fixed offset from the centre maps to the same place in the range whatever d
+  // is. A cap that binds derives R from d and destroys exactly this, which is how
+  // a capped diameter of d came to rescale the image at every realistic distance
+  // on a long model.
+  const double bmin[3] = {-20.0, -20.0, -20.0};
+  const double bmax[3] = {20.0, 20.0, 20.0};
+  const double offset = 7.0;  // a surface 7mm in front of the model centre
+  double shade[2];
+  int i = 0;
+  for (const double d : {300.0, 900.0}) {
+    const auto r = capped_sphere_range(bmin, bmax, kOrigin, viewDownZ(d).data());
+    shade[i++] = (r.end - (d - offset)) / (r.end - r.start);
+  }
+  CHECK(shade[0] == Catch::Approx(shade[1]));
 }
 
 TEST_CASE("the sphere range does not move when the model is rotated", "[Depthmap]")
@@ -515,8 +479,8 @@ TEST_CASE("the sphere range does not move when the model is rotated", "[Depthmap
   // as it turned. The sphere is orientation invariant, so both views agree.
   const double bmin[3] = {-100.0, -4.0, -4.0};
   const double bmax[3] = {100.0, 4.0, 4.0};
-  const auto sideOn = capped_sphere_range(bmin, bmax, viewDownZ(5000.0).data());
-  const auto endOn = capped_sphere_range(bmin, bmax, viewDownX(5000.0).data());
+  const auto sideOn = capped_sphere_range(bmin, bmax, kOrigin, viewDownZ(5000.0).data());
+  const auto endOn = capped_sphere_range(bmin, bmax, kOrigin, viewDownX(5000.0).data());
   CHECK(sideOn.start == Catch::Approx(endOn.start));
   CHECK(sideOn.end == Catch::Approx(endOn.end));
 }
@@ -530,21 +494,46 @@ TEST_CASE("the sphere diameter is capped at the camera distance", "[Depthmap]")
   const double bmin[3] = {-500.0, -500.0, -500.0};
   const double bmax[3] = {500.0, 500.0, 500.0};
   const double d = 100.0;  // camera far closer than the model is big
-  const auto range = capped_sphere_range(bmin, bmax, viewDownZ(d).data());
-  CHECK(range.start == Catch::Approx(d / 2.0));
-  CHECK(range.end == Catch::Approx(3.0 * d / 2.0));
+  const auto range = capped_sphere_range(bmin, bmax, kOrigin, viewDownZ(d).data());
+  CHECK(range.start == Catch::Approx(d * (1.0 - DEPTH_NEAR_MARGIN)));
+  CHECK(range.end == Catch::Approx(d * (1.0 + DEPTH_NEAR_MARGIN)));
   CHECK(range.start > 0.0);
 }
 
 TEST_CASE("the sphere range never collapses or inverts", "[Depthmap]")
 {
   const double p[3] = {0.0, 0.0, 0.0};
-  const auto degenerate = capped_sphere_range(p, p, viewDownZ(10.0).data());
+  const auto degenerate = capped_sphere_range(p, p, kOrigin, viewDownZ(10.0).data());
   CHECK(degenerate.end > degenerate.start);
 
   // Centre behind the eye: nothing sensible to normalize across, but it must
   // still hand back a usable, positive, non-inverted range rather than NaN.
-  const auto behind = capped_sphere_range(p, p, viewDownZ(-10.0).data());
+  const auto behind = capped_sphere_range(p, p, kOrigin, viewDownZ(-10.0).data());
   CHECK(behind.end > behind.start);
   CHECK(behind.start >= 0.0);
+}
+
+TEST_CASE("the range is stable when the camera orbits its own centre", "[Depthmap]")
+{
+  // The reason the sphere is centred on the rotation centre rather than the
+  // model: orbiting keeps the eye-to-rotation-centre distance constant, so both
+  // the radius and the range stay put. Centred on a model sitting off to one
+  // side, the same orbit changes that distance and rescales the image.
+  const double bmin[3] = {60.0, -10.0, -10.0};  // model well off the rotation centre
+  const double bmax[3] = {140.0, 10.0, 10.0};
+  const auto a = capped_sphere_range(bmin, bmax, kOrigin, viewDownZ(400.0).data());
+  const auto b = capped_sphere_range(bmin, bmax, kOrigin, viewDownX(400.0).data());
+  CHECK(a.start == Catch::Approx(b.start));
+  CHECK(a.end == Catch::Approx(b.end));
+}
+
+TEST_CASE("the sphere grows to contain a model it is not centred on", "[Depthmap]")
+{
+  // Panning away from the model must cost contrast, not correctness: the far
+  // corner has to stay inside the range or it would clamp to black.
+  const double bmin[3] = {90.0, -5.0, -5.0};
+  const double bmax[3] = {110.0, 5.0, 5.0};
+  const auto range = capped_sphere_range(bmin, bmax, kOrigin, viewDownZ(10000.0).data());
+  const double farthestCorner = std::sqrt(110.0 * 110.0 + 25.0 + 25.0);
+  CHECK(range.end - 10000.0 >= Catch::Approx(farthestCorner).margin(1e-9));
 }
