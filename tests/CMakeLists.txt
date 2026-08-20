@@ -866,13 +866,6 @@ add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_COMMON_FIL
 add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_DIFFERENT_EXPECTATIONS} ARGS --backend=manifold)
 endif()
 
-# Depth map range stability. Depth is normalized across the model's bounding
-# sphere capped at the viewing distance (capped_sphere_range() in
-# src/io/depthmap.h), which is orientation invariant - so these two views of one
-# long model must grade against the same range. The side view is deliberately the
-# unflattering one: invariance costs contrast exactly where a model is thin in
-# depth, and that cost belongs in the suite rather than only in the argument for
-# it.
 # Depth shading must hold still while the viewport rotates: the sphere sits on
 # the centre of rotation, so its distance from the eye - and therefore its shade -
 # is the same from every angle.
@@ -890,6 +883,13 @@ add_cmdline_test(export-depthmap-orbit-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_SY
 add_cmdline_test(export-depthmap-offcentre-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,25,300)
 add_cmdline_test(export-depthmap-offcentre-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,20,0,140,300)
 
+# Depth map range stability. Depth is normalized across the model's bounding
+# sphere centred on the viewport's centre of rotation (capped_sphere_range() in
+# src/io/depthmap.h), which is orientation invariant - so these two views of one
+# long model must grade against the same range. The side view is deliberately the
+# unflattering one: invariance costs contrast exactly where a model is thin in
+# depth, and that cost belongs in the suite rather than only in the argument for
+# it.
 set(DEPTHMAP_ELONGATED ${TEST_SCAD_DIR}/misc/depthmap-elongated.scad)
 add_cmdline_test(export-depthmap-endon  OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,90,400)
 add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,0,400)
