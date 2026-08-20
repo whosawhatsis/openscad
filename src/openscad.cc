@@ -397,7 +397,8 @@ Camera get_camera(const po::variables_map& vm)
 }
 
 int do_export(const CommandLine& cmd, const RenderVariables& render_variables, FileFormat export_format,
-              SourceFile *root_file, VideoEncoder *videoEncoder)
+              SourceFile *root_file, VideoEncoder *videoEncoder,
+              std::vector<std::shared_ptr<const Geometry>> *geomFrames)
 {
   auto filename_str = fs::path(cmd.output_file).generic_string();
   // Avoid possibility of fs::absolute throwing when passed an empty path
@@ -522,7 +523,16 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
                                              input_filename, &cmd.camera, cmd.exportOptions);
-    if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
+    if (geomFrames != nullptr) {
+      /*
+         Animated USD: one stage covers every frame, so the geometry is collected here and
+         the caller writes the single file once the loop has finished.
+         ponytail: a second nullable out-parameter alongside videoEncoder, rather than an
+         accumulator abstraction over both. Unify them if a third frame-collecting format
+         ever appears -- two is not yet a pattern.
+       */
+      geomFrames->push_back(root_geom);
+    } else if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
       return 1;
     }
 
@@ -674,7 +684,7 @@ int cmdline(const CommandLine& cmd)
       return 1;
     }
     render_variables.time = 0;
-    return do_export(cmd, render_variables, export_format, root_file, nullptr);
+    return do_export(cmd, render_variables, export_format, root_file, nullptr, nullptr);
   } else {
     // export the requested number of animated frames
     const unsigned start_frame = ((cmd.animate.shard - 1) * cmd.animate.frames) / cmd.animate.num_shards;
@@ -685,6 +695,18 @@ int cmdline(const CommandLine& cmd)
        numbered file per frame as before.
      */
     std::unique_ptr<VideoEncoder> encoder;
+    /*
+       USD is animatable but not an animation-only container: it collects the frames'
+       geometry and writes one time-sampled stage at the end.
+     */
+    std::vector<std::shared_ptr<const Geometry>> geomFrames;
+    const bool collectsGeometry =
+      fileformat::canAnimate(export_format) && !fileformat::isAnimation(export_format);
+    if (collectsGeometry && cmd.is_stdout) {
+      LOG(message_group::Error, "Animated %1$s output cannot be written to stdout.",
+          fileformat::info(export_format).description);
+      return 1;
+    }
     if (fileformat::isAnimation(export_format)) {
       if (cmd.is_stdout) {
         LOG(message_group::Error, "Animation output cannot be written to stdout.");
@@ -703,7 +725,7 @@ int cmdline(const CommandLine& cmd)
       render_variables.time = frame * (1.0 / cmd.animate.frames);
 
       CommandLine frame_cmd = cmd;
-      if (!encoder) {
+      if (!encoder && !collectsGeometry) {
         std::ostringstream oss;
         oss << std::setw(5) << std::setfill('0') << frame;
 
@@ -717,9 +739,30 @@ int cmdline(const CommandLine& cmd)
 
       LOG("Exporting %1$s...", cmd.filename);
 
-      int const r = do_export(frame_cmd, render_variables, export_format, root_file, encoder.get());
+      int const r = do_export(frame_cmd, render_variables, export_format, root_file, encoder.get(),
+                              collectsGeometry ? &geomFrames : nullptr);
       if (r != 0) {
         return r;
+      }
+    }
+
+    if (collectsGeometry) {
+      const std::string input_filename = cmd.is_stdin ? "<stdin>" : cmd.filename;
+      const ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
+                                                     input_filename, &cmd.camera, cmd.exportOptions);
+      const bool wrote = with_output(
+        false, fs::path(cmd.output_file).generic_string(),
+        [&](std::ostream& stream) {
+          if (export_format == FileFormat::USDZ) {
+            export_usdz_animation(geomFrames, cmd.animate.fps, stream, exportInfo);
+          } else {
+            export_usda_animation(geomFrames, cmd.animate.fps, stream, exportInfo);
+          }
+        },
+        std::ios::out | std::ios::binary);
+      if (!wrote) {
+        LOG(message_group::Error, "Can't open %1$s for writing.", cmd.output_file);
+        return 1;
       }
     }
 

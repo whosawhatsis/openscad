@@ -169,3 +169,133 @@ TEST_CASE("USDZ is a zip whose first entry is an uncompressed, aligned USDA", "[
   REQUIRE(usdz.find(".usdc") == std::string::npos);
   REQUIRE(usdz.compare(dataOffset, 9, "#usda 1.0") == 0);
 }
+
+// --- Animation ---------------------------------------------------------------------------
+//
+// OpenSCAD re-evaluates the whole script per frame, so topology may change arbitrarily
+// between frames. USD models that directly: points/faceVertexCounts/faceVertexIndices are
+// time-sampled attributes. Verified on Blender 3.3.1, which imports such a mesh via an
+// automatically-attached MESH_SEQUENCE_CACHE modifier.
+
+namespace {
+
+//! Frame 0 is a triangle, frame 1 a quad: the vertex *count* changes, which is the whole point.
+std::vector<std::shared_ptr<const Geometry>> makeVaryingTopologyFrames()
+{
+  auto tri = std::make_unique<PolySet>(3);
+  tri->vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+  tri->indices = {{0, 1, 2}};
+
+  auto quad = std::make_unique<PolySet>(3);
+  quad->vertices = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}};
+  quad->indices = {{0, 1, 2, 3}};
+
+  return {std::shared_ptr<const Geometry>(std::move(tri)),
+          std::shared_ptr<const Geometry>(std::move(quad))};
+}
+
+std::string exportAnimationToString(const std::vector<std::shared_ptr<const Geometry>>& frames,
+                                    unsigned fps = 30)
+{
+  std::ostringstream out;
+  export_usda_animation(frames, fps, out, usdaExportInfo());
+  return out.str();
+}
+
+}  // namespace
+
+TEST_CASE("Animated USDA declares the time range and rate", "[export][usd]")
+{
+  const std::string usda = exportAnimationToString(makeVaryingTopologyFrames(), 30);
+
+  REQUIRE(usda.find("startTimeCode = 0") != std::string::npos);
+  REQUIRE(usda.find("endTimeCode = 1") != std::string::npos);
+  REQUIRE(usda.find("timeCodesPerSecond = 30") != std::string::npos);
+}
+
+TEST_CASE("Animated USDA time-samples topology, not just points", "[export][usd]")
+{
+  const std::string usda = exportAnimationToString(makeVaryingTopologyFrames());
+
+  // All three must be time-sampled. Sampling points alone would be a constant-topology
+  // deformation, which cannot represent a frame whose vertex count changed.
+  REQUIRE(usda.find("point3f[] points.timeSamples = {") != std::string::npos);
+  REQUIRE(usda.find("int[] faceVertexCounts.timeSamples = {") != std::string::npos);
+  REQUIRE(usda.find("int[] faceVertexIndices.timeSamples = {") != std::string::npos);
+
+  // Frame 0: a triangle. Frame 1: a quad.
+  REQUIRE(usda.find("0: [3],") != std::string::npos);
+  REQUIRE(usda.find("1: [4],") != std::string::npos);
+  REQUIRE(usda.find("0: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
+}
+
+TEST_CASE("Animated USDA keeps per-colour materials across frames", "[export][usd]")
+{
+  auto red = std::make_unique<PolySet>(3);
+  red->vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+  red->indices = {{0, 1, 2}};
+  red->colors = {Color4f(1.0f, 0.0f, 0.0f, 1.0f)};
+  red->color_indices = {0};
+
+  auto blue = std::make_unique<PolySet>(3);
+  blue->vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+  blue->indices = {{0, 1, 2}};
+  blue->colors = {Color4f(0.0f, 0.0f, 1.0f, 1.0f)};
+  blue->color_indices = {0};
+
+  const std::vector<std::shared_ptr<const Geometry>> frames{
+    std::shared_ptr<const Geometry>(std::move(red)), std::shared_ptr<const Geometry>(std::move(blue))};
+
+  const std::string usda = exportAnimationToString(frames);
+
+  // A colour that appears in only one frame must still get its own material, or the model
+  // changes colour by losing its material rather than by switching mesh.
+  REQUIRE(countOccurrences(usda, "uniform token info:id = \"UsdPreviewSurface\"") == 2);
+  REQUIRE(usda.find("color3f inputs:diffuseColor = (1, 0, 0)") != std::string::npos);
+  REQUIRE(usda.find("color3f inputs:diffuseColor = (0, 0, 1)") != std::string::npos);
+}
+
+TEST_CASE("A single-frame animation still emits time samples", "[export][usd]")
+{
+  // --animate 1 is legal; it must not silently produce a static file with a different shape.
+  const std::string usda = exportAnimationToString({makeVaryingTopologyFrames()[0]});
+
+  REQUIRE(usda.find("startTimeCode = 0") != std::string::npos);
+  REQUIRE(usda.find("endTimeCode = 0") != std::string::npos);
+  REQUIRE(usda.find(".timeSamples = {") != std::string::npos);
+}
+
+TEST_CASE("Static USDA has no time samples at all", "[export][usd]")
+{
+  // Guard against the animated path leaking into the static one.
+  const std::string usda = exportToString(makeTriangle());
+
+  REQUIRE(usda.find("timeSamples") == std::string::npos);
+  REQUIRE(usda.find("startTimeCode") == std::string::npos);
+}
+
+TEST_CASE("Animated USDZ wraps the animated stage", "[export][usd]")
+{
+  std::ostringstream out;
+  auto info = usdaExportInfo();
+  info.format = FileFormat::USDZ;
+  info.info = fileformat::info(FileFormat::USDZ);
+  export_usdz_animation(makeVaryingTopologyFrames(), 30, out, info);
+  const std::string usdz = out.str();
+
+  REQUIRE(usdz.rfind("PK\x03\x04", 0) == 0);
+  REQUIRE(usdz.find("timeCodesPerSecond = 30") != std::string::npos);
+}
+
+TEST_CASE("USD formats are animatable but do not require --animate", "[export][usd]")
+{
+  // USD differs from the video containers: it is a valid static file too. isAnimation()
+  // means "needs --animate" and must stay false, or a plain export starts erroring.
+  REQUIRE_FALSE(fileformat::isAnimation(FileFormat::USDA));
+  REQUIRE_FALSE(fileformat::isAnimation(FileFormat::USDZ));
+  REQUIRE(fileformat::canAnimate(FileFormat::USDA));
+  REQUIRE(fileformat::canAnimate(FileFormat::USDZ));
+
+  // The video containers are both.
+  REQUIRE(fileformat::canAnimate(FileFormat::GIF));
+}

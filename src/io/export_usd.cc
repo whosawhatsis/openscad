@@ -29,6 +29,8 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "geometry/Geometry.h"
@@ -43,40 +45,121 @@ namespace {
 // format an OpenSCAD model needs is a few hundred lines of ASCII, and tinyusdz/OpenUSD are
 // both large dependencies to take on for it. Revisit if we ever need to *read* USD.
 
-//! Distinct materials, keyed by colour, so a model does not emit one material per face.
-struct MaterialTable {
-  std::vector<Color4f> colors;
-  //! Parallel to PolySet::indices: which entry of `colors` each face uses.
-  std::vector<size_t> faceMaterial;
+//! One material's geometry within one frame, re-indexed to its own point list.
+struct MeshData {
+  std::vector<Vector3d> points;
+  std::vector<size_t> faceVertexCounts;
+  std::vector<int> faceVertexIndices;
 };
 
-MaterialTable buildMaterialTable(const PolySet& ps, const Color4f& defaultColor)
+//! meshes[frame][material]. A material absent from a frame has an empty MeshData there.
+struct Scene {
+  std::vector<Color4f> materials;
+  std::vector<std::vector<MeshData>> meshes;
+};
+
+/*!
+   Groups every frame's faces by colour, interning colours across *all* frames so that a
+   colour appearing in only some frames still gets exactly one material.
+
+   Splitting per colour (rather than emitting one mesh with a UsdGeomSubset per material)
+   keeps the writer simple, and matters more for animation: each material's mesh carries its
+   own time-sampled topology, so a colour that vanishes for a few frames simply has empty
+   samples there.
+ */
+Scene buildScene(const std::vector<std::shared_ptr<const Geometry>>& frames, const Color4f& defaultColor)
 {
-  MaterialTable table;
+  Scene scene;
   std::map<std::tuple<float, float, float, float>, size_t> seen;
 
   const auto intern = [&](const Color4f& c) {
     const auto key = std::make_tuple(c.r(), c.g(), c.b(), c.a());
     const auto it = seen.find(key);
     if (it != seen.end()) return it->second;
-    const size_t index = table.colors.size();
-    table.colors.push_back(c);
+    const size_t index = scene.materials.size();
+    scene.materials.push_back(c);
     seen.emplace(key, index);
     return index;
   };
 
-  const bool hasColor = !ps.color_indices.empty();
-  for (size_t face = 0; face < ps.indices.size(); ++face) {
-    Color4f color = defaultColor;
-    if (hasColor && face < ps.color_indices.size()) {
-      const auto colorIndex = ps.color_indices[face];
-      if (colorIndex >= 0 && static_cast<size_t>(colorIndex) < ps.colors.size()) {
-        color = ps.colors[colorIndex];
+  // Pass 1: intern colours across every frame, and record each face's material.
+  std::vector<std::shared_ptr<const PolySet>> polysets;
+  std::vector<std::vector<size_t>> faceMaterials;
+  for (const auto& frame : frames) {
+    const std::shared_ptr<const PolySet> ps = PolySetUtils::getGeometryAsPolySet(frame);
+    std::vector<size_t> faceMaterial;
+    const bool hasColor = ps && !ps->color_indices.empty();
+    if (ps) {
+      for (size_t face = 0; face < ps->indices.size(); ++face) {
+        Color4f color = defaultColor;
+        if (hasColor && face < ps->color_indices.size()) {
+          const auto colorIndex = ps->color_indices[face];
+          if (colorIndex >= 0 && static_cast<size_t>(colorIndex) < ps->colors.size()) {
+            color = ps->colors[colorIndex];
+          }
+        }
+        faceMaterial.push_back(intern(color));
       }
     }
-    table.faceMaterial.push_back(intern(color));
+    polysets.push_back(ps);
+    faceMaterials.push_back(std::move(faceMaterial));
   }
-  return table;
+
+  // An empty model still needs one material, or it exports with no shading at all.
+  if (scene.materials.empty()) scene.materials.push_back(defaultColor);
+
+  // Pass 2: build the per-frame, per-material meshes now that the material count is known.
+  for (size_t frame = 0; frame < polysets.size(); ++frame) {
+    std::vector<MeshData> perMaterial(scene.materials.size());
+    const auto& ps = polysets[frame];
+    if (!ps) {
+      scene.meshes.push_back(std::move(perMaterial));
+      continue;
+    }
+    // -1 means "this vertex is not in this material's mesh yet".
+    std::vector<std::vector<int>> remap(scene.materials.size(),
+                                        std::vector<int>(ps->vertices.size(), -1));
+    for (size_t face = 0; face < ps->indices.size(); ++face) {
+      const size_t material = faceMaterials[frame][face];
+      auto& mesh = perMaterial[material];
+      auto& indexOf = remap[material];
+      for (const auto vertex : ps->indices[face]) {
+        if (indexOf[vertex] < 0) {
+          indexOf[vertex] = static_cast<int>(mesh.points.size());
+          mesh.points.push_back(ps->vertices[vertex]);
+        }
+        mesh.faceVertexIndices.push_back(indexOf[vertex]);
+      }
+      mesh.faceVertexCounts.push_back(ps->indices[face].size());
+    }
+    scene.meshes.push_back(std::move(perMaterial));
+  }
+  return scene;
+}
+
+std::string formatPoints(const std::vector<Vector3d>& points)
+{
+  std::ostringstream out;
+  out << "[";
+  for (size_t i = 0; i < points.size(); ++i) {
+    if (i) out << ", ";
+    out << "(" << points[i].x() << ", " << points[i].y() << ", " << points[i].z() << ")";
+  }
+  out << "]";
+  return out.str();
+}
+
+template <typename T>
+std::string formatList(const std::vector<T>& values)
+{
+  std::ostringstream out;
+  out << "[";
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i) out << ", ";
+    out << values[i];
+  }
+  out << "]";
+  return out.str();
 }
 
 void writeMaterial(std::ostream& output, size_t index, const Color4f& color)
@@ -102,62 +185,36 @@ void writeMaterial(std::ostream& output, size_t index, const Color4f& color)
   output << "    }\n";
 }
 
-//! Emits one Mesh prim holding every face that uses `material`, re-indexed to its own points.
-void writeMesh(std::ostream& output, const PolySet& ps, const MaterialTable& table, size_t material)
+//! Emits `attribute = value` for a still, or `attribute.timeSamples = { t: value, ... }`.
+template <typename Format>
+void writeAttribute(std::ostream& output, const std::string& declaration, const Scene& scene,
+                    size_t material, bool animated, Format&& format)
 {
-  std::vector<size_t> faces;
-  for (size_t face = 0; face < table.faceMaterial.size(); ++face) {
-    if (table.faceMaterial[face] == material) faces.push_back(face);
+  if (!animated) {
+    output << "        " << declaration << " = " << format(scene.meshes[0][material]) << "\n";
+    return;
   }
-  if (faces.empty()) return;
-
-  // Re-index: a per-material mesh carries only the vertices its own faces touch.
-  std::vector<int> remap(ps.vertices.size(), -1);
-  std::vector<size_t> meshVertices;
-  std::vector<std::vector<int>> meshFaces;
-  for (const auto face : faces) {
-    std::vector<int> indices;
-    for (const auto vertex : ps.indices[face]) {
-      if (remap[vertex] < 0) {
-        remap[vertex] = static_cast<int>(meshVertices.size());
-        meshVertices.push_back(vertex);
-      }
-      indices.push_back(remap[vertex]);
-    }
-    meshFaces.push_back(std::move(indices));
+  output << "        " << declaration << ".timeSamples = {\n";
+  for (size_t frame = 0; frame < scene.meshes.size(); ++frame) {
+    output << "            " << frame << ": " << format(scene.meshes[frame][material]) << ",\n";
   }
+  output << "        }\n";
+}
 
+void writeMesh(std::ostream& output, const Scene& scene, size_t material, bool animated)
+{
   const std::string name = "mesh" + std::to_string(material);
   output << "    def Mesh \"" << name << "\" (\n";
   output << "        prepend apiSchemas = [\"MaterialBindingAPI\"]\n";
   output << "    )\n";
   output << "    {\n";
 
-  output << "        int[] faceVertexCounts = [";
-  for (size_t i = 0; i < meshFaces.size(); ++i) {
-    if (i) output << ", ";
-    output << meshFaces[i].size();
-  }
-  output << "]\n";
-
-  output << "        int[] faceVertexIndices = [";
-  bool first = true;
-  for (const auto& face : meshFaces) {
-    for (const auto index : face) {
-      if (!first) output << ", ";
-      first = false;
-      output << index;
-    }
-  }
-  output << "]\n";
-
-  output << "        point3f[] points = [";
-  for (size_t i = 0; i < meshVertices.size(); ++i) {
-    if (i) output << ", ";
-    const auto& v = ps.vertices[meshVertices[i]];
-    output << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")";
-  }
-  output << "]\n";
+  writeAttribute(output, "int[] faceVertexCounts", scene, material, animated,
+                 [](const MeshData& m) { return formatList(m.faceVertexCounts); });
+  writeAttribute(output, "int[] faceVertexIndices", scene, material, animated,
+                 [](const MeshData& m) { return formatList(m.faceVertexIndices); });
+  writeAttribute(output, "point3f[] points", scene, material, animated,
+                 [](const MeshData& m) { return formatPoints(m.points); });
 
   output << "        rel material:binding = </root/Materials/mat" << material << ">\n";
   // Default is catmullClark, which would silently round off every hard edge of a CAD model.
@@ -165,13 +222,10 @@ void writeMesh(std::ostream& output, const PolySet& ps, const MaterialTable& tab
   output << "    }\n";
 }
 
-}  // namespace
-
-void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
-                 const ExportInfo& exportInfo)
+void writeStage(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps, bool animated,
+                std::ostream& output, const ExportInfo& exportInfo)
 {
-  const std::shared_ptr<const PolySet> ps = PolySetUtils::getGeometryAsPolySet(geom);
-  const MaterialTable table = buildMaterialTable(*ps, exportInfo.defaultColor);
+  const Scene scene = buildScene(frames, exportInfo.defaultColor);
 
   output << "#usda 1.0\n";
   output << "(\n";
@@ -181,6 +235,13 @@ void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& outp
   // omitting either of these delivers a model that is rotated and 1000x too large.
   output << "    metersPerUnit = 0.001\n";
   output << "    upAxis = \"Z\"\n";
+  if (animated) {
+    output << "    startTimeCode = 0\n";
+    output << "    endTimeCode = " << (scene.meshes.empty() ? 0 : scene.meshes.size() - 1) << "\n";
+    // Note: Blender does NOT read this into scene.render.fps -- verified on 3.3.1. A
+    // companion script has to set the frame rate on the importing side.
+    output << "    timeCodesPerSecond = " << fps << "\n";
+  }
   output << ")\n\n";
 
   output << "def Xform \"root\"\n";
@@ -188,21 +249,19 @@ void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& outp
 
   output << "    def Scope \"Materials\"\n";
   output << "    {\n";
-  for (size_t i = 0; i < table.colors.size(); ++i) {
+  for (size_t i = 0; i < scene.materials.size(); ++i) {
     if (i) output << "\n";
-    writeMaterial(output, i, table.colors[i]);
+    writeMaterial(output, i, scene.materials[i]);
   }
   output << "    }\n\n";
 
-  for (size_t i = 0; i < table.colors.size(); ++i) {
+  for (size_t i = 0; i < scene.materials.size(); ++i) {
     if (i) output << "\n";
-    writeMesh(output, *ps, table, i);
+    writeMesh(output, scene, i, animated);
   }
 
   output << "}\n";
 }
-
-namespace {
 
 uint32_t crc32(const std::string& data)
 {
@@ -235,20 +294,18 @@ void putU32(std::string& out, uint32_t v)
   putU16(out, static_cast<uint16_t>((v >> 16) & 0xffff));
 }
 
-}  // namespace
+/*!
+   Wraps one USDA stage in a USDZ container.
 
-void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
-                 const ExportInfo& exportInfo)
+   ponytail: a stored-only, single-entry zip writer rather than a zip dependency. USDZ
+   forbids compression anyway, so nothing here would ever use it. The alignment rule is the
+   whole reason the format bans compression: a reader mmaps each asset in place, so every
+   file's data must start on a 64-byte boundary. Padding goes in the local header's *extra*
+   field, which is the conventional way to buy those bytes without corrupting the entry.
+ */
+void writeUsdz(const std::string& usda, std::ostream& output)
 {
-  std::ostringstream usdaStream;
-  export_usda(geom, usdaStream, exportInfo);
-  const std::string usda = usdaStream.str();
   const std::string name = "model.usda";
-
-  // ponytail: a stored-only, single-entry zip writer, ~60 lines, rather than a zip
-  // dependency. USDZ forbids compression anyway, so nothing here would ever use it.
-  // The alignment rule is the whole reason the format bans compression: a reader mmaps
-  // each asset in place, so every file's data must start on a 64-byte boundary.
   std::string zip;
   const uint32_t crc = crc32(usda);
 
@@ -302,4 +359,34 @@ void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& outp
   putU16(zip, 0);  // comment length
 
   output.write(zip.data(), static_cast<std::streamsize>(zip.size()));
+}
+
+}  // namespace
+
+void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo)
+{
+  writeStage({geom}, 0, false, output, exportInfo);
+}
+
+void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo)
+{
+  std::ostringstream usda;
+  export_usda(geom, usda, exportInfo);
+  writeUsdz(usda.str(), output);
+}
+
+void export_usda_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo)
+{
+  writeStage(frames, fps, true, output, exportInfo);
+}
+
+void export_usdz_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo)
+{
+  std::ostringstream usda;
+  export_usda_animation(frames, fps, usda, exportInfo);
+  writeUsdz(usda.str(), output);
 }

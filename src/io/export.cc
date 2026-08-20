@@ -175,6 +175,11 @@ bool isAnimation(FileFormat format)
   return format == FileFormat::APNG || format == FileFormat::GIF || format == FileFormat::AVI;
 }
 
+bool canAnimate(FileFormat format)
+{
+  return isAnimation(format) || format == FileFormat::USDA || format == FileFormat::USDZ;
+}
+
 bool is3D(FileFormat format)
 {
   return format == FileFormat::ASCII_STL || format == FileFormat::BINARY_STL ||

@@ -76,6 +76,12 @@ bool canPreview(FileFormat format);
    only meaningful together with --animate.
  */
 bool isAnimation(FileFormat format);
+/*!
+   True for the formats that fold every --animate frame into a single output file. A
+   superset of isAnimation(): the video containers are meaningless without --animate,
+   whereas USD is equally valid as a still, so it is animatable without requiring it.
+ */
+bool canAnimate(FileFormat format);
 bool is3D(FileFormat format);
 bool is2D(FileFormat format);
 
@@ -334,6 +340,15 @@ void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& outp
                  const ExportInfo& exportInfo);
 void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                  const ExportInfo& exportInfo);
+/*!
+   Writes one USD stage covering every animation frame. OpenSCAD re-evaluates the script per
+   frame, so topology may change between frames; USD represents that natively by
+   time-sampling points/faceVertexCounts/faceVertexIndices.
+ */
+void export_usda_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usdz_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_nefdbg(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
