@@ -702,11 +702,6 @@ int cmdline(const CommandLine& cmd)
     std::vector<std::shared_ptr<const Geometry>> geomFrames;
     const bool collectsGeometry =
       fileformat::canAnimate(export_format) && !fileformat::isAnimation(export_format);
-    if (collectsGeometry && cmd.is_stdout) {
-      LOG(message_group::Error, "Animated %1$s output cannot be written to stdout.",
-          fileformat::info(export_format).description);
-      return 1;
-    }
     if (fileformat::isAnimation(export_format)) {
       if (cmd.is_stdout) {
         LOG(message_group::Error, "Animation output cannot be written to stdout.");
@@ -982,7 +977,7 @@ int openscad_main(int argc, char **argv)
     ("preview", po::value<std::string>()->implicit_value(""),
       "[=throwntogether] -for ThrownTogether preview png")
     ("animate", po::value<unsigned>(), "export N animated frames")
-    ("animate_fps", po::value<unsigned>(), "frame rate for animation container formats (gif, apng, avi); default 30")
+    ("animate_fps", po::value<unsigned>(), "frame rate for formats that fold the frames into one file (gif, apng, avi, usda, usdz); default 30")
     ("animate_sharding", po::value<std::string>(),
       "Parameter <shard>/<num_shards> - Divide work into <num_shards> and only output frames for "
       "<shard>. E.g. 2/5 only outputs the second 1/5 of frames. Use to parallelize work on multiple "
