@@ -81,11 +81,12 @@ inline constexpr double depth_units_per_mm(DepthProfile profile)
 struct DepthPreviewPolarity {
   float geometry;
   float background;
+  bool invert;
 };
 
 inline constexpr DepthPreviewPolarity depth_preview_polarity(double units_per_mm)
 {
-  return units_per_mm > 0.0 ? DepthPreviewPolarity{0.0f, 1.0f} : DepthPreviewPolarity{1.0f, 0.0f};
+  return {1.0f, 0.0f, units_per_mm > 0.0};
 }
 
 struct DepthImage {

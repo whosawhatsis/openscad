@@ -404,7 +404,7 @@ void GLView::paintGL()
     // scheme the user happens to have selected, and must not be a gradient - both
     // would decode as varying "surface" values where there is no surface. Flat,
     // Black, flat, and documented as the no-geometry marker.
-    const float bg = analysisDepthUnits() > 0.0 ? 1.0f : 0.0f;
+    const float bg = showDepth() ? depth_preview_polarity(analysisDepthUnits()).background : 0.0f;
     bgcol = Color4f(bg, bg, bg, 1.0f);
     bgstopcol = bgcol;
   }
@@ -490,6 +490,37 @@ void GLView::paintGL()
 
     this->renderer->prepare(active_shader);
     this->renderer->draw(active_showedges, active_shader);
+    if (depth_preview_polarity(analysisDepthUnits()).invert) {
+      // OpenCSG relies on black fog while constructing its internal CSG mask.
+      // Invert only the finished image to get metric near-dark polarity without
+      // exposing those internal passes to white fog.
+      glPushAttrib(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_ENABLE_BIT | GL_CURRENT_BIT);
+      glDisable(GL_DEPTH_TEST);
+      glDisable(GL_LIGHTING);
+      glDisable(GL_FOG);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+
+      glMatrixMode(GL_PROJECTION);
+      glPushMatrix();
+      glLoadIdentity();
+      glMatrixMode(GL_MODELVIEW);
+      glPushMatrix();
+      glLoadIdentity();
+      glColor3f(1.0f, 1.0f, 1.0f);
+      glBegin(GL_QUADS);
+      glVertex2f(-1.0f, -1.0f);
+      glVertex2f(1.0f, -1.0f);
+      glVertex2f(1.0f, 1.0f);
+      glVertex2f(-1.0f, 1.0f);
+      glEnd();
+      glPopMatrix();
+      glMatrixMode(GL_PROJECTION);
+      glPopMatrix();
+      glMatrixMode(GL_MODELVIEW);
+      glPopAttrib();
+    }
     if (analysis_mode == AnalysisMode::Chromatic && chromatic_gauge) {
       drawChromaticGauge();
     }
