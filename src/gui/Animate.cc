@@ -15,8 +15,10 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include "gui/MainWindow.h"
+#include "gui/AnimationExport.h"
 #include "gui/UIUtils.h"
 #include "openscad_gui.h"
 #include "utils/printutils.h"
@@ -287,6 +289,19 @@ bool Animate::saveFrame(const QImage& image)
   return true;
 }
 
+bool Animate::recordsGeometry() const
+{
+  return animation_export::recordsGeometry(dumpPath.toStdString());
+}
+
+bool Animate::saveFrame(UsdAnimationFrame frame)
+{
+  if (dumpPath.isEmpty() || !recordsGeometry()) return false;
+  dumpGeometryFrames.push_back(std::move(frame));
+  ++dumpFrame;
+  return true;
+}
+
 void Animate::startDump()
 {
   /*
@@ -300,7 +315,8 @@ void Animate::startDump()
 
   const QString path =
     QFileDialog::getSaveFileName(this, _("Export Animation"), QString(),
-                                 _("Animated GIF (*.gif);;Animated PNG (*.apng);;MJPEG AVI (*.avi);;"
+                                 _("USD ASCII animation (*.usda);;USDZ animation (*.usdz);;"
+                                   "Animated GIF (*.gif);;Animated PNG (*.apng);;MJPEG AVI (*.avi);;"
                                    "PNG image sequence (*.png)"));
 
   if (wasRunning) animateTimer->start();
@@ -316,7 +332,10 @@ void Animate::startDump()
 
   dumpPath = path;
   dumpFrame = 0;
-  dumpEncoder = VideoEncoder::create(outputSuffix(path.toStdString()));
+  dumpGeometryFrames.clear();
+  if (!animation_export::recordsGeometry(path.toStdString())) {
+    dumpEncoder = VideoEncoder::create(outputSuffix(path.toStdString()));
+  }
 
   double fps = e_fps->text().toDouble();
   if (fps < 1) fps = 1;
@@ -326,6 +345,13 @@ void Animate::startDump()
 
 void Animate::stopDump()
 {
+  if (!dumpGeometryFrames.empty()) {
+    if (mainWindow->writeUsdAnimation(dumpPath, dumpGeometryFrames, dumpFps)) {
+      LOG("Wrote %1$d frames to %2$s.", dumpFrame, dumpPath.toStdString());
+    } else {
+      LOG(message_group::Error, "Can't write %1$s.", dumpPath.toStdString());
+    }
+  }
   if (dumpEncoder) {
     // dumpFrame == 0 means no frame ever arrived, so there is nothing to finalize.
     if (dumpFrame > 0 && !dumpEncoder->close()) {
@@ -336,6 +362,7 @@ void Animate::stopDump()
     dumpEncoder.reset();
   }
   dumpPath.clear();
+  dumpGeometryFrames.clear();
   dumpFrame = 0;
 }
 

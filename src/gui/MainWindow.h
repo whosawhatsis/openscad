@@ -364,6 +364,9 @@ private slots:
   void on_designActionFlushCaches_triggered();
 
 public:
+  UsdAnimationFrame usdAnimationFrame();
+  bool writeUsdAnimation(const QString& path, const std::vector<UsdAnimationFrame>& frames,
+                         unsigned fps);
   void viewModeActionsUncheck();
   void setCurrentOutput();
   void clearCurrentOutput();

@@ -16,6 +16,7 @@
 
 #include "gui/input/InputDriverEvent.h"
 #include "gui/qtgettext.h"
+#include "io/export.h"
 #include "io/VideoEncoder.h"
 #include "ui_Animate.h"
 
@@ -45,6 +46,9 @@ public:
      written twice.
    */
   bool saveFrame(const QImage& image);
+  bool saveFrame(UsdAnimationFrame frame);
+
+  bool recordsGeometry() const;
 
   QTimer *animateTimer;
 
@@ -78,6 +82,7 @@ private:
 
   QString dumpPath;
   std::unique_ptr<VideoEncoder> dumpEncoder;
+  std::vector<UsdAnimationFrame> dumpGeometryFrames;
   unsigned dumpFrame = 0;
   unsigned dumpFps = 30;
   QSize dumpSize;
