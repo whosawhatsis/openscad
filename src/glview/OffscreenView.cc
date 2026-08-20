@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <string>
 #include <cstdlib>
+#include <iomanip>
 #include <sstream>
 #include <fstream>
 #include <vector>
@@ -209,7 +210,22 @@ bool OffscreenView::saveDepth(std::ostream& output, const DepthmapOptions& optio
           "represent it.",
           65534.0 / units, units);
     }
-    return write_png_gray16(output, flipped.data(), this->ctx->width(), this->ctx->height());
+    // Embed what the file needs to be decodable, so a metric depth map is
+    // self-describing even when it travels without its sidecar. The sidecar
+    // stays available: PFM has nowhere to put this, and plenty of pipelines
+    // re-encode PNGs and drop text chunks on the way.
+    std::ostringstream scale;
+    // Fixed, not full precision: these are a scale factor and a limit for a human
+    // or a parser to read, and 655.34000000000003 helps neither.
+    scale << std::fixed << std::setprecision(2);
+    scale << "{\n  \"units_per_mm\": " << units << ",\n  \"max_mm\": " << (65534.0 / units)
+          << ",\n  \"background\": 65535,\n"
+          << "  \"encoding\": \"distance_mm = value / units_per_mm, from the camera\"\n}\n";
+    const std::vector<std::pair<std::string, std::string>> metadata = {
+      {"openscad.depthmap", scale.str()},
+      {"openscad.camera", serialize_camera_json(camParams)},
+    };
+    return write_png_gray16(output, flipped.data(), this->ctx->width(), this->ctx->height(), metadata);
   }
   LOG("Depthmap: %1$.3f - %2$.3f mm from the camera, normalized across that range.", image.minDepth,
       image.maxDepth);
