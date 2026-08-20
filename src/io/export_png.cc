@@ -111,7 +111,8 @@ bool export_depthmap(const std::shared_ptr<const Geometry>& root_geom, const Vie
 }
 
 std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
-                                               const DepthmapOptions& depthOptions)
+                                               const DepthmapOptions& depthOptions,
+                                               AgentLightingMode agentMode, bool chromaticGauge)
 {
   PRINTD("prepare_preview_common");
   CsgInfo csgInfo = CsgInfo();
@@ -157,6 +158,8 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
   glview->setShowEdges(options["edges"]);
   glview->setShowDepth(options["depth"]);
   glview->setDepthOptions(depthOptions);
+  glview->setAgentLightingMode(agentMode);
+  glview->setChromaticGauge(chromaticGauge);
   glview->paintGL();
   return glview;
 }
@@ -225,7 +228,8 @@ bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOpti
   return false;
 }
 std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
-                                               const DepthmapOptions& depthOptions)
+                                               const DepthmapOptions& depthOptions,
+                                               AgentLightingMode agentMode, bool chromaticGauge)
 {
   return nullptr;
 }

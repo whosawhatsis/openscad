@@ -144,7 +144,11 @@ void VBORenderer::add_shader_pointers(VBOBuilder& vbo_builder, const ShaderUtils
   GLenum type = 0;
   size_t offset = 0;
 
-  GLuint attribute_index = shaderinfo->attributes.at("barycentric");
+  // Barycentric coordinates are an edge-rendering concern. A shader that does not
+  // declare the attribute (the agent lighting modes) is not an error - index 0
+  // takes the existing "not in use" branch below rather than throwing.
+  const auto barycentric = shaderinfo->attributes.find("barycentric");
+  GLuint attribute_index = barycentric == shaderinfo->attributes.end() ? 0 : barycentric->second;
   if (attribute_index > 0) {
     count =
       vertex_data->attributes()[vbo_builder.shader_attributes_index_ + BARYCENTRIC_ATTRIB]->count();

@@ -1092,6 +1092,8 @@ set(CORE_SOURCES
   src/io/depthmap.cc
   src/io/DxfData.cc
   src/io/dxfdim.cc
+  src/io/chromatic.cc
+  src/io/coordinatemap.cc
   src/io/export.cc
   src/io/export_amf.cc
   src/io/export_dxf.cc
@@ -1547,6 +1549,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestModuleCache.h
     src/guitests/TestTabManager.h
     src/guitests/TestMainWindow.h
+    src/guitests/TestAgentLighting.h
     src/guitests/UXTest.h
   )
 
@@ -1555,6 +1558,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestModuleCache.cc
     src/guitests/TestTabManager.cc
     src/guitests/TestMainWindow.cc
+    src/guitests/TestAgentLighting.cc
     src/guitests/UXTest.cc
   )
 
@@ -1581,6 +1585,7 @@ file(GLOB_RECURSE TEST_SOURCES
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
   "src/io/*_test.cc"
+  "src/glview/*_test.cc"
 )
 file(GLOB_RECURSE GUI_TEST_SOURCES
   "src/gui/*_test.cc"

@@ -97,6 +97,10 @@ Containers& containers()
     add_item(*containers, {FileFormat::PNG, "png", "png", "PNG"});
     add_item(*containers, {FileFormat::DEPTHMAP, "depthmap", "png", "Depthmap PNG"});
     add_item(*containers, {FileFormat::PFM, "pfm", "pfm", "Portable Float Map"});
+    add_item(*containers, {FileFormat::NORMALMAP_PNG, "normalmap", "png", "Normal Map PNG"});
+    add_item(*containers, {FileFormat::COORDINATEMAP_PNG, "coordinatemap", "png", "Coordinate Map PNG"});
+    add_item(*containers, {FileFormat::FLATMAP_PNG, "flatmap", "png", "Flat Shaded PNG"});
+    add_item(*containers, {FileFormat::CHROMATIC_PNG, "chromatic", "png", "Chromatic 3-Point PNG"});
     add_item(*containers, {FileFormat::PDF, "pdf", "pdf", "PDF"});
     add_item(*containers, {FileFormat::POV, "pov", "pov", "POV"});
 
@@ -164,7 +168,9 @@ bool canPreview(FileFormat format)
 {
   return (format == FileFormat::AST || format == FileFormat::CSG || format == FileFormat::PARAM ||
           format == FileFormat::ECHO || format == FileFormat::TERM || format == FileFormat::PNG ||
-          format == FileFormat::DEPTHMAP);
+          format == FileFormat::DEPTHMAP || format == FileFormat::NORMALMAP_PNG ||
+          format == FileFormat::COORDINATEMAP_PNG || format == FileFormat::FLATMAP_PNG ||
+          format == FileFormat::CHROMATIC_PNG);
 }
 
 bool is3D(FileFormat format)

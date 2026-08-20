@@ -874,6 +874,14 @@ endif()
 set(DEPTHMAP_ELONGATED ${TEST_SCAD_DIR}/misc/depthmap-elongated.scad)
 add_cmdline_test(export-depthmap-endon  OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,90,400)
 add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,0,400)
+# Agent lighting modes (AgentSCAD): each mode must render differently from an
+# ordinary preview and stay stable. These go through the preview path by design -
+# the modes are shader/lighting overrides on it, and --render is refused.
+set(AGENT_LIGHTING_FILES ${TEST_SCAD_DIR}/misc/agent-lighting.scad)
+add_cmdline_test(export-normalmap     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=normalmap)
+add_cmdline_test(export-coordinatemap OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=coordinatemap)
+add_cmdline_test(export-flatmap       OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=flatmap)
+add_cmdline_test(export-chromatic     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=chromatic)
 
 # Note: we're missing coverage for ${PREVIEW_DIFFERENT_EXPECTATIONS} files for throwntogether
 add_cmdline_test(throwntogether-cgal  OPENSCAD FILES ${ALL_THROWNTOGETHER_FILES} SUFFIX png EXPECTEDDIR throwntogether ARGS --preview=throwntogether --backend=cgal)

@@ -56,6 +56,21 @@ void FBO::unbind()
 void GLView::initializeGL()
 {
 }
+CoordinateBounds GLView::coordinateBounds() const
+{
+  const double unit_min[3] = {0.0, 0.0, 0.0};
+  const double unit_max[3] = {1.0, 1.0, 1.0};
+  return coordinate_bounds(unit_min, unit_max);
+}
+void GLView::applyCoordinateBounds(ShaderUtils::ShaderInfo * /*shader*/) const
+{
+}
+void GLView::applyChromaticLights(ShaderUtils::ShaderInfo * /*shader*/) const
+{
+}
+void GLView::drawChromaticGauge()
+{
+}
 void GLView::paintGL()
 {
 }
