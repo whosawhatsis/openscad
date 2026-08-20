@@ -537,3 +537,41 @@ TEST_CASE("the sphere grows to contain a model it is not centred on", "[Depthmap
   const double farthestCorner = std::sqrt(110.0 * 110.0 + 25.0 + 25.0);
   CHECK(range.end - 10000.0 >= Catch::Approx(farthestCorner).margin(1e-9));
 }
+
+TEST_CASE("the fine metric profile encodes 10um units", "[Depthmap]")
+{
+  // 1mm units leave a small model with almost no depth resolution: a 15mm-deep
+  // object viewed from 43mm spans 15 of 65535 levels. At 10um the same object
+  // spans 1560. The ceiling drops from 65.5m to 655mm, which still covers the
+  // eye distances OpenSCAD models are actually viewed from.
+  const std::vector<float> depths = {1.0f, 10.0f, 100.0f};
+  const auto img = encode_depthmap(depths, 3, 1, DepthProfile::metricFine);
+  REQUIRE(img.bytesPerPixel == 2);
+  auto value = [&](size_t i) {
+    return static_cast<int>(img.pixels[i * 2]) << 8 | img.pixels[i * 2 + 1];
+  };
+  CHECK(value(0) == 100);    // 1mm  -> 100 units of 10um
+  CHECK(value(1) == 1000);   // 10mm
+  CHECK(value(2) == 10000);  // 100mm
+}
+
+TEST_CASE("the fine metric profile saturates below the background value", "[Depthmap]")
+{
+  // Beyond 655.34mm the range is exhausted. Clamping must stop just short of the
+  // background sentinel so "too far to represent" stays distinguishable from
+  // "no geometry here" - the same rule the millimetre profile follows.
+  const std::vector<float> depths = {5000.0f};
+  const auto img = encode_depthmap(depths, 1, 1, DepthProfile::metricFine);
+  const int value = static_cast<int>(img.pixels[0]) << 8 | img.pixels[1];
+  CHECK(value == 65534);
+}
+
+TEST_CASE("background is the same sentinel in both metric profiles", "[Depthmap]")
+{
+  const std::vector<float> depths = {std::numeric_limits<float>::infinity()};
+  for (const auto profile : {DepthProfile::metric, DepthProfile::metricFine}) {
+    const auto img = encode_depthmap(depths, 1, 1, profile);
+    const int value = static_cast<int>(img.pixels[0]) << 8 | img.pixels[1];
+    CHECK(value == 65535);
+  }
+}

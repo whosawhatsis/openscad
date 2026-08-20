@@ -198,9 +198,17 @@ bool OffscreenView::saveDepth(std::ostream& output, const DepthmapOptions& optio
         effective.range_from_model ? "model's" : "requested", effective.explicit_near,
         effective.explicit_far);
   }
-  if (options.profile == DepthProfile::metric) {
-    LOG("Depthmap: %1$.3f - %2$.3f mm from the camera, %3$g units per mm.", image.minDepth,
-        image.maxDepth, DEPTHMAP_METRIC_SCALE);
+  if (const double units = depth_units_per_mm(options.profile); units > 0.0) {
+    // The ceiling is worth stating outright: at 10um units it is 655mm, which a
+    // scene framed from further away silently saturates against.
+    LOG("Depthmap: %1$.3f - %2$.3f mm from the camera, %3$g units per mm (max %4$.2f mm).",
+        image.minDepth, image.maxDepth, units, 65534.0 / units);
+    if (image.maxDepth * units > 65534.0) {
+      LOG(message_group::Warning,
+          "Depthmap: geometry beyond %1$.2f mm saturated - the %2$g units/mm profile cannot "
+          "represent it.",
+          65534.0 / units, units);
+    }
     return write_png_gray16(output, flipped.data(), this->ctx->width(), this->ctx->height());
   }
   LOG("Depthmap: %1$.3f - %2$.3f mm from the camera, normalized across that range.", image.minDepth,
