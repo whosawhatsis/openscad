@@ -412,6 +412,8 @@ public slots:
   void updateViewModeAfterGLInit();
   void on_viewActionShowEdges_toggled(bool checked);
   void on_viewActionAnalysisViewDepth_triggered();
+  void on_viewActionAnalysisViewDepthMetric_triggered();
+  void on_viewActionAnalysisViewDepthMetricFine_triggered();
   void on_viewActionShowAxes_toggled(bool checked);
   void on_viewActionShowScaleProportional_toggled(bool checked);
   void on_viewActionShowCrosshairs_toggled(bool checked);

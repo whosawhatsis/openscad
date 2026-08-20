@@ -355,6 +355,12 @@ struct ViewOptions {
     // an output encoding, which is why it belongs here and the depthmap profile
     // does not.
     {"depth", false},
+    // The two absolute-scale previews. Separate flags rather than a value on
+    // "depth" because --view takes a list of names, and because they render
+    // differently enough (near dark, background at the maximum) to be their own
+    // thing rather than a variant of it.
+    {"depth-metric", false},
+    {"depth-metric10um", false},
   };
 
   const std::vector<std::string> names()

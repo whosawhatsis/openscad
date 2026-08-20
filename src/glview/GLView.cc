@@ -351,6 +351,21 @@ void GLView::setupDepthShading()
     range = resolve_depth_range(this->depthoptions, range.start, range.end);
   }
 
+  // A metric preview ignores the fitted range entirely: the file's mapping is
+  // absolute, from zero to whatever the unit size allows, and the preview is only
+  // honest if it uses the same one.
+  const double units = analysisDepthUnits();
+  const bool metric = units > 0.0;
+  if (metric) {
+    range.start = 0.0;
+    range.end = 65534.0 / units;
+  }
+
+  // The metric preview shows the file's *scale*, not its polarity: near reads
+  // bright here while the file stores near dark. Inverting it needs the geometry
+  // drawn black against white fog, and in that configuration the renderer's own
+  // material wins and the frame comes out uniformly white - unresolved, and not
+  // worth a shader until these previews earn their place.
   const GLfloat fogcolor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
   glFogi(GL_FOG_MODE, GL_LINEAR);
   glFogf(GL_FOG_START, static_cast<GLfloat>(range.start));
@@ -389,26 +404,16 @@ void GLView::paintGL()
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
   if (analysis_mode != AnalysisMode::Default) {
-    // An agent image is data, so its background must not depend on which colour
+    // An analysis image is data, so its background must not depend on which colour
     // scheme the user happens to have selected, and must not be a gradient - both
-    // would decode as varying "surface" values where there is no surface. Black,
-    // flat, and documented as the no-geometry marker.
-    bgcol = Color4f(0.0f, 0.0f, 0.0f, 1.0f);
+    // would decode as varying "surface" values where there is no surface. Flat,
+    // Black, flat, and documented as the no-geometry marker.
+    const float bg = analysisDepthUnits() > 0.0 ? 1.0f : 0.0f;
+    bgcol = Color4f(bg, bg, bg, 1.0f);
     bgstopcol = bgcol;
   }
   auto axescolor = ColorMap::getColor(*this->colorscheme, RenderColor::AXES_COLOR);
   auto crosshaircol = ColorMap::getColor(*this->colorscheme, RenderColor::CROSSHAIR_COLOR);
-
-  if (showDepth()) {
-    // No geometry is infinitely far, exactly like the depthmap export's
-    // background pixels (which fall out for free there, since the exporter
-    // only ever reads the depth buffer). The far end of the viewport's own
-    // fog is black, so the background must read as black too, not the color
-    // scheme's normal gradient - otherwise "far" means two different things
-    // depending on whether a pixel happened to hit geometry.
-    bgcol = Color4f(0.0f, 0.0f, 0.0f, 1.0f);
-    bgstopcol = bgcol;
-  }
 
   glClearColor(bgcol.r(), bgcol.g(), bgcol.b(), 1.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);

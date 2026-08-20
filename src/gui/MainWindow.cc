@@ -2803,6 +2803,16 @@ void MainWindow::on_viewActionAnalysisViewDepth_triggered()
   setAnalysisMode(AnalysisMode::Depth);
 }
 
+void MainWindow::on_viewActionAnalysisViewDepthMetric_triggered()
+{
+  setAnalysisMode(AnalysisMode::DepthMetric);
+}
+
+void MainWindow::on_viewActionAnalysisViewDepthMetricFine_triggered()
+{
+  setAnalysisMode(AnalysisMode::DepthMetricFine);
+}
+
 void MainWindow::on_viewActionShowAxes_toggled(bool checked)
 {
   QSettingsCached settings;
@@ -3967,6 +3977,8 @@ void MainWindow::setupMenusAndActions()
   analysisViewGroup->setExclusive(true);
   analysisViewGroup->addAction(this->viewActionAnalysisViewDefault);
   analysisViewGroup->addAction(this->viewActionAnalysisViewDepth);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetric);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetricFine);
   analysisViewGroup->addAction(this->viewActionAnalysisViewNormal);
   analysisViewGroup->addAction(this->viewActionAnalysisViewCoordinate);
   analysisViewGroup->addAction(this->viewActionAnalysisViewFlat);

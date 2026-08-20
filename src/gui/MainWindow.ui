@@ -343,6 +343,8 @@
      </property>
      <addaction name="viewActionAnalysisViewDefault"/>
      <addaction name="viewActionAnalysisViewDepth"/>
+     <addaction name="viewActionAnalysisViewDepthMetric"/>
+     <addaction name="viewActionAnalysisViewDepthMetricFine"/>
      <addaction name="viewActionAnalysisViewNormal"/>
      <addaction name="viewActionAnalysisViewCoordinate"/>
      <addaction name="viewActionAnalysisViewFlat"/>
@@ -1151,6 +1153,28 @@
    </property>
    <property name="toolTip">
     <string>Shade the model by distance from the camera, previewing a depth map export</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewDepthMetric">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Depth (metric, &amp;1mm)</string>
+   </property>
+   <property name="toolTip">
+    <string>Preview the metric depth map export: absolute millimetres from the camera, near dark</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewDepthMetricFine">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Depth (metric, 10&amp;um)</string>
+   </property>
+   <property name="toolTip">
+    <string>Preview the 10um metric depth map export, which tops out at 655mm from the camera</string>
    </property>
   </action>
   <action name="viewActionAnalysisViewDefault">
