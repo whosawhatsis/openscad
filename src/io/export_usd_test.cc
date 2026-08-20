@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 
+#include "Feature.h"
 #include "geometry/PolySet.h"
 #include "geometry/linalg.h"
 #include "io/export.h"
@@ -298,4 +299,21 @@ TEST_CASE("USD formats are animatable but do not require --animate", "[export][u
 
   // The video containers are both.
   REQUIRE(fileformat::canAnimate(FileFormat::GIF));
+}
+
+TEST_CASE("USDA export honours predictible-output", "[export][usd]")
+{
+  // Every other mesh exporter (STL, OBJ, OFF, WRL, POV, 3MF) sorts its PolySet when this
+  // feature is on. Without it the emitted vertex order depends on the geometry backend's
+  // internal ordering, which makes the cmdline regression tests non-deterministic.
+  auto ps = std::make_unique<PolySet>(3);
+  ps->vertices = {{5, 5, 5}, {0, 0, 0}, {1, 1, 1}};
+  ps->indices = {{0, 1, 2}};
+
+  Feature::enable_feature("predictible-output", true);
+  const std::string sorted = exportToString(std::move(ps));
+  Feature::enable_feature("predictible-output", false);
+
+  // Sorted export must emit the lowest vertex first, whatever order it arrived in.
+  REQUIRE(sorted.find("point3f[] points = [(0, 0, 0),") != std::string::npos);
 }

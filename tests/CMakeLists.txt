@@ -912,6 +912,9 @@ list(APPEND EXPORT_3MF_LAZY_UNION_TEST_FILES ${TEST_SCAD_DIR}/experimental/lazyu
 
 list(APPEND EXPORT_POV_TEST_FILES ${TEST_SCAD_DIR}/pov/pov-export.scad)
 
+list(APPEND EXPORT_USD_TEST_FILES ${TEST_SCAD_DIR}/usd/usd-export.scad)
+list(APPEND EXPORT_USD_ANIM_TEST_FILES ${TEST_SCAD_DIR}/usd/usd-export-animated.scad)
+
 list(APPEND EXPORT_IMPORT_3D_FILES
 ${TEST_SCAD_DIR}/3D/features/mirror-tests.scad
 ${TEST_SCAD_DIR}/3D/features/polyhedron-nonplanar-tests.scad
@@ -990,6 +993,9 @@ add_cmdline_test(export-pov-rotate-2     EXPERIMENTAL OPENSCAD SUFFIX pov FILES 
 add_cmdline_test(export-pov-rotate-3     EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=0,0,0,0,0,90,140)
 add_cmdline_test(export-pov-distance-1   EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=0,0,0,0,0,0,100)
 add_cmdline_test(export-pov-all          EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=1,2,3,4,5,6,7)
+
+add_cmdline_test(export-usda             EXPERIMENTAL OPENSCAD SUFFIX usda FILES ${EXPORT_USD_TEST_FILES} ARGS --enable=predictible-output --backend=manifold)
+add_cmdline_test(export-usda-animated    EXPERIMENTAL OPENSCAD SUFFIX usda FILES ${EXPORT_USD_ANIM_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --animate 3 --animate_fps 24)
 
 add_cmdline_test(export-param            OPENSCAD SUFFIX json FILES "${TEST_SCAD_DIR}/issues/issue6597.scad" ARGS --export-format param)
 
@@ -1524,6 +1530,8 @@ if(NOT ENABLE_MANIFOLD)
     export-pov-rotate-3_pov-export
     export-pov-distance-1_pov-export
     export-pov-all_pov-export
+    export-usda_usd-export
+    export-usda-animated_usd-export-animated
     render-3mf-manifold_bad-stl-tardis
     render-3mf-manifold_bad-stl-wing
     render-3mf-manifold_issue904

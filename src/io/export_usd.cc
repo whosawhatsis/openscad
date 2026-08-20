@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "Feature.h"
 #include "geometry/Geometry.h"
 #include "geometry/PolySet.h"
 #include "geometry/PolySetUtils.h"
@@ -86,7 +87,12 @@ Scene buildScene(const std::vector<std::shared_ptr<const Geometry>>& frames, con
   std::vector<std::shared_ptr<const PolySet>> polysets;
   std::vector<std::vector<size_t>> faceMaterials;
   for (const auto& frame : frames) {
-    const std::shared_ptr<const PolySet> ps = PolySetUtils::getGeometryAsPolySet(frame);
+    std::shared_ptr<const PolySet> ps = PolySetUtils::getGeometryAsPolySet(frame);
+    // Matches every other mesh exporter: without this the vertex order follows the geometry
+    // backend's internal ordering, so the regression tests would not be reproducible.
+    if (ps && Feature::ExperimentalPredictibleOutput.is_enabled()) {
+      ps = createSortedPolySet(*ps);
+    }
     std::vector<size_t> faceMaterial;
     const bool hasColor = ps && !ps->color_indices.empty();
     if (ps) {
@@ -165,24 +171,24 @@ std::string formatList(const std::vector<T>& values)
 void writeMaterial(std::ostream& output, size_t index, const Color4f& color)
 {
   const std::string name = "mat" + std::to_string(index);
-  output << "    def Material \"" << name << "\"\n";
-  output << "    {\n";
-  output << "        token outputs:surface.connect = </root/Materials/" << name
-         << "/Shader.outputs:surface>\n\n";
-  output << "        def Shader \"Shader\"\n";
+  output << "        def Material \"" << name << "\"\n";
   output << "        {\n";
+  output << "            token outputs:surface.connect = </root/Materials/" << name
+         << "/Shader.outputs:surface>\n\n";
+  output << "            def Shader \"Shader\"\n";
+  output << "            {\n";
   // Verified against Blender 3.3.1: these four inputs land on the Principled BSDF as
   // Base Color / Metallic / Roughness / Alpha. primvars:displayColor does NOT survive
   // the same trip, which is why colour goes through a bound material instead.
-  output << "            uniform token info:id = \"UsdPreviewSurface\"\n";
-  output << "            color3f inputs:diffuseColor = (" << color.r() << ", " << color.g() << ", "
+  output << "                uniform token info:id = \"UsdPreviewSurface\"\n";
+  output << "                color3f inputs:diffuseColor = (" << color.r() << ", " << color.g() << ", "
          << color.b() << ")\n";
-  output << "            float inputs:metallic = 0\n";
-  output << "            float inputs:roughness = 0.4\n";
-  output << "            float inputs:opacity = " << color.a() << "\n";
-  output << "            token outputs:surface\n";
+  output << "                float inputs:metallic = 0\n";
+  output << "                float inputs:roughness = 0.4\n";
+  output << "                float inputs:opacity = " << color.a() << "\n";
+  output << "                token outputs:surface\n";
+  output << "            }\n";
   output << "        }\n";
-  output << "    }\n";
 }
 
 //! Emits `attribute = value` for a still, or `attribute.timeSamples = { t: value, ... }`.
