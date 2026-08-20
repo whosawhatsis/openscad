@@ -80,14 +80,21 @@ std::vector<float> linearize_depth(const std::vector<float>& windowDepth, double
                                    double clipFar, bool perspective);
 
 //! Eye-space distances that the viewport depth shading maps across.
+//! How close to the eye the near end of the depth range may come, as a fraction
+//! of the distance to the model centre. Deliberately close to 1: the cap breaks
+//! the range's distance invariance while it binds, so it should engage only when
+//! the model is nearly as large as its own viewing distance.
+inline constexpr double DEPTH_NEAR_MARGIN = 0.95;
+
 struct DepthRange {
   double start = 0.0;
   double end = 0.0;
 };
 
 /*!
-   The depth range the shading normalizes across: the model's bounding sphere,
-   with its diameter capped at the distance from the camera to the sphere centre.
+   The depth range the shading normalizes across: a sphere centred on the
+   **viewport's centre of rotation** and large enough to contain the model, with
+   its radius capped so the near end stays in front of the eye.
 
    **Orientation invariant by construction**, which is the point - a sphere
    presents the same depth extent from every direction, so turning the model no
@@ -100,7 +107,16 @@ struct DepthRange {
    trade; `-O depthmap/range=near,far` overrides it, and the metric profile does
    not use a range at all.
 
-   **The cap** (`R' = min(R, d/2)`) keeps the near end off the eye: a model
+   Centred on the rotation centre rather than the model's own centre, because the
+   camera orbits *that* point: the eye-to-centre distance is then constant under
+   rotation, and so is the radius the cap derives from it. Centred on the model
+   instead, an orbit around any other point changes that distance, and while the
+   cap is binding the whole image rescales as you turn the model - which is
+   exactly the instability this range exists to remove. The sphere is grown to
+   enclose the bounding box from that centre, so panning away from the model
+   costs contrast rather than correctness.
+
+   **The cap** (`R' = min(R, 0.95 d)`) keeps the near end off the eye: a model
    larger than its own viewing distance would otherwise put `start` behind the
    camera, where the gradient stops meaning anything. When the cap binds, geometry
    outside the range is clamped rather than wrapped - near of `start` reads pure
@@ -108,7 +124,7 @@ struct DepthRange {
    of reversing.
  */
 DepthRange capped_sphere_range(const double bboxMin[3], const double bboxMax[3],
-                               const double modelview[16]);
+                               const double rotationCentre[3], const double modelview[16]);
 
 /*!
    The depth-to-grey mapping for the viewport, built from the eye-space depth

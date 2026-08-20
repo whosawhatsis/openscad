@@ -163,7 +163,15 @@ void GLView::drawChromaticGauge()
   // it out. Drawn last, straight into the colour buffer: it is a reference
   // overlay, not part of the scene, and must not be lit, projected or depth
   // tested along with the model.
-  const int shorter = std::min(cam.pixel_width, cam.pixel_height);
+  // Framebuffer pixels, not cam.pixel_width: glWindowPos2i and glDrawPixels work
+  // in the framebuffer's own coordinates, and on a HiDPI display that is twice
+  // the camera's logical size. Using the logical width put the gauge at half the
+  // intended x - the lower right of the lower-left quadrant.
+  GLint viewport[4] = {0, 0, 0, 0};
+  glGetIntegerv(GL_VIEWPORT, viewport);
+  const int fb_width = viewport[2] > 0 ? viewport[2] : cam.pixel_width;
+  const int fb_height = viewport[3] > 0 ? viewport[3] : cam.pixel_height;
+  const int shorter = std::min(fb_width, fb_height);
   const auto size = static_cast<std::uint32_t>(std::max(32, shorter / 5));
   if (size == 0) return;
   const GaugeImage gauge = render_gauge_sphere(size);
@@ -187,7 +195,7 @@ void GLView::drawChromaticGauge()
   // the bottom-left of the viewport and the gauge would sit on top of them.
   const int margin = static_cast<int>(size) / 8;
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glWindowPos2i(cam.pixel_width - static_cast<int>(size) - margin, margin);
+  glWindowPos2i(fb_width - static_cast<int>(size) - margin, margin);
   glDrawPixels(static_cast<GLsizei>(size), static_cast<GLsizei>(size), GL_RGBA, GL_UNSIGNED_BYTE,
                flipped.data());
 
@@ -335,7 +343,9 @@ void GLView::setupDepthShading()
   if (!bbox.isEmpty()) {
     const double bmin[3] = {bbox.min().x(), bbox.min().y(), bbox.min().z()};
     const double bmax[3] = {bbox.max().x(), bbox.max().y(), bbox.max().z()};
-    range = capped_sphere_range(bmin, bmax, this->modelview);
+    const Eigen::Vector3d vpt = cam.getVpt();
+    const double centre[3] = {vpt.x(), vpt.y(), vpt.z()};
+    range = capped_sphere_range(bmin, bmax, centre, this->modelview);
   }
   if (this->depthoptions.has_explicit_range) {
     range = resolve_depth_range(this->depthoptions, range.start, range.end);

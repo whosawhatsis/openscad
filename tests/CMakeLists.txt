@@ -873,6 +873,23 @@ endif()
 # unflattering one: invariance costs contrast exactly where a model is thin in
 # depth, and that cost belongs in the suite rather than only in the argument for
 # it.
+# Depth shading must hold still while the viewport rotates: the sphere sits on
+# the centre of rotation, so its distance from the eye - and therefore its shade -
+# is the same from every angle.
+set(DEPTHMAP_SYMMETRY ${TEST_SCAD_DIR}/misc/depthmap-orbit-symmetry.scad)
+set(DEPTHMAP_OFFCENTRE ${TEST_SCAD_DIR}/misc/depthmap-offcentre.scad)
+# Both compare against the SAME expected image on purpose: the scene has four-fold
+# symmetry about Z, so a 90 degree orbit maps it onto itself and the two renders
+# must be the same image rather than merely similar ones.
+add_cmdline_test(export-depthmap-orbit-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_SYMMETRY} EXPECTEDDIR export-depthmap-orbit ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,0,1600)
+add_cmdline_test(export-depthmap-orbit-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_SYMMETRY} EXPECTEDDIR export-depthmap-orbit ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,90,1600)
+
+# The asymmetric case, which is what actually distinguishes a range centred on the
+# rotation centre from one centred on the bounding box. Separate expectations,
+# because the distant cube really does move between these two angles.
+add_cmdline_test(export-depthmap-offcentre-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,25,300)
+add_cmdline_test(export-depthmap-offcentre-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,20,0,140,300)
+
 set(DEPTHMAP_ELONGATED ${TEST_SCAD_DIR}/misc/depthmap-elongated.scad)
 add_cmdline_test(export-depthmap-endon  OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,90,400)
 add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,0,400)
