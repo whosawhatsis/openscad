@@ -1070,6 +1070,7 @@ set(CORE_SOURCES
   src/ext/libtess2/Source/sweep.c
   src/ext/libtess2/Source/tess.c
   src/ext/lodepng/lodepng.cpp
+  src/ext/stb/stb_image_write.cc
   src/geometry/ClipperUtils.cc
   src/geometry/Geometry.cc
   src/geometry/GeometryCache.cc
@@ -1105,6 +1106,10 @@ set(CORE_SOURCES
   src/io/export_param.cc
   src/io/export_wrl.cc
   src/io/fileutils.cc
+  src/io/VideoEncoder.cc
+  src/io/video_apng.cc
+  src/io/video_avi.cc
+  src/io/video_gif.cc
   src/io/import_amf.cc
   src/io/import_json.cc
   src/io/import_obj.cc
