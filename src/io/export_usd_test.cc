@@ -237,16 +237,18 @@ TEST_CASE("Animated USDA time-samples topology, not just points", "[export][usd]
   REQUIRE(usda.find("0: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
 }
 
-TEST_CASE("Animated USDA holds recalculated meshes until the next frame", "[export][usd]")
+TEST_CASE("Animated USDA prevents interpolation between recalculated point arrays", "[export][usd]")
 {
-  const std::string usda = exportAnimationToString(makeVaryingTopologyFrames());
+  const std::vector<std::shared_ptr<const Geometry>> frames{
+    std::shared_ptr<const Geometry>(makeTriangle()), std::shared_ptr<const Geometry>(makeTriangle())};
+  const std::string usda = exportAnimationToString(frames);
 
-  // CSG recalculation does not preserve vertex correspondence. Repeating each mesh just before
-  // the next integer time prevents USD from morphing unrelated points across the whole frame.
-  REQUIRE(usda.find("0.999: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
-  // Integer topology arrays are already held; duplicating them would only inflate the file.
-  REQUIRE(usda.find("0.999: [3],") == std::string::npos);
-  REQUIRE(usda.find("0.999: [0, 1, 2],") == std::string::npos);
+  // USD holds numeric arrays of unequal lengths. The unused duplicate final point makes that
+  // explicit without changing topology or bounds; unlike .999 samples, there is no morph window.
+  REQUIRE(usda.find(".999:") == std::string::npos);
+  REQUIRE(usda.find("0: [(0, 0, 0), (1, 0, 0), (0, 1, 0)],") != std::string::npos);
+  REQUIRE(usda.find("1: [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 0)],") != std::string::npos);
+  REQUIRE(usda.find("1: [0, 1, 2],") != std::string::npos);
 }
 
 TEST_CASE("Animated USDA reuses cache-stable geometry and samples only its transform", "[export][usd]")

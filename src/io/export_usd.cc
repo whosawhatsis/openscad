@@ -60,6 +60,17 @@ struct Scene {
   std::vector<std::vector<MeshData>> meshes;
 };
 
+void preventPointInterpolation(std::vector<MeshData>& meshes)
+{
+  if (meshes.empty()) return;
+  size_t previousCount = meshes[0].points.size();
+  for (size_t frame = 1; frame < meshes.size(); ++frame) {
+    auto& points = meshes[frame].points;
+    if (!points.empty() && points.size() == previousCount) points.push_back(points.front());
+    previousCount = points.size();
+  }
+}
+
 /*!
    Groups every frame's faces by colour, interning colours across *all* frames so that a
    colour appearing in only some frames still gets exactly one material.
@@ -195,7 +206,7 @@ void writeMaterial(std::ostream& output, size_t index, const Color4f& color)
 //! Emits `attribute = value` for a still, or `attribute.timeSamples = { t: value, ... }`.
 template <typename Format>
 void writeAttribute(std::ostream& output, const std::string& declaration, const Scene& scene,
-                    size_t material, bool animated, bool hold, Format&& format)
+                    size_t material, bool animated, Format&& format)
 {
   if (!animated) {
     output << "        " << declaration << " = " << format(scene.meshes[0][material]) << "\n";
@@ -204,11 +215,6 @@ void writeAttribute(std::ostream& output, const std::string& declaration, const 
   output << "        " << declaration << ".timeSamples = {\n";
   for (size_t frame = 0; frame < scene.meshes.size(); ++frame) {
     output << "            " << frame << ": " << format(scene.meshes[frame][material]) << ",\n";
-    // USD only offers held/linear time interpolation at stage scope. Repeat recalculated mesh
-    // values just before the next frame so hybrid stages can keep interpolating rigid transforms.
-    if (hold && frame + 1 < scene.meshes.size()) {
-      output << "            " << frame << ".999: " << format(scene.meshes[frame][material]) << ",\n";
-    }
   }
   output << "        }\n";
 }
@@ -221,11 +227,11 @@ void writeMesh(std::ostream& output, const Scene& scene, size_t material, bool a
   output << "    )\n";
   output << "    {\n";
 
-  writeAttribute(output, "int[] faceVertexCounts", scene, material, animated, false,
+  writeAttribute(output, "int[] faceVertexCounts", scene, material, animated,
                  [](const MeshData& m) { return formatList(m.faceVertexCounts); });
-  writeAttribute(output, "int[] faceVertexIndices", scene, material, animated, false,
+  writeAttribute(output, "int[] faceVertexIndices", scene, material, animated,
                  [](const MeshData& m) { return formatList(m.faceVertexIndices); });
-  writeAttribute(output, "point3f[] points", scene, material, animated, true,
+  writeAttribute(output, "point3f[] points", scene, material, animated,
                  [](const MeshData& m) { return formatPoints(m.points); });
 
   output << "        rel material:binding = </root/Materials/mat" << material << ">\n";
@@ -237,7 +243,18 @@ void writeMesh(std::ostream& output, const Scene& scene, size_t material, bool a
 void writeStage(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps, bool animated,
                 std::ostream& output, const ExportInfo& exportInfo)
 {
-  const Scene scene = buildScene(frames, exportInfo.defaultColor);
+  Scene scene = buildScene(frames, exportInfo.defaultColor);
+  if (animated) {
+    for (size_t material = 0; material < scene.materials.size(); ++material) {
+      std::vector<MeshData> meshes;
+      meshes.reserve(scene.meshes.size());
+      for (auto& frame : scene.meshes) meshes.push_back(std::move(frame[material]));
+      preventPointInterpolation(meshes);
+      for (size_t frame = 0; frame < scene.meshes.size(); ++frame) {
+        scene.meshes[frame][material] = std::move(meshes[frame]);
+      }
+    }
+  }
 
   output << "#usda 1.0\n";
   output << "(\n";
@@ -329,7 +346,7 @@ MeshData buildObjectMesh(const PolySet& polyset)
 
 template <typename Format>
 void writeObjectAttribute(std::ostream& output, const std::string& declaration,
-                          const std::vector<MeshData>& meshes, bool stable, bool hold, Format&& format)
+                          const std::vector<MeshData>& meshes, bool stable, Format&& format)
 {
   if (stable) {
     output << "            " << declaration << " = " << format(meshes[0]) << "\n";
@@ -338,9 +355,6 @@ void writeObjectAttribute(std::ostream& output, const std::string& declaration,
   output << "            " << declaration << ".timeSamples = {\n";
   for (size_t frame = 0; frame < meshes.size(); ++frame) {
     output << "                " << frame << ": " << format(meshes[frame]) << ",\n";
-    if (hold && frame + 1 < meshes.size()) {
-      output << "                " << frame << ".999: " << format(meshes[frame]) << ",\n";
-    }
   }
   output << "            }\n";
 }
@@ -384,6 +398,7 @@ void writeTransformStage(const std::vector<UsdAnimationFrame>& frames, unsigned 
         meshes.push_back(buildObjectMesh(*geometry));
       }
     }
+    if (!stable) preventPointInterpolation(meshes);
 
     output << "    def Xform \"object" << i << "\"\n"
            << "    {\n"
@@ -409,11 +424,11 @@ void writeTransformStage(const std::vector<UsdAnimationFrame>& frames, unsigned 
            << "            prepend apiSchemas = [\"MaterialBindingAPI\"]\n"
            << "        )\n"
            << "        {\n";
-    writeObjectAttribute(output, "int[] faceVertexCounts", meshes, stable, false,
+    writeObjectAttribute(output, "int[] faceVertexCounts", meshes, stable,
                          [](const MeshData& mesh) { return formatList(mesh.faceVertexCounts); });
-    writeObjectAttribute(output, "int[] faceVertexIndices", meshes, stable, false,
+    writeObjectAttribute(output, "int[] faceVertexIndices", meshes, stable,
                          [](const MeshData& mesh) { return formatList(mesh.faceVertexIndices); });
-    writeObjectAttribute(output, "point3f[] points", meshes, stable, true,
+    writeObjectAttribute(output, "point3f[] points", meshes, stable,
                          [](const MeshData& mesh) { return formatPoints(mesh.points); });
     output << "            rel material:binding = </root/Materials/mat" << i << ">\n"
            << "            uniform token subdivisionScheme = \"none\"\n"
