@@ -192,46 +192,30 @@ void writeMaterial(std::ostream& output, size_t index, const Color4f& color)
   output << "        }\n";
 }
 
-//! Emits `attribute = value` for a still, or `attribute.timeSamples = { t: value, ... }`.
-template <typename Format>
-void writeAttribute(std::ostream& output, const std::string& declaration, const Scene& scene,
-                    size_t material, bool animated, bool hold, Format&& format)
+void writeVisibility(std::ostream& output, const std::string& indent, size_t frame, size_t frameCount)
 {
-  if (!animated) {
-    output << "        " << declaration << " = " << format(scene.meshes[0][material]) << "\n";
-    return;
-  }
-  output << "        " << declaration << ".timeSamples = {\n";
-  for (size_t frame = 0; frame < scene.meshes.size(); ++frame) {
-    output << "            " << frame << ": " << format(scene.meshes[frame][material]) << ",\n";
-    // USD only offers held/linear time interpolation at stage scope. Repeat recalculated mesh
-    // values just before the next frame so hybrid stages can keep interpolating rigid transforms.
-    if (hold && frame + 1 < scene.meshes.size()) {
-      output << "            " << frame << ".999: " << format(scene.meshes[frame][material]) << ",\n";
-    }
-  }
-  output << "        }\n";
+  output << indent << "token visibility.timeSamples = {\n"
+         << indent << "    0: \"" << (frame == 0 ? "inherited" : "invisible") << "\",\n";
+  if (frame > 0) output << indent << "    " << frame << ": \"inherited\",\n";
+  if (frame + 1 < frameCount) output << indent << "    " << frame + 1 << ": \"invisible\",\n";
+  output << indent << "}\n";
 }
 
-void writeMesh(std::ostream& output, const Scene& scene, size_t material, bool animated)
+void writeMesh(std::ostream& output, const std::string& indent, const std::string& name,
+               const MeshData& mesh, size_t material, size_t frame = 0, size_t frameCount = 0)
 {
-  const std::string name = "mesh" + std::to_string(material);
-  output << "    def Mesh \"" << name << "\" (\n";
-  output << "        prepend apiSchemas = [\"MaterialBindingAPI\"]\n";
-  output << "    )\n";
-  output << "    {\n";
-
-  writeAttribute(output, "int[] faceVertexCounts", scene, material, animated, false,
-                 [](const MeshData& m) { return formatList(m.faceVertexCounts); });
-  writeAttribute(output, "int[] faceVertexIndices", scene, material, animated, false,
-                 [](const MeshData& m) { return formatList(m.faceVertexIndices); });
-  writeAttribute(output, "point3f[] points", scene, material, animated, true,
-                 [](const MeshData& m) { return formatPoints(m.points); });
-
-  output << "        rel material:binding = </root/Materials/mat" << material << ">\n";
+  const std::string body = indent + "    ";
+  output << indent << "def Mesh \"" << name << "\" (\n"
+         << body << "prepend apiSchemas = [\"MaterialBindingAPI\"]\n"
+         << indent << ")\n"
+         << indent << "{\n";
+  if (frameCount) writeVisibility(output, body, frame, frameCount);
+  output << body << "int[] faceVertexCounts = " << formatList(mesh.faceVertexCounts) << "\n"
+         << body << "int[] faceVertexIndices = " << formatList(mesh.faceVertexIndices) << "\n"
+         << body << "point3f[] points = " << formatPoints(mesh.points) << "\n"
+         << body << "rel material:binding = </root/Materials/mat" << material << ">\n";
   // Default is catmullClark, which would silently round off every hard edge of a CAD model.
-  output << "        uniform token subdivisionScheme = \"none\"\n";
-  output << "    }\n";
+  output << body << "uniform token subdivisionScheme = \"none\"\n" << indent << "}\n";
 }
 
 void writeStage(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps, bool animated,
@@ -269,7 +253,15 @@ void writeStage(const std::vector<std::shared_ptr<const Geometry>>& frames, unsi
 
   for (size_t i = 0; i < scene.materials.size(); ++i) {
     if (i) output << "\n";
-    writeMesh(output, scene, i, animated);
+    if (!animated) {
+      writeMesh(output, "    ", "mesh" + std::to_string(i), scene.meshes[0][i], i);
+      continue;
+    }
+    for (size_t frame = 0; frame < scene.meshes.size(); ++frame) {
+      if (frame) output << "\n";
+      writeMesh(output, "    ", "mesh" + std::to_string(i) + "_frame" + std::to_string(frame),
+                scene.meshes[frame][i], i, frame, scene.meshes.size());
+    }
   }
 
   output << "}\n";
@@ -325,24 +317,6 @@ MeshData buildObjectMesh(const PolySet& polyset)
     mesh.faceVertexIndices.insert(mesh.faceVertexIndices.end(), face.begin(), face.end());
   }
   return mesh;
-}
-
-template <typename Format>
-void writeObjectAttribute(std::ostream& output, const std::string& declaration,
-                          const std::vector<MeshData>& meshes, bool stable, bool hold, Format&& format)
-{
-  if (stable) {
-    output << "            " << declaration << " = " << format(meshes[0]) << "\n";
-    return;
-  }
-  output << "            " << declaration << ".timeSamples = {\n";
-  for (size_t frame = 0; frame < meshes.size(); ++frame) {
-    output << "                " << frame << ": " << format(meshes[frame]) << ",\n";
-    if (hold && frame + 1 < meshes.size()) {
-      output << "                " << frame << ".999: " << format(meshes[frame]) << ",\n";
-    }
-  }
-  output << "            }\n";
 }
 
 void writeTransformStage(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
@@ -404,21 +378,17 @@ void writeTransformStage(const std::vector<UsdAnimationFrame>& frames, unsigned 
       previous = orientation;
     }
     output << "        }\n"
-           << "        uniform token[] xformOpOrder = [\"xformOp:translate\", \"xformOp:orient\"]\n\n"
-           << "        def Mesh \"mesh\" (\n"
-           << "            prepend apiSchemas = [\"MaterialBindingAPI\"]\n"
-           << "        )\n"
-           << "        {\n";
-    writeObjectAttribute(output, "int[] faceVertexCounts", meshes, stable, false,
-                         [](const MeshData& mesh) { return formatList(mesh.faceVertexCounts); });
-    writeObjectAttribute(output, "int[] faceVertexIndices", meshes, stable, false,
-                         [](const MeshData& mesh) { return formatList(mesh.faceVertexIndices); });
-    writeObjectAttribute(output, "point3f[] points", meshes, stable, true,
-                         [](const MeshData& mesh) { return formatPoints(mesh.points); });
-    output << "            rel material:binding = </root/Materials/mat" << i << ">\n"
-           << "            uniform token subdivisionScheme = \"none\"\n"
-           << "        }\n"
-           << "    }\n";
+           << "        uniform token[] xformOpOrder = [\"xformOp:translate\", \"xformOp:orient\"]\n\n";
+    if (stable) {
+      writeMesh(output, "        ", "mesh", meshes[0], i);
+    } else {
+      for (size_t frame = 0; frame < meshes.size(); ++frame) {
+        if (frame) output << "\n";
+        writeMesh(output, "        ", "mesh_frame" + std::to_string(frame), meshes[frame], i, frame,
+                  meshes.size());
+      }
+    }
+    output << "    }\n";
     if (i + 1 < frames[0].objects.size()) output << "\n";
   }
   output << "}\n";
