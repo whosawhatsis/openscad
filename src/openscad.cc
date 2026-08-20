@@ -105,6 +105,7 @@
 #include "glview/OffscreenView.h"
 #include "glview/RenderSettings.h"
 #include "handle_dep.h"
+#include "command_line.h"
 #include "io/export.h"
 #include "openscad_gui.h"
 #include "openscad_mimalloc.h"
@@ -221,8 +222,15 @@ bool checkAndExport(const std::shared_ptr<const Geometry>& root_geom, unsigned d
 void help(const char *arg0, const po::options_description& desc, bool failure = false)
 {
   const fs::path progpath(arg0);
+  if (failure) {
+    // A usage error, as opposed to an explicit --help. Raise rather than exit so an
+    // in-process caller (see command_line.h) can report it instead of dying.
+    std::ostringstream usage;
+    usage << "Usage: " << progpath.filename().string() << " [options] file.scad\n" << desc;
+    throw CommandLineError(usage.str());
+  }
   LOG("Usage: %1$s [options] file.scad\n%2$s", progpath.filename().string(), desc);
-  exit(failure ? 1 : 0);
+  exit(0);
 }
 
 template <std::size_t size>
@@ -302,19 +310,16 @@ AnimateArgs get_animate(const po::variables_map& vm)
     std::vector<std::string> strs;
     boost::split(strs, vm["animate_sharding"].as<std::string>(), boost::is_any_of("/"));
     if (strs.size() != 2) {
-      LOG("--animate_sharding requires <shard>/<num_shards>");
-      exit(1);
+      throw CommandLineError("--animate_sharding requires <shard>/<num_shards>");
     }
     try {
       animate.shard = boost::lexical_cast<unsigned>(strs[0]);
       animate.num_shards = boost::lexical_cast<unsigned>(strs[1]);
     } catch (const boost::bad_lexical_cast&) {
-      LOG("--animate_sharding parameters need to be positive integers");
-      exit(1);
+      throw CommandLineError("--animate_sharding parameters need to be positive integers");
     }
     if (animate.shard > animate.num_shards || animate.shard == 0) {
-      LOG("--animate_sharding: shard needs to be in range <1..num_shards>");
-      exit(1);
+      throw CommandLineError("--animate_sharding: shard needs to be in range <1..num_shards>");
     }
   }
   return animate;
@@ -338,8 +343,8 @@ Camera get_camera(const po::variables_map& vm)
         LOG("Camera setup requires numbers as parameters");
       }
     } else {
-      LOG("Camera setup requires either 7 numbers for Gimbal Camera or 6 numbers for Vector Camera");
-      exit(1);
+      throw CommandLineError(
+        "Camera setup requires either 7 numbers for Gimbal Camera or 6 numbers for Vector Camera");
     }
   } else {
     camera.viewall = true;
@@ -361,8 +366,7 @@ Camera get_camera(const po::variables_map& vm)
     } else if (proj == "p" || proj == "perspective") {
       camera.projection = Camera::ProjectionType::PERSPECTIVE;
     } else {
-      LOG("projection needs to be 'o' or 'p' for ortho or perspective\n");
-      exit(1);
+      throw CommandLineError("projection needs to be 'o' or 'p' for ortho or perspective");
     }
   }
 
@@ -370,8 +374,7 @@ Camera get_camera(const po::variables_map& vm)
     std::vector<std::string> strs;
     boost::split(strs, vm["imgsize"].as<std::string>(), boost::is_any_of(","));
     if (strs.size() != 2) {
-      LOG("Need 2 numbers for imgsize");
-      exit(1);
+      throw CommandLineError("Need 2 numbers for imgsize");
     } else {
       try {
         int const w = boost::lexical_cast<int>(strs[0]);
@@ -739,9 +742,8 @@ void set_render_color_scheme(const std::string& color_scheme, const bool exit_if
   }
 
   if (exit_if_not_found) {
-    LOG((boost::algorithm::join(ColorMap::instance().colorSchemeNames(), "\n")));
-
-    exit(1);
+    throw CommandLineError("Unknown color scheme '" + arg_colorscheme + "'. Known schemes:\n" +
+                           boost::algorithm::join(ColorMap::instance().colorSchemeNames(), "\n"));
   } else {
     LOG("Unknown color scheme '%1$s', using default '%2$s'.", arg_colorscheme,
         ColorMap::instance().defaultColorSchemeName());
@@ -797,55 +799,17 @@ struct CommaSeparatedVector {
 };
 
 // OpenSCAD
-int openscad_main(int argc, char **argv)
+/*!
+   Builds the user-visible command line options.
+
+   Extracted from openscad_main() so the same option set can be parsed from inside a running
+   process -- see run_command_line() in command_line.h. Keeping a single definition is the
+   point: a second, drifting copy of the option list would be worse than no in-process
+   parsing at all.
+ */
+po::options_description build_options_description()
 {
-#if defined(ENABLE_CGAL) && defined(USE_MIMALLOC)
-  // call init_mimalloc before any GMP variables are initialized. (defined in src/openscad_mimalloc.h)
-  init_mimalloc();
-#endif
-
-  int rc = 0;
-  StackCheck::inst();
-
-#ifdef Q_OS_MACOS
-  bool isGuiLaunched = getenv("GUI_LAUNCHED") != nullptr;
-  auto nslog = [](const Message& msg, void *userdata) { CocoaUtils::nslog(msg.msg, userdata); };
-  if (isGuiLaunched) set_output_handler(nslog, nullptr, nullptr);
-#else
-  PlatformUtils::ensureStdIO();
-#endif
-
-#ifndef __EMSCRIPTEN__
-  const auto applicationPath =
-    weakly_canonical(boost::dll::program_location()).parent_path().generic_string();
-#else
-  const auto applicationPath = boost::dll::fs::current_path();
-#endif
-  PlatformUtils::registerApplicationPath(applicationPath);
-
-#ifdef ENABLE_PYTHON
-  // The original name as called, not resolving links and so on. This will
-  // just forward everything to the python main.
-  const auto applicationName = fs::path(argv[0]).filename().generic_string();
-  if (applicationName == "python" || applicationName == "python3" ||
-      applicationName.rfind("python3.", 0) == 0 || applicationName == "openscad-python") {
-    return pythonRunArgs(argc, argv);
-  }
-#endif
-
-#ifdef ENABLE_CGAL
-  // Always throw exceptions from CGAL, so we can catch instead of crashing on bad geometry.
-  CGAL::set_error_behaviour(CGAL::THROW_EXCEPTION);
-  CGAL::set_warning_behaviour(CGAL::THROW_EXCEPTION);
-#endif
-  Builtins::initialize();
-
-  auto original_path = fs::current_path();
-
-  std::vector<std::string> output_files;
-  const char *deps_output_file = nullptr;
-  boost::optional<FileFormat> export_format;
-
+  // Only used to name the available --view options in the help text.
   ViewOptions viewOptions{};
   po::options_description desc("Allowed options");
   // clang-format off
@@ -865,14 +829,14 @@ int openscad_main(int argc, char **argv)
     ("D,D", po::value<std::vector<std::string>>(), "var=val -pre-define variables")
     ("p,p", po::value<std::string>(), "customizer parameter file")
     ("P,P", po::value<std::string>(), "customizer parameter set")
-#ifdef ENABLE_EXPERIMENTAL
+  #ifdef ENABLE_EXPERIMENTAL
     ("enable", po::value<std::vector<std::string>>(),
       ("enable experimental features (specify 'all' for enabling all available features): " +
       str_join(boost::make_iterator_range(Feature::begin(), Feature::end()), " | ",
                [](const Feature *feature) { return feature->get_name(); }) +
       "\n")
       .c_str())
-#endif
+  #endif
     ("help,h", "print this help message and exit")
     ("help-export", "print list of export parameters and values that can be set via -O")
     ("version,v", "print the version")
@@ -925,19 +889,72 @@ int openscad_main(int argc, char **argv)
       "=true/false, configure the parameter range check for builtin modules")
     ("debug", po::value<std::string>(),
       "special debug info - specify 'all' or a set of source file names")
-#ifdef ENABLE_PYTHON
+  #ifdef ENABLE_PYTHON
     ("trust-python", "Trust python")
     ("python-module", po::value<std::string>(), "=module Call pip python module")
-#endif
+  #endif
     ;
   // clang-format on
 
 #ifdef ENABLE_GUI_TESTS
   // clang-format off
   desc.add_options()("run-all-gui-tests", "special gui testing mode - run all the tests");
-  // clang-format on
+// clang-format on
+#endif
+  return desc;
+}
+
+int openscad_main(int argc, char **argv)
+{
+#if defined(ENABLE_CGAL) && defined(USE_MIMALLOC)
+  // call init_mimalloc before any GMP variables are initialized. (defined in src/openscad_mimalloc.h)
+  init_mimalloc();
 #endif
 
+  int rc = 0;
+  StackCheck::inst();
+
+#ifdef Q_OS_MACOS
+  bool isGuiLaunched = getenv("GUI_LAUNCHED") != nullptr;
+  auto nslog = [](const Message& msg, void *userdata) { CocoaUtils::nslog(msg.msg, userdata); };
+  if (isGuiLaunched) set_output_handler(nslog, nullptr, nullptr);
+#else
+  PlatformUtils::ensureStdIO();
+#endif
+
+#ifndef __EMSCRIPTEN__
+  const auto applicationPath =
+    weakly_canonical(boost::dll::program_location()).parent_path().generic_string();
+#else
+  const auto applicationPath = boost::dll::fs::current_path();
+#endif
+  PlatformUtils::registerApplicationPath(applicationPath);
+
+#ifdef ENABLE_PYTHON
+  // The original name as called, not resolving links and so on. This will
+  // just forward everything to the python main.
+  const auto applicationName = fs::path(argv[0]).filename().generic_string();
+  if (applicationName == "python" || applicationName == "python3" ||
+      applicationName.rfind("python3.", 0) == 0 || applicationName == "openscad-python") {
+    return pythonRunArgs(argc, argv);
+  }
+#endif
+
+#ifdef ENABLE_CGAL
+  // Always throw exceptions from CGAL, so we can catch instead of crashing on bad geometry.
+  CGAL::set_error_behaviour(CGAL::THROW_EXCEPTION);
+  CGAL::set_warning_behaviour(CGAL::THROW_EXCEPTION);
+#endif
+  Builtins::initialize();
+
+  auto original_path = fs::current_path();
+
+  std::vector<std::string> output_files;
+  const char *deps_output_file = nullptr;
+  boost::optional<FileFormat> export_format;
+
+  ViewOptions viewOptions{};
+  po::options_description desc = build_options_description();
   po::options_description hidden("Hidden options");
   // clang-format off
   hidden.add_options()
@@ -1209,4 +1226,151 @@ int openscad_main(int argc, char **argv)
   }
 
   return rc;
+}
+
+/*
+   In-process command line execution -- see command_line.h.
+
+   ponytail: this parses with the same options_description as openscad_main() and then hands off
+   to the same cmdline() runner, rather than reimplementing either. It deliberately supports only
+   the export path (an -o output), which is all the Advanced Export spike needs; --help, --version
+   and GUI mode are rejected rather than emulated, because those legitimately terminate or take
+   over the process.
+ */
+int run_command_line(const std::vector<std::string>& args, std::string& error)
+{
+  error.clear();
+  if (args.empty()) {
+    error = "No arguments given.";
+    return 1;
+  }
+
+  std::vector<const char *> argv;
+  argv.reserve(args.size());
+  for (const auto& arg : args) argv.push_back(arg.c_str());
+
+  try {
+    po::options_description desc = build_options_description();
+    po::options_description hidden("Hidden options");
+    hidden.add_options()("input-file", po::value<std::vector<std::string>>(), "input file");
+    po::options_description all_options;
+    all_options.add(desc).add(hidden);
+    po::positional_options_description positional;
+    positional.add("input-file", -1);
+
+    po::variables_map vm;
+    try {
+      po::store(po::command_line_parser(static_cast<int>(argv.size()), argv.data())
+                  .options(all_options)
+                  .positional(positional)
+                  .extra_parser(customSyntax)
+                  .run(),
+                vm);
+    } catch (const std::exception& e) {
+      throw CommandLineError(e.what());
+    }
+
+    for (const char *unsupported : {"help", "version", "info", "help-export"}) {
+      if (vm.count(unsupported)) {
+        throw CommandLineError(std::string("--") + unsupported +
+                               " is not supported when running in-process.");
+      }
+    }
+
+    if (!vm.count("o")) {
+      throw CommandLineError("An output file is required: pass -o <file>.");
+    }
+    const auto output_files = vm["o"].as<std::vector<std::string>>();
+    if (!vm.count("input-file")) {
+      throw CommandLineError("An input .scad file is required.");
+    }
+    const auto input_files = vm["input-file"].as<std::vector<std::string>>();
+    if (input_files.size() != 1) {
+      throw CommandLineError("Exactly one input file is supported.");
+    }
+
+    boost::optional<FileFormat> export_format;
+    if (vm.count("export-format")) {
+      const auto format_str = vm["export-format"].as<std::string>();
+      FileFormat format;
+      if (!fileformat::fromIdentifier(format_str, format)) {
+        throw CommandLineError("Unknown --export-format '" + format_str + "'.");
+      }
+      export_format = format;
+    }
+
+    ViewOptions viewOptions{};
+    if (vm.count("preview")) {
+      viewOptions.renderer = vm["preview"].as<std::string>() == "throwntogether"
+                               ? RenderType::THROWNTOGETHER
+                               : RenderType::OPENCSG;
+    } else if (vm.count("render")) {
+      viewOptions.renderer =
+        (vm["render"].as<std::string>() == "cgal" || vm["render"].as<std::string>() == "force")
+          ? RenderType::BACKEND_SPECIFIC
+          : RenderType::GEOMETRY;
+    }
+    viewOptions.previewer = (viewOptions.renderer == RenderType::THROWNTOGETHER)
+                              ? Previewer::THROWNTOGETHER
+                              : Previewer::OPENCSG;
+    if (vm.count("view")) {
+      for (const auto& option : vm["view"].as<CommaSeparatedVector>().values) {
+        try {
+          viewOptions[option] = true;
+        } catch (const std::out_of_range&) {
+          throw CommandLineError("Unknown --view option '" + option + "'.");
+        }
+      }
+    }
+
+    if (vm.count("D")) {
+      for (const auto& assignment : vm["D"].as<std::vector<std::string>>()) {
+        commandline_commands += assignment;
+        commandline_commands += ";\n";
+      }
+    }
+    if (vm.count("colorscheme")) {
+      arg_colorscheme = vm["colorscheme"].as<std::string>();
+      set_render_color_scheme(arg_colorscheme, true);
+    }
+
+    const Camera camera = get_camera(vm);
+    const AnimateArgs animate = get_animate(vm);
+    const CmdLineExportOptions export_options = convert_export_options(vm);
+    const std::string parameterFile = vm.count("p") ? vm["p"].as<std::string>() : std::string();
+    const std::string parameterSet = vm.count("P") ? vm["P"].as<std::string>() : std::string();
+    const auto original_path = fs::current_path();
+
+    parser_init();
+    localization_init();
+
+    int rc = 0;
+    for (const auto& filename : output_files) {
+      if (filename == "-") {
+        throw CommandLineError("Writing to stdout is not supported when running in-process.");
+      }
+      const CommandLine cmd{false,
+                            input_files[0],
+                            false,
+                            filename,
+                            original_path,
+                            parameterFile,
+                            parameterSet,
+                            viewOptions,
+                            camera,
+                            export_format,
+                            export_options,
+                            animate,
+                            std::vector<std::string>{},
+                            ""};
+      rc |= cmdline(cmd);
+    }
+    return rc;
+  } catch (const CommandLineError& e) {
+    error = e.what();
+    return 1;
+  } catch (const std::exception& e) {
+    error = e.what();
+    return 1;
+  }
 }
