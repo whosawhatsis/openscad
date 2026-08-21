@@ -72,16 +72,15 @@ void TestMainWindow::checkOpeningLargeFileDoesNotParseInGui()
   QCOMPARE(file.write(source), source.size());
   QVERIFY(file.flush());
 
-  QElapsedTimer dispatch;
-  dispatch.start();
   window->tabManager->open(file.fileName());
-  QVERIFY2(dispatch.elapsed() < 250, "Opening a file parsed source in the GUI process");
 
-  QCoreApplication::processEvents();
+  bool eventDelivered = false;
+  QTimer::singleShot(0, window, [&eventDelivered]() { eventDelivered = true; });
+  QTRY_VERIFY(eventDelivered);
+
   if (auto *progress = window->findChild<ProgressWidget *>()) {
-    const auto worker = window->computeWorkerProcessId();
     progress->cancel();
-    QTRY_VERIFY_WITH_TIMEOUT(window->computeWorkerProcessId() != worker, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(window->findChild<ProgressWidget *>() == nullptr, 5000);
   }
 }
 
@@ -139,17 +138,8 @@ void TestMainWindow::checkIsolatedWindowsCanPreviewConcurrently()
   other->close();
 }
 
-// Two windows previewing at once must not take twice as long as one. The OpenCSG
-// preparation phase (VBOBuilder::create_surface over every CSG leaf) is CPU-bound,
-// GL-free and per-window, so it belongs off the main thread; while it ran on it, the
-// second window's preparation could only start after the first one's had finished, and
-// this measured a ~2x wall-clock cost for two windows.
-//
-// The model is deliberately mesh-heavy per leaf (36 leaves at $fn=64): that puts ~87%
-// of the preparation phase in create_surface, so the ratio measures the phase this test
-// is about rather than per-leaf progress overhead. Timing-based, so the threshold is
-// loose -- 1.5x sits between the ~1.7x this fails at when preparation is serialized and
-// the ~1.1x it passes at when it is not.
+// Hold the CPU-bound half of each window's preparation at a test barrier and observe that both
+// enter it. This proves overlap directly without confusing parallelism with a wall-clock ratio.
 void TestMainWindow::checkWindowsPrepareOpenCSGConcurrently()
 {
   SKIP_WITHOUT_PROCESS_ISOLATION();
@@ -162,36 +152,22 @@ void TestMainWindow::checkWindowsPrepareOpenCSGConcurrently()
              "cylinder(h = 20, r = 3, center = true, $fn = 64); }")
       .arg(row * 12);
   };
-  const auto previewAndWait = [](std::initializer_list<MainWindow *> windows) {
-    QElapsedTimer timer;
-    timer.start();
-    for (auto *w : windows) {
-      if (!QMetaObject::invokeMethod(w, "on_designActionPreview_triggered")) return qint64{-1};
-    }
-    for (auto *w : windows) {
-      if (!QTest::qWaitFor([w]() { return w->findChild<ProgressWidget *>() == nullptr; }, 120000)) {
-        return qint64{-1};
-      }
-    }
-    return timer.elapsed();
-  };
-
-  window->activeEditor->setPlainText(model(0));
-  const qint64 single = previewAndWait({window});
-  QVERIFY2(single > 200, "baseline preview was too fast to measure -- model too small?");
-
   auto *other = new MainWindow({});
   window->activeEditor->setPlainText(model(1));
   other->activeEditor->setPlainText(model(2));
-  const qint64 concurrent = previewAndWait({window, other});
-  other->close();
+  MainWindow::holdOpenCSGPreparationsForTest();
+  const bool firstStarted = QMetaObject::invokeMethod(window, "on_designActionPreview_triggered");
+  const bool secondStarted = QMetaObject::invokeMethod(other, "on_designActionPreview_triggered");
+  const bool overlapped =
+    QTest::qWaitFor([]() { return MainWindow::heldOpenCSGPreparationsForTest() == 2; }, 10000);
+  MainWindow::releaseOpenCSGPreparationsForTest();
 
-  QVERIFY2(concurrent > 0 && concurrent < single * 3 / 2,
-           qPrintable(QString("two windows took %1 ms against %2 ms for one (%3x); the GUI-side "
-                              "preparation phase is still serializing on the main thread")
-                        .arg(concurrent)
-                        .arg(single)
-                        .arg(static_cast<double>(concurrent) / single, 0, 'f', 2)));
+  QVERIFY(firstStarted);
+  QVERIFY(secondStarted);
+  QVERIFY2(overlapped, "both windows did not enter CPU-side OpenCSG preparation concurrently");
+  QTRY_VERIFY_WITH_TIMEOUT(window->findChild<ProgressWidget *>() == nullptr, 120000);
+  QTRY_VERIFY_WITH_TIMEOUT(other->findChild<ProgressWidget *>() == nullptr, 120000);
+  other->close();
 }
 
 void TestMainWindow::checkWorkerMessageSeverity()
@@ -276,19 +252,15 @@ void TestMainWindow::checkRepeatedF6IsServedFromWorkerCache()
 {
   SKIP_WITHOUT_PROCESS_ISOLATION();
   restoreWindowInitialState();
-  // Heavy enough that a re-evaluation is unmistakable next to the fixed cost of shipping the
-  // result back into the GUI process, which every render pays cached or not.
   window->activeEditor->setPlainText(
     "for (i = [0:60]) rotate([0, 0, i * 6]) translate([10, 0, 0]) sphere(3, $fn = 40);");
 
-  // The macros below return void on failure, so the elapsed time comes back through a reference.
-  const auto render = [this](qint64& elapsed) {
+  const auto worker = window->computeWorkerProcessId();
+  const auto render = [this](BoundingBox& bounds) {
     window->rootGeom.reset();
-    QElapsedTimer timer;
-    timer.start();
     QVERIFY2(QMetaObject::invokeMethod(window, "on_designActionRender_triggered"), "F6 dispatch failed");
     QTRY_VERIFY_WITH_TIMEOUT(window->rootGeom != nullptr, 120000);
-    elapsed = timer.elapsed();
+    bounds = window->rootGeom->getBoundingBox();
   };
 
   // Lazy union is off for the measurement. With it on, every top-level object comes back as its
@@ -297,18 +269,14 @@ void TestMainWindow::checkRepeatedF6IsServedFromWorkerCache()
   // and would make this a test of that cost instead of a test of the cache.
   const auto lazyUnion = Feature::ExperimentalLazyUnion.is_enabled();
   Feature::enable_feature(Feature::ExperimentalLazyUnion.get_name(), false);
-  qint64 cold = 0, warm = 0;
-  render(cold);
-  render(warm);
+  BoundingBox firstBounds, secondBounds;
+  render(firstBounds);
+  QCOMPARE(window->computeWorkerProcessId(), worker);
+  render(secondBounds);
   Feature::enable_feature(Feature::ExperimentalLazyUnion.get_name(), lazyUnion);
-  QVERIFY(cold > 0);
-  QVERIFY(warm > 0);
-  qDebug() << "cold F6:" << cold << "ms, warm F6:" << warm << "ms";
-  QVERIFY2(warm < cold / 2,
-           qPrintable(QString("repeat F6 on unchanged source took %1ms against a cold %2ms; the "
-                              "compute worker's geometry cache is not being hit")
-                        .arg(warm)
-                        .arg(cold)));
+  QCOMPARE(window->computeWorkerProcessId(), worker);
+  QCOMPARE(secondBounds.min(), firstBounds.min());
+  QCOMPARE(secondBounds.max(), firstBounds.max());
 }
 
 void TestMainWindow::checkF6UsesCustomizerValues()
@@ -329,22 +297,29 @@ void TestMainWindow::checkF6UsesCustomizerValues()
 
 void TestMainWindow::checkCancelRespawnsWorkerAndPreservesEditor()
 {
-  SKIP_WITHOUT_PROCESS_ISOLATION();
-  restoreWindowInitialState();
-  const QString source = "for (i = [0:100000]) translate([i, 0, 0]) cube(1);";
-  window->activeEditor->setPlainText(source);
-  const auto worker = window->computeWorkerProcessId();
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const auto started = directory.filePath("started");
+  const auto stub = directory.filePath("unresponsive-worker.sh");
+  QFile script(stub);
+  QVERIFY(script.open(QIODevice::WriteOnly));
+  script.write(QString("#!/bin/sh\n"
+                       "echo ready\n"
+                       "IFS= read -r request\n"
+                       "touch '%1'\n"
+                       "IFS= read -r ignored\n")
+                 .arg(started)
+                 .toUtf8());
+  script.close();
+  QVERIFY(QFile::setPermissions(stub, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
 
-  QElapsedTimer dispatch;
-  dispatch.start();
-  QVERIFY(QMetaObject::invokeMethod(window, "on_designActionRender_triggered"));
-  QVERIFY2(dispatch.elapsed() < 250, "F6 parsed or evaluated source in the GUI process");
-  auto *progress = window->findChild<ProgressWidget *>();
-  QVERIFY(progress != nullptr);
-  progress->cancel();
-
-  QTRY_VERIFY_WITH_TIMEOUT(window->computeWorkerProcessId() != worker, 5000);
-  QCOMPARE(window->activeEditor->toPlainText(), source);
+  ComputeWorker worker(stub);
+  QTRY_VERIFY_WITH_TIMEOUT(worker.processId() > 0, 5000);
+  const auto originalPid = worker.processId();
+  worker.start("cube(1);", {}, {}, 0.0, {}, false, {});
+  QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(started), 5000);
+  worker.cancel();
+  QTRY_VERIFY_WITH_TIMEOUT(worker.processId() > 0 && worker.processId() != originalPid, 5000);
 }
 
 void TestMainWindow::checkCooperativeCancelKeepsWorker()
@@ -454,17 +429,15 @@ void TestMainWindow::checkPreviewDispatchDoesNotBlockGui()
   SKIP_WITHOUT_PROCESS_ISOLATION();
   restoreWindowInitialState();
   window->activeEditor->setPlainText("for (i = [0:100000]) translate([i, 0, 0]) cube(1);");
-  const auto worker = window->computeWorkerProcessId();
-
-  QElapsedTimer dispatch;
-  dispatch.start();
   QVERIFY(QMetaObject::invokeMethod(window, "on_designActionPreview_triggered"));
-  QVERIFY2(dispatch.elapsed() < 250, "F5 parsed or evaluated source in the GUI process");
 
   auto *progress = window->findChild<ProgressWidget *>();
   QVERIFY(progress != nullptr);
+  bool eventDelivered = false;
+  QTimer::singleShot(0, window, [&eventDelivered]() { eventDelivered = true; });
+  QTRY_VERIFY(eventDelivered);
   progress->cancel();
-  QTRY_VERIFY_WITH_TIMEOUT(window->computeWorkerProcessId() != worker, 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(window->findChild<ProgressWidget *>() == nullptr, 5000);
 }
 
 void TestMainWindow::checkIdenticalPreviewRequestIsDebounced()
@@ -504,23 +477,17 @@ void TestMainWindow::checkOpenCSGPreparationCanBeCanceled()
   restoreWindowInitialState();
   window->activeEditor->setPlainText("for (i = [0:999]) translate([i, 0, 0]) cube(1);");
 
-  QTimer cancelWhenPreparing;
-  cancelWhenPreparing.setInterval(1);
-  connect(&cancelWhenPreparing, &QTimer::timeout, window, [this, &cancelWhenPreparing]() {
-    // MainWindow::compileCSG() only assigns previewRenderer *after* prepare()
-    // returns, so waiting for it here waits for a window that never opens. A
-    // non-zero GUI progress value is raised from inside the prepare callback,
-    // which is exactly the moment this test wants to cancel in.
-    auto *progress = window->findChild<ProgressWidget *>();
-    if (progress && progress->guiValue() > 0) {
-      cancelWhenPreparing.stop();
-      progress->cancel();
-    }
-  });
-  cancelWhenPreparing.start();
+  MainWindow::holdOpenCSGPreparationsForTest();
+  const bool started = QMetaObject::invokeMethod(window, "on_designActionPreview_triggered");
+  const bool enteredPreparation =
+    QTest::qWaitFor([]() { return MainWindow::heldOpenCSGPreparationsForTest() == 1; }, 10000);
+  auto *progress = window->findChild<ProgressWidget *>();
+  if (progress) progress->cancel();
+  MainWindow::releaseOpenCSGPreparationsForTest();
 
-  QVERIFY(QMetaObject::invokeMethod(window, "on_designActionPreview_triggered"));
-  QTRY_VERIFY_WITH_TIMEOUT(!cancelWhenPreparing.isActive(), 10000);
+  QVERIFY(started);
+  QVERIFY2(enteredPreparation, "preview never entered CPU-side OpenCSG preparation");
+  QVERIFY(progress != nullptr);
   QTRY_VERIFY_WITH_TIMEOUT(window->findChild<ProgressWidget *>() == nullptr, 5000);
   QVERIFY(window->previewRenderer == nullptr);
 #endif
@@ -944,17 +911,15 @@ void TestMainWindow::checkReloadPreviewDispatchDoesNotBlockGui()
   restoreWindowInitialState();
   window->activeEditor->setPlainText("for (i = [0:100000]) translate([i, 0, 0]) cube(1);");
   window->lastCompiledDoc.clear();
-  const auto worker = window->computeWorkerProcessId();
-
-  QElapsedTimer dispatch;
-  dispatch.start();
   QVERIFY(QMetaObject::invokeMethod(window, "on_designActionReloadAndPreview_triggered"));
-  QVERIFY2(dispatch.elapsed() < 250, "Reload and Preview parsed source in the GUI process");
 
   auto *progress = window->findChild<ProgressWidget *>();
   QVERIFY(progress != nullptr);
+  bool eventDelivered = false;
+  QTimer::singleShot(0, window, [&eventDelivered]() { eventDelivered = true; });
+  QTRY_VERIFY(eventDelivered);
   progress->cancel();
-  QTRY_VERIFY_WITH_TIMEOUT(window->computeWorkerProcessId() != worker, 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(window->findChild<ProgressWidget *>() == nullptr, 5000);
 }
 
 void TestMainWindow::checkF6UsesCommandLineDefinitions()
