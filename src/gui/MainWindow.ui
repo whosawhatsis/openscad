@@ -339,9 +339,11 @@
     </property>
     <widget class="QMenu" name="menuAnalysisView">
      <property name="title">
-      <string>Analysis &amp;View</string>
+      <string>&amp;Shading</string>
      </property>
      <addaction name="viewActionAnalysisViewDefault"/>
+     <addaction name="viewActionAnalysisViewPhong"/>
+     <addaction name="separator"/>
      <addaction name="viewActionAnalysisViewDepth"/>
      <addaction name="viewActionAnalysisViewDepthMetric"/>
      <addaction name="viewActionAnalysisViewDepthMetricFine"/>
@@ -1183,6 +1185,17 @@
    </property>
    <property name="text">
     <string>&amp;Default (shaded)</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewPhong">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Phong</string>
+   </property>
+   <property name="toolTip">
+    <string>GPU-accelerated per-pixel diffuse and specular shading</string>
    </property>
   </action>
   <action name="viewActionAnalysisViewNormal">

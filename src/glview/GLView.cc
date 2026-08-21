@@ -66,6 +66,15 @@ void GLView::setupShader()
       },
   });
 
+  auto phong_resource = ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("Phong.vert"),
+                                                          ShaderUtils::loadShaderSource("Phong.frag"));
+  phong_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
+    .resource = phong_resource,
+    .type = ShaderUtils::ShaderType::AGENT_RENDERING,
+    .uniforms = {},
+    .attributes = {},
+  });
+
   auto normal_resource =
     ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentNormalMap.vert"),
                                       ShaderUtils::loadShaderSource("AgentNormalMap.frag"));
@@ -213,6 +222,12 @@ void GLView::teardownShader()
   }
   if (edge_shader->resource.fragment_shader) {
     glDeleteShader(edge_shader->resource.fragment_shader);
+  }
+
+  if (phong_shader && phong_shader->resource.shader_program) {
+    glDeleteProgram(phong_shader->resource.shader_program);
+    glDeleteShader(phong_shader->resource.vertex_shader);
+    glDeleteShader(phong_shader->resource.fragment_shader);
   }
 
   if (agent_normal_shader && agent_normal_shader->resource.shader_program) {
@@ -399,7 +414,7 @@ void GLView::paintGL()
   glDisable(GL_LIGHTING);
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
-  if (analysis_mode != AnalysisMode::Default) {
+  if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Phong) {
     // An analysis image is data, so its background must not depend on which colour
     // scheme the user happens to have selected, and must not be a gradient - both
     // would decode as varying "surface" values where there is no surface. Flat,
@@ -463,7 +478,9 @@ void GLView::paintGL()
     OpenCSG::setContext(this->opencsg_id);
 #endif
     ShaderUtils::ShaderInfo *active_shader = edge_shader.get();
-    if (analysis_mode == AnalysisMode::Normal && agent_normal_shader) {
+    if (analysis_mode == AnalysisMode::Phong && phong_shader) {
+      active_shader = phong_shader.get();
+    } else if (analysis_mode == AnalysisMode::Normal && agent_normal_shader) {
       active_shader = agent_normal_shader.get();
     } else if (analysis_mode == AnalysisMode::Coordinate && agent_coord_shader) {
       active_shader = agent_coord_shader.get();

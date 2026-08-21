@@ -58,6 +58,8 @@ void TestAnalysisView::checkMenuActionsSetTheMode()
 {
   restoreWindowInitialState();
 
+  QCOMPARE(QString(window->menuAnalysisView->title()).remove('&'), QString("Shading"));
+
   // Triggering the action, rather than calling the handler directly: the failure
   // this guards against is a name mismatch that leaves Qt's auto-connection
   // silently unbound, which calling the handler would not catch.
@@ -69,6 +71,9 @@ void TestAnalysisView::checkMenuActionsSetTheMode()
 
   window->viewActionAnalysisViewFlat->trigger();
   QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Flat);
+
+  window->viewActionAnalysisViewPhong->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Phong);
 
   window->viewActionAnalysisViewChromatic->trigger();
   QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Chromatic);
@@ -117,6 +122,7 @@ void TestAnalysisView::checkModesChangeTheRender()
     const char *name;
   };
   const ModeCase cases[] = {
+    {window->viewActionAnalysisViewPhong, "Phong"},
     {window->viewActionAnalysisViewNormal, "Normal"},
     {window->viewActionAnalysisViewCoordinate, "Coordinate"},
     {window->viewActionAnalysisViewFlat, "Flat"},

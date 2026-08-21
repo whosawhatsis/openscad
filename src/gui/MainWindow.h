@@ -404,6 +404,7 @@ public slots:
 #endif
   void viewModeThrownTogether();
   void on_viewActionAnalysisViewDefault_triggered();
+  void on_viewActionAnalysisViewPhong_triggered();
   void on_viewActionAnalysisViewNormal_triggered();
   void on_viewActionAnalysisViewCoordinate_triggered();
   void on_viewActionAnalysisViewFlat_triggered();

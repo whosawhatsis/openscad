@@ -45,6 +45,7 @@
  */
 enum class AnalysisMode {
   Default,
+  Phong,
   Depth,
   DepthMetric,
   DepthMetricFine,
@@ -136,6 +137,7 @@ public:
   virtual float getDPI() { return 1.0f; }
 
   std::unique_ptr<ShaderUtils::ShaderInfo> edge_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> phong_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_normal_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_coord_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_chromatic_shader;
