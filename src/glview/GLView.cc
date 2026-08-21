@@ -71,8 +71,11 @@ void GLView::setupShader()
   phong_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
     .resource = phong_resource,
     .type = ShaderUtils::ShaderType::AGENT_RENDERING,
-    .uniforms = {},
-    .attributes = {},
+    .uniforms = {{"showEdges", glGetUniformLocation(phong_resource.shader_program, "showEdges")}},
+    .attributes =
+      {
+        {"barycentric", glGetAttribLocation(phong_resource.shader_program, "barycentric")},
+      },
   });
 
   auto normal_resource =
@@ -480,6 +483,9 @@ void GLView::paintGL()
     ShaderUtils::ShaderInfo *active_shader = edge_shader.get();
     if (analysis_mode == AnalysisMode::Phong && phong_shader) {
       active_shader = phong_shader.get();
+      glUseProgram(active_shader->resource.shader_program);
+      glUniform1i(active_shader->uniforms.at("showEdges"), showedges ? GL_TRUE : GL_FALSE);
+      glUseProgram(0);
     } else if (analysis_mode == AnalysisMode::Normal && agent_normal_shader) {
       active_shader = agent_normal_shader.get();
     } else if (analysis_mode == AnalysisMode::Coordinate && agent_coord_shader) {
@@ -490,8 +496,10 @@ void GLView::paintGL()
       applyChromaticLights(active_shader);
     }
 
-    bool active_showedges = showedges;
-    if (analysis_mode != AnalysisMode::Default) {
+    // Phong always needs the barycentric attribute bound; its uniform decides
+    // whether those coordinates affect the final colour.
+    bool active_showedges = showedges || analysis_mode == AnalysisMode::Phong;
+    if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Phong) {
       active_showedges = false;
     }
     // Set both ways every paint rather than only disabling. A one-way disable

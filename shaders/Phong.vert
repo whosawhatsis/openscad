@@ -3,6 +3,8 @@
 varying vec3 vNormal;
 varying vec3 vEyePosition;
 varying vec4 vColor;
+attribute vec3 barycentric;
+varying vec3 vBC;
 
 void main(void)
 {
@@ -11,5 +13,6 @@ void main(void)
   vNormal = normalize(-(gl_NormalMatrix * gl_Normal));
   vEyePosition = vec3(gl_ModelViewMatrix * gl_Vertex);
   vColor = gl_Color;
+  vBC = barycentric;
   gl_Position = ftransform();
 }
