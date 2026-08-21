@@ -541,7 +541,11 @@ void GLView::paintGL()
     }
 
     this->renderer->prepare(active_shader);
+    // Phong emits premultiplied material RGB plus an unattenuated reflected
+    // highlight, so its RGB must not be multiplied by alpha a second time.
+    if (analysis_mode == AnalysisMode::Phong) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     this->renderer->draw(active_showedges, active_shader);
+    if (analysis_mode == AnalysisMode::Phong) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (depth_preview_polarity(analysisDepthUnits()).invert) {
       // OpenCSG relies on black fog while constructing its internal CSG mask.
       // Invert only the finished image to get metric near-dark polarity without
