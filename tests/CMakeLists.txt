@@ -906,6 +906,12 @@ add_cmdline_test(export-coordinatemap OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING
 add_cmdline_test(export-flatmap       OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=flatmap)
 add_cmdline_test(export-chromatic     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=chromatic)
 
+# At alpha zero the body contributes nothing, so every non-background pixel in
+# the expected image must come from the unattenuated Phong highlight.
+add_cmdline_test(preview-phong-transparency OPENSCAD SUFFIX png
+  FILES ${TEST_SCAD_DIR}/misc/phong-transparent.scad
+  ARGS --view=phong --camera=0,0,0,70,0,25,140 --imgsize=512,256)
+
 # Note: we're missing coverage for ${PREVIEW_DIFFERENT_EXPECTATIONS} files for throwntogether
 add_cmdline_test(throwntogether-cgal  OPENSCAD FILES ${ALL_THROWNTOGETHER_FILES} SUFFIX png EXPECTEDDIR throwntogether ARGS --preview=throwntogether --backend=cgal)
 add_cmdline_test(throwntogether-manifold  OPENSCAD FILES ${ALL_THROWNTOGETHER_FILES} SUFFIX png EXPECTEDDIR throwntogether ARGS --preview=throwntogether --backend=manifold)

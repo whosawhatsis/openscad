@@ -31,8 +31,11 @@ void main(void)
     }
   }
 
-  vec3 shaded = vColor.rgb * (0.18 + 0.55 * min(diffuse, 1.0)) + vec3(0.35 * min(specular, 1.0));
-  vec4 surface = vec4(clamp(shaded, 0.0, 1.0), vColor.a);
+  vec3 base = vColor.rgb * (0.18 + 0.55 * min(diffuse, 1.0));
+  vec3 highlight = vec3(0.35 * min(specular, 1.0));
+  // Premultiply only the material contribution. The highlight represents
+  // reflected light and remains visible as the material becomes transparent.
+  vec4 surface = vec4(clamp(vColor.a * base + highlight, 0.0, 1.0), vColor.a);
   vec4 edge = vec4((vColor.rgb + vec3(1.0)) * 0.5, 1.0);
   gl_FragColor = showEdges ? mix(edge, surface, edgeFactor()) : surface;
 }
