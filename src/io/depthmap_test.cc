@@ -47,6 +47,19 @@ TEST_CASE("metric profile encodes linear millimetres, near dark", "[Depthmap]")
   CHECK(img.maxDepth == Catch::Approx(100.0));
 }
 
+TEST_CASE("viewport depth polarity matches the selected profile", "[Depthmap]")
+{
+  const auto metric = depth_preview_polarity(DEPTHMAP_METRIC_SCALE);
+  CHECK(metric.geometry == 1.0f);
+  CHECK(metric.background == 0.0f);
+  CHECK(metric.invert);
+
+  const auto visual = depth_preview_polarity(0.0);
+  CHECK(visual.geometry == 1.0f);
+  CHECK(visual.background == 0.0f);
+  CHECK_FALSE(visual.invert);
+}
+
 TEST_CASE("metric profile clamps beyond the representable range", "[Depthmap]")
 {
   const std::vector<float> depths = {-5.0f, 70000.0f};
@@ -536,4 +549,60 @@ TEST_CASE("the sphere grows to contain a model it is not centred on", "[Depthmap
   const auto range = capped_sphere_range(bmin, bmax, kOrigin, viewDownZ(10000.0).data());
   const double farthestCorner = std::sqrt(110.0 * 110.0 + 25.0 + 25.0);
   CHECK(range.end - 10000.0 >= Catch::Approx(farthestCorner).margin(1e-9));
+}
+
+TEST_CASE("the fine metric profile encodes 10um units", "[Depthmap]")
+{
+  // 1mm units leave a small model with almost no depth resolution: a 15mm-deep
+  // object viewed from 43mm spans 15 of 65535 levels. At 10um the same object
+  // spans 1560. The ceiling drops from 65.5m to 655mm, which still covers the
+  // eye distances OpenSCAD models are actually viewed from.
+  const std::vector<float> depths = {1.0f, 10.0f, 100.0f};
+  const auto img = encode_depthmap(depths, 3, 1, DepthProfile::metricFine);
+  REQUIRE(img.bytesPerPixel == 2);
+  auto value = [&](size_t i) {
+    return static_cast<int>(img.pixels[i * 2]) << 8 | img.pixels[i * 2 + 1];
+  };
+  CHECK(value(0) == 100);    // 1mm  -> 100 units of 10um
+  CHECK(value(1) == 1000);   // 10mm
+  CHECK(value(2) == 10000);  // 100mm
+}
+
+TEST_CASE("the fine metric profile saturates below the background value", "[Depthmap]")
+{
+  // Beyond 655.34mm the range is exhausted. Clamping must stop just short of the
+  // background sentinel so "too far to represent" stays distinguishable from
+  // "no geometry here" - the same rule the millimetre profile follows.
+  const std::vector<float> depths = {5000.0f};
+  const auto img = encode_depthmap(depths, 1, 1, DepthProfile::metricFine);
+  const int value = static_cast<int>(img.pixels[0]) << 8 | img.pixels[1];
+  CHECK(value == 65534);
+}
+
+TEST_CASE("background is the same sentinel in both metric profiles", "[Depthmap]")
+{
+  const std::vector<float> depths = {std::numeric_limits<float>::infinity()};
+  for (const auto profile : {DepthProfile::metric, DepthProfile::metricFine}) {
+    const auto img = encode_depthmap(depths, 1, 1, profile);
+    const int value = static_cast<int>(img.pixels[0]) << 8 | img.pixels[1];
+    CHECK(value == 65535);
+  }
+}
+
+TEST_CASE("every absolute-scale profile is 16-bit", "[Depthmap]")
+{
+  // 8 bits of absolute depth is not worth offering: 256 levels over any range
+  // wide enough to hold a scene is coarser than the geometry it describes. So a
+  // profile that encodes real distance is always 16-bit, and the metadata design
+  // leans on it - the 16-bit writer is lodepng everywhere, while the 8-bit path
+  // is CoreGraphics on macOS and cannot carry arbitrary text chunks.
+  const std::vector<float> depths = {10.0f};
+  for (const auto profile : {DepthProfile::metric, DepthProfile::metricFine, DepthProfile::visual}) {
+    const auto img = encode_depthmap(depths, 1, 1, profile);
+    if (depth_units_per_mm(profile) > 0.0) {
+      CHECK(img.bytesPerPixel == 2);
+    } else {
+      CHECK(img.bytesPerPixel > 2);  // normalized profiles are RGBA, never absolute
+    }
+  }
 }

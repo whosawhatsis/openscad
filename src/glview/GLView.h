@@ -43,7 +43,17 @@
    the renderer silently ignored the fog - a state the UI could express and the
    renderer could not.
  */
-enum class AnalysisMode { Default, Depth, Normal, Coordinate, Flat, Chromatic };
+enum class AnalysisMode {
+  Default,
+  Phong,
+  Depth,
+  DepthMetric,
+  DepthMetricFine,
+  Normal,
+  Coordinate,
+  Flat,
+  Chromatic
+};
 
 class GLView
 {
@@ -81,9 +91,29 @@ public:
   void setShowCrosshairs(bool enabled) { this->showcrosshairs = enabled; }
   [[nodiscard]] bool transparentBackground() const { return this->transparent_background; }
   void setTransparentBackground(bool enabled) { this->transparent_background = enabled; }
-  //! Depth shading is AnalysisMode::Depth; kept as a named helper because the
-  //! draw path asks this question in three places.
-  [[nodiscard]] bool showDepth() const { return this->analysis_mode == AnalysisMode::Depth; }
+  //! True for any of the depth modes; the draw path asks in three places.
+  [[nodiscard]] bool showDepth() const
+  {
+    return this->analysis_mode == AnalysisMode::Depth ||
+           this->analysis_mode == AnalysisMode::DepthMetric ||
+           this->analysis_mode == AnalysisMode::DepthMetricFine;
+  }
+  /*!
+     The absolute scale the viewport is previewing, or 0 for the normalized
+     depth view. A metric preview shows what the exported file contains rather
+     than what is easiest to look at: near dark, far bright, background at the
+     maximum, and the same fixed millimetre mapping the file uses. At 1mm units
+     that is a nearly black screen for any desktop-scale model - which is the
+     honest picture of what 8 bits of a 65.5m range looks like.
+   */
+  [[nodiscard]] double analysisDepthUnits() const
+  {
+    switch (this->analysis_mode) {
+    case AnalysisMode::DepthMetric:     return DEPTHMAP_METRIC_SCALE;
+    case AnalysisMode::DepthMetricFine: return DEPTHMAP_FINE_SCALE;
+    default:                            return 0.0;
+    }
+  }
   //! Pin the depth shading to an explicit range instead of the bounding box, so
   //! the viewport matches an export made with the same range.
   void setDepthOptions(const DepthmapOptions& options) { this->depthoptions = options; }
@@ -110,6 +140,7 @@ public:
   virtual float getDPI() { return 1.0f; }
 
   std::unique_ptr<ShaderUtils::ShaderInfo> edge_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> phong_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_normal_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_coord_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_chromatic_shader;

@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <string>
 #include <cstdlib>
+#include <iomanip>
 #include <sstream>
 #include <fstream>
 #include <vector>
@@ -214,10 +215,33 @@ bool OffscreenView::saveDepth(std::ostream& output, const DepthmapOptions& optio
         effective.range_from_model ? "model's" : "requested", effective.explicit_near,
         effective.explicit_far);
   }
-  if (options.profile == DepthProfile::metric) {
-    LOG("Depthmap: %1$.3f - %2$.3f mm from the camera, %3$g units per mm.", image.minDepth,
-        image.maxDepth, DEPTHMAP_METRIC_SCALE);
-    return write_png_gray16(output, flipped.data(), this->ctx->width(), this->ctx->height());
+  if (const double units = depth_units_per_mm(options.profile); units > 0.0) {
+    // The ceiling is worth stating outright: at 10um units it is 655mm, which a
+    // scene framed from further away silently saturates against.
+    LOG("Depthmap: %1$.3f - %2$.3f mm from the camera, %3$g units per mm (max %4$.2f mm).",
+        image.minDepth, image.maxDepth, units, 65534.0 / units);
+    if (image.maxDepth * units > 65534.0) {
+      LOG(message_group::Warning,
+          "Depthmap: geometry beyond %1$.2f mm saturated - the %2$g units/mm profile cannot "
+          "represent it.",
+          65534.0 / units, units);
+    }
+    // Embed what the file needs to be decodable, so a metric depth map is
+    // self-describing even when it travels without its sidecar. The sidecar
+    // stays available: PFM has nowhere to put this, and plenty of pipelines
+    // re-encode PNGs and drop text chunks on the way.
+    std::ostringstream scale;
+    // Fixed, not full precision: these are a scale factor and a limit for a human
+    // or a parser to read, and 655.34000000000003 helps neither.
+    scale << std::fixed << std::setprecision(2);
+    scale << "{\n  \"units_per_mm\": " << units << ",\n  \"max_mm\": " << (65534.0 / units)
+          << ",\n  \"background\": 65535,\n"
+          << "  \"encoding\": \"distance_mm = value / units_per_mm, from the camera\"\n}\n";
+    const std::vector<std::pair<std::string, std::string>> metadata = {
+      {"openscad.depthmap", scale.str()},
+      {"openscad.camera", serialize_camera_json(camParams)},
+    };
+    return write_png_gray16(output, flipped.data(), this->ctx->width(), this->ctx->height(), metadata);
   }
   LOG("Depthmap: %1$.3f - %2$.3f mm from the camera, normalized across that range.", image.minDepth,
       image.maxDepth);

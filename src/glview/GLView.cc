@@ -68,6 +68,18 @@ void GLView::setupShader()
       },
   });
 
+  auto phong_resource = ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("Phong.vert"),
+                                                          ShaderUtils::loadShaderSource("Phong.frag"));
+  phong_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
+    .resource = phong_resource,
+    .type = ShaderUtils::ShaderType::AGENT_RENDERING,
+    .uniforms = {{"showEdges", glGetUniformLocation(phong_resource.shader_program, "showEdges")}},
+    .attributes =
+      {
+        {"barycentric", glGetAttribLocation(phong_resource.shader_program, "barycentric")},
+      },
+  });
+
   auto normal_resource =
     ShaderUtils::compileShaderProgram(ShaderUtils::loadShaderSource("AgentNormalMap.vert"),
                                       ShaderUtils::loadShaderSource("AgentNormalMap.frag"));
@@ -217,6 +229,12 @@ void GLView::teardownShader()
     glDeleteShader(edge_shader->resource.fragment_shader);
   }
 
+  if (phong_shader && phong_shader->resource.shader_program) {
+    glDeleteProgram(phong_shader->resource.shader_program);
+    glDeleteShader(phong_shader->resource.vertex_shader);
+    glDeleteShader(phong_shader->resource.fragment_shader);
+  }
+
   if (agent_normal_shader && agent_normal_shader->resource.shader_program) {
     glDeleteProgram(agent_normal_shader->resource.shader_program);
     glDeleteShader(agent_normal_shader->resource.vertex_shader);
@@ -353,7 +371,18 @@ void GLView::setupDepthShading()
     range = resolve_depth_range(this->depthoptions, range.start, range.end);
   }
 
-  const GLfloat fogcolor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+  // A metric preview ignores the fitted range entirely: the file's mapping is
+  // absolute, from zero to whatever the unit size allows, and the preview is only
+  // honest if it uses the same one.
+  const double units = analysisDepthUnits();
+  const bool metric = units > 0.0;
+  if (metric) {
+    range.start = 0.0;
+    range.end = 65534.0 / units;
+  }
+
+  const auto polarity = depth_preview_polarity(units);
+  const GLfloat fogcolor[4] = {polarity.background, polarity.background, polarity.background, 1.0f};
   glFogi(GL_FOG_MODE, GL_LINEAR);
   glFogf(GL_FOG_START, static_cast<GLfloat>(range.start));
   glFogf(GL_FOG_END, static_cast<GLfloat>(range.end));
@@ -364,13 +393,13 @@ void GLView::setupDepthShading()
   // constant. glColor3f is not enough: the VBO renderers supply per-vertex
   // colours, which win with lighting off. Instead keep lighting on, take
   // GL_COLOR_MATERIAL out (so vertex colours stop feeding the material), and
-  // make the material purely emissive white - emission ignores normals, so
-  // every fragment comes out the same white regardless of orientation.
-  const GLfloat white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  // make the material purely emissive - emission ignores normals, so every
+  // fragment gets the profile's constant geometry value regardless of orientation.
+  const GLfloat geometry[4] = {polarity.geometry, polarity.geometry, polarity.geometry, 1.0f};
   const GLfloat black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
   glEnable(GL_LIGHTING);
   glDisable(GL_COLOR_MATERIAL);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, white);
+  glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, geometry);
   glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, black);
   glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, black);
 }
@@ -390,27 +419,17 @@ void GLView::paintGL()
   glDisable(GL_LIGHTING);
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
-  if (analysis_mode != AnalysisMode::Default) {
-    // An agent image is data, so its background must not depend on which colour
+  if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Phong) {
+    // An analysis image is data, so its background must not depend on which colour
     // scheme the user happens to have selected, and must not be a gradient - both
-    // would decode as varying "surface" values where there is no surface. Black,
-    // flat, and documented as the no-geometry marker.
-    bgcol = Color4f(0.0f, 0.0f, 0.0f, 1.0f);
+    // would decode as varying "surface" values where there is no surface. Flat,
+    // Black, flat, and documented as the no-geometry marker.
+    const float bg = showDepth() ? depth_preview_polarity(analysisDepthUnits()).background : 0.0f;
+    bgcol = Color4f(bg, bg, bg, 1.0f);
     bgstopcol = bgcol;
   }
   auto axescolor = ColorMap::getColor(*this->colorscheme, RenderColor::AXES_COLOR);
   auto crosshaircol = ColorMap::getColor(*this->colorscheme, RenderColor::CROSSHAIR_COLOR);
-
-  if (showDepth()) {
-    // No geometry is infinitely far, exactly like the depthmap export's
-    // background pixels (which fall out for free there, since the exporter
-    // only ever reads the depth buffer). The far end of the viewport's own
-    // fog is black, so the background must read as black too, not the color
-    // scheme's normal gradient - otherwise "far" means two different things
-    // depending on whether a pixel happened to hit geometry.
-    bgcol = Color4f(0.0f, 0.0f, 0.0f, 1.0f);
-    bgstopcol = bgcol;
-  }
 
   // With transparent compositing the scene is always rendered onto a fully transparent buffer and
   // the background is composited underneath at the end of this function. Clearing to (0,0,0,0)
@@ -489,7 +508,12 @@ void GLView::paintGL()
     OpenCSG::setContext(this->opencsg_id);
 #endif
     ShaderUtils::ShaderInfo *active_shader = edge_shader.get();
-    if (analysis_mode == AnalysisMode::Normal && agent_normal_shader) {
+    if (analysis_mode == AnalysisMode::Phong && phong_shader) {
+      active_shader = phong_shader.get();
+      glUseProgram(active_shader->resource.shader_program);
+      glUniform1i(active_shader->uniforms.at("showEdges"), showedges ? GL_TRUE : GL_FALSE);
+      glUseProgram(0);
+    } else if (analysis_mode == AnalysisMode::Normal && agent_normal_shader) {
       active_shader = agent_normal_shader.get();
     } else if (analysis_mode == AnalysisMode::Coordinate && agent_coord_shader) {
       active_shader = agent_coord_shader.get();
@@ -499,8 +523,10 @@ void GLView::paintGL()
       applyChromaticLights(active_shader);
     }
 
-    bool active_showedges = showedges;
-    if (analysis_mode != AnalysisMode::Default) {
+    // Phong always needs the barycentric attribute bound; its uniform decides
+    // whether those coordinates affect the final colour.
+    bool active_showedges = showedges || analysis_mode == AnalysisMode::Phong;
+    if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Phong) {
       active_showedges = false;
     }
     // Set both ways every paint rather than only disabling. A one-way disable
@@ -516,6 +542,37 @@ void GLView::paintGL()
 
     this->renderer->prepare(active_shader);
     this->renderer->draw(active_showedges, active_shader);
+    if (depth_preview_polarity(analysisDepthUnits()).invert) {
+      // OpenCSG relies on black fog while constructing its internal CSG mask.
+      // Invert only the finished image to get metric near-dark polarity without
+      // exposing those internal passes to white fog.
+      glPushAttrib(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_ENABLE_BIT | GL_CURRENT_BIT);
+      glDisable(GL_DEPTH_TEST);
+      glDisable(GL_LIGHTING);
+      glDisable(GL_FOG);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+
+      glMatrixMode(GL_PROJECTION);
+      glPushMatrix();
+      glLoadIdentity();
+      glMatrixMode(GL_MODELVIEW);
+      glPushMatrix();
+      glLoadIdentity();
+      glColor3f(1.0f, 1.0f, 1.0f);
+      glBegin(GL_QUADS);
+      glVertex2f(-1.0f, -1.0f);
+      glVertex2f(1.0f, -1.0f);
+      glVertex2f(1.0f, 1.0f);
+      glVertex2f(-1.0f, 1.0f);
+      glEnd();
+      glPopMatrix();
+      glMatrixMode(GL_PROJECTION);
+      glPopMatrix();
+      glMatrixMode(GL_MODELVIEW);
+      glPopAttrib();
+    }
     if (analysis_mode == AnalysisMode::Chromatic && chromatic_gauge) {
       drawChromaticGauge();
     }

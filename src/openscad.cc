@@ -745,8 +745,11 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
         if (p_entry != section->second.end()) {
           if (p_entry->second == "visual") {
             opts.profile = DepthProfile::visual;
+          } else if (p_entry->second == "metric10um") {
+            opts.profile = DepthProfile::metricFine;
           } else if (p_entry->second != "metric") {
-            LOG("Unknown depthmap profile '%1$s'. Expected 'metric' or 'visual'.", p_entry->second);
+            LOG("Unknown depthmap profile '%1$s'. Expected 'metric', 'metric10um' or 'visual'.",
+                p_entry->second);
             return 1;
           }
         }

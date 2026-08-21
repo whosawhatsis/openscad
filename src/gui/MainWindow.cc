@@ -3115,6 +3115,11 @@ void MainWindow::on_viewActionAnalysisViewDefault_triggered()
   setAnalysisMode(AnalysisMode::Default);
 }
 
+void MainWindow::on_viewActionAnalysisViewPhong_triggered()
+{
+  setAnalysisMode(AnalysisMode::Phong);
+}
+
 void MainWindow::on_viewActionAnalysisViewNormal_triggered()
 {
   setAnalysisMode(AnalysisMode::Normal);
@@ -3172,6 +3177,16 @@ void MainWindow::on_viewActionAnalysisViewDepth_triggered()
   QSettingsCached settings;
   settings.setValue("view/showDepth", true);
   setAnalysisMode(AnalysisMode::Depth);
+}
+
+void MainWindow::on_viewActionAnalysisViewDepthMetric_triggered()
+{
+  setAnalysisMode(AnalysisMode::DepthMetric);
+}
+
+void MainWindow::on_viewActionAnalysisViewDepthMetricFine_triggered()
+{
+  setAnalysisMode(AnalysisMode::DepthMetricFine);
 }
 
 void MainWindow::on_viewActionShowAxes_toggled(bool checked)
@@ -4377,7 +4392,10 @@ void MainWindow::setupMenusAndActions()
   analysisViewGroup = new QActionGroup(this);
   analysisViewGroup->setExclusive(true);
   analysisViewGroup->addAction(this->viewActionAnalysisViewDefault);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewPhong);
   analysisViewGroup->addAction(this->viewActionAnalysisViewDepth);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetric);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetricFine);
   analysisViewGroup->addAction(this->viewActionAnalysisViewNormal);
   analysisViewGroup->addAction(this->viewActionAnalysisViewCoordinate);
   analysisViewGroup->addAction(this->viewActionAnalysisViewFlat);

@@ -14,6 +14,9 @@
      millimetres scaled by DEPTHMAP_METRIC_SCALE, near = dark, background =
      65535 (farthest). Read directly by Kinect/OpenNI-style tooling, ROS,
      Open3D and PCL.
+   - metricFine: as metric, but 10um units instead of 1mm - 655mm of range
+     instead of 65.5m, and a hundred times the depth resolution. See
+     DEPTHMAP_FINE_SCALE for why this is a separate profile and not the default.
    - visual: 8-bit RGB grey, normalized across the model's own depth extent,
      near = bright, background = black. This is what ControlNet depth and
      general image tooling expect, having been trained on MiDaS output.
@@ -28,6 +31,7 @@
 
 enum class DepthProfile : std::uint8_t {
   metric,
+  metricFine,
   visual,
 };
 
@@ -35,6 +39,55 @@ enum class DepthProfile : std::uint8_t {
 //! prevailing Kinect/ROS convention. (TUM's 5000-per-metre variant exists but
 //! is a dataset-specific correction, not a convention to follow.)
 inline constexpr double DEPTHMAP_METRIC_SCALE = 1.0;
+
+/*!
+   Units per millimetre in the fine metric profile: 100 => 10um.
+
+   16 bits buys a fixed product of range and resolution, and the millimetre
+   profile spends nearly all of it on distances no OpenSCAD scene occupies.
+   Depth is measured from the eye, and measured eye distances for ordinary models
+   run from tens to a few hundred millimetres - so a 15mm-deep object viewed from
+   43mm away spans 15 of 65535 levels, under 4 bits of depth in a 16-bit file.
+   At 10um the same object spans 1560.
+
+   The ceiling falls from 65.5m to 655.34mm, which is why this is a second
+   profile rather than a new default: a scene framed from further away than that
+   clamps, and `metric` remains the one that matches what Kinect/ROS-shaped
+   tooling assumes when it reads a depth PNG as millimetres. 1um was considered
+   and rejected - its 65.5mm ceiling clamps an ordinary 120mm part viewed from a
+   normal distance.
+ */
+inline constexpr double DEPTHMAP_FINE_SCALE = 100.0;
+
+/*!
+   Units per millimetre for a profile, or 0 for the profiles that do not encode
+   absolute distance.
+
+   A non-zero answer also means the output is 16-bit: 8 bits of absolute depth is
+   not worth offering, since 256 levels across any range wide enough to hold a
+   scene is coarser than the geometry being described. Two things depend on that
+   invariant - the encoder's bytes-per-pixel, and the embedded metadata, which is
+   only possible on the 16-bit writer.
+ */
+inline constexpr double depth_units_per_mm(DepthProfile profile)
+{
+  switch (profile) {
+  case DepthProfile::metric:     return DEPTHMAP_METRIC_SCALE;
+  case DepthProfile::metricFine: return DEPTHMAP_FINE_SCALE;
+  default:                       return 0.0;
+  }
+}
+
+struct DepthPreviewPolarity {
+  float geometry;
+  float background;
+  bool invert;
+};
+
+inline constexpr DepthPreviewPolarity depth_preview_polarity(double units_per_mm)
+{
+  return {1.0f, 0.0f, units_per_mm > 0.0};
+}
 
 struct DepthImage {
   //! Row-major pixel data, ready to hand to a PNG writer.

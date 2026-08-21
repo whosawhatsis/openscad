@@ -96,7 +96,7 @@ DepthImage encode_depthmap(const std::vector<float>& depths, std::uint32_t width
   // Visual is RGBA rather than RGB because that is what write_png() consumes on
   // both backends - the CoreGraphics writer is kCGImageAlphaNoneSkipLast, and
   // lodepng's info_raw defaults to RGBA8. The alpha is dropped on the way out.
-  img.bytesPerPixel = profile == DepthProfile::metric ? 2 : 4;
+  img.bytesPerPixel = depth_units_per_mm(profile) > 0.0 ? 2 : 4;
   img.pixels.reserve(count * img.bytesPerPixel);
 
   bool any = false;
@@ -113,13 +113,13 @@ DepthImage encode_depthmap(const std::vector<float>& depths, std::uint32_t width
   }
   if (!any) img.minDepth = img.maxDepth = 0.0;
 
-  if (profile == DepthProfile::metric) {
+  if (const double units = depth_units_per_mm(profile); units > 0.0) {
     for (size_t i = 0; i < count; ++i) {
       if (!std::isfinite(depths[i])) {
         push_be16(img.pixels, METRIC_BACKGROUND);
         continue;
       }
-      const double scaled = std::lround(depths[i] * DEPTHMAP_METRIC_SCALE);
+      const double scaled = std::lround(depths[i] * units);
       // Clamp rather than let the cast wrap: a model deeper than ~65m saturates
       // just below the background value so it stays distinguishable from no-data.
       const double clamped = std::clamp(scaled, 0.0, static_cast<double>(METRIC_BACKGROUND - 1));
@@ -240,7 +240,7 @@ DepthImage encode_depthmap(const std::vector<float>& depths, std::uint32_t width
 
   const size_t count = std::min(depths.size(), static_cast<size_t>(width) * height);
   DepthImage img;
-  img.bytesPerPixel = options.profile == DepthProfile::metric ? 2 : 4;
+  img.bytesPerPixel = depth_units_per_mm(options.profile) > 0.0 ? 2 : 4;
   img.pixels.reserve(count * img.bytesPerPixel);
 
   // Report what was actually in the scene, not what was asked for, and say
@@ -260,14 +260,14 @@ DepthImage encode_depthmap(const std::vector<float>& depths, std::uint32_t width
   }
   if (!any) img.minDepth = img.maxDepth = 0.0;
 
-  if (options.profile == DepthProfile::metric) {
+  if (const double units = depth_units_per_mm(options.profile); units > 0.0) {
     for (size_t i = 0; i < count; ++i) {
       if (!std::isfinite(depths[i])) {
         push_be16(img.pixels, METRIC_BACKGROUND);
         continue;
       }
       double d = std::clamp(static_cast<double>(depths[i]), options.explicit_near, options.explicit_far);
-      const double scaled = std::lround(d * DEPTHMAP_METRIC_SCALE);
+      const double scaled = std::lround(d * units);
       const double clamped = std::clamp(scaled, 0.0, static_cast<double>(METRIC_BACKGROUND - 1));
       push_be16(img.pixels, static_cast<std::uint16_t>(clamped));
     }

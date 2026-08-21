@@ -891,6 +891,10 @@ add_cmdline_test(export-depthmap-offcentre-b OPENSCAD SUFFIX png FILES ${DEPTHMA
 # depth, and that cost belongs in the suite rather than only in the argument for
 # it.
 set(DEPTHMAP_ELONGATED ${TEST_SCAD_DIR}/misc/depthmap-elongated.scad)
+# The fine metric profile: same geometry, 10um units instead of 1mm, so the same
+# object spans a hundred times as many levels. Registered on the elongated model
+# because its depth range is the one most likely to expose a scaling mistake.
+add_cmdline_test(export-depthmap-10um OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=metric10um --camera=0,0,0,90,0,90,400)
 add_cmdline_test(export-depthmap-endon  OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,90,400)
 add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,0,400)
 # Agent lighting modes (AgentSCAD): each mode must render differently from an
