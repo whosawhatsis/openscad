@@ -3,6 +3,8 @@
 #include <QElapsedTimer>
 #include <QProgressBar>
 #include <QDoubleSpinBox>
+#include <QAction>
+#include <QMenu>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -961,3 +963,11 @@ void TestMainWindow::checkF6UsesTrustedPythonWorker()
   python_trusted = false;
 }
 #endif
+
+void TestMainWindow::checkAdvancedExportActionAvailable()
+{
+  auto *action = window->findChild<QAction *>("fileActionAdvancedExport");
+  QVERIFY(action);
+  QVERIFY(window->menuExport->actions().contains(action));
+  QCOMPARE(action->text(), "Advanced Export...");
+}

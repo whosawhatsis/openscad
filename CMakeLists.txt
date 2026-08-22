@@ -1597,7 +1597,7 @@ elseif(WIN32)
 endif()
 
 file(GLOB_RECURSE TEST_SOURCES
-  "src/io/*_test.cc"
+  "src/*_test.cc"
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
   "src/io/*_test.cc"

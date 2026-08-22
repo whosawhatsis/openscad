@@ -49,4 +49,5 @@ private slots:
 #ifdef ENABLE_PYTHON
   void checkF6UsesTrustedPythonWorker();
 #endif
+  void checkAdvancedExportActionAvailable();
 };

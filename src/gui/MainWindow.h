@@ -323,6 +323,7 @@ private slots:
   void on_fileActionSaveACopy_triggered();
   void on_fileActionReload_triggered();
   void on_fileShowLibraryFolder_triggered();
+  void on_fileActionAdvancedExport_triggered();
   void on_editActionConvertTabsToSpaces_triggered();
   void on_editActionCopy_triggered();
 
