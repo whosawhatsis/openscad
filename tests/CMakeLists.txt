@@ -861,6 +861,11 @@ endif()
 add_cmdline_test(preview-cgal    OPENSCAD FILES ${PREVIEW_COMMON_FILES} EXPECTEDDIR preview SUFFIX png ARGS --backend=cgal)
 add_cmdline_test(preview-cgal    OPENSCAD FILES ${PREVIEW_DIFFERENT_EXPECTATIONS} SUFFIX png ARGS --backend=cgal)
 add_cmdline_test(preview-cgal    OPENSCAD FILES ${PREVIEW_ERRORS} SUFFIX png ARGS --backend=cgal)
+add_test(NAME preview-transparency-product-order
+  COMMAND ${Python3_EXECUTABLE} ${CCSD}/transparency_product_order.py
+    ${OPENSCAD_BINPATH}
+    ${TEST_SCAD_DIR}/3D/features/transparency-product-depth.scad)
+set_property(TEST preview-transparency-product-order PROPERTY ENVIRONMENT ${CTEST_ENVIRONMENT})
 if (ENABLE_MANIFOLD_TESTS)
 add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_COMMON_FILES} EXPECTEDDIR preview ARGS --backend=manifold)
 add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_DIFFERENT_EXPECTATIONS} ARGS --backend=manifold)
