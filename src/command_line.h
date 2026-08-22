@@ -39,7 +39,9 @@ public:
 int run_command_line(const std::vector<std::string>& args, std::string& error);
 
 /*!
-   Runs shell-style command strings sequentially in the current process. Each string is an
-   independent OpenSCAD invocation without argv[0]. Execution stops at the first failure.
+   Runs shell-style command sources sequentially in the current process. A source is stdin when
+   it is "-", file contents when it names an existing file, or literal command text otherwise.
+   Each non-empty line is an independent OpenSCAD invocation without argv[0]. Execution stops at
+   the first failure.
  */
 int run_command_lines(const std::vector<std::string>& commands, std::string& error);

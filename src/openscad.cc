@@ -827,7 +827,8 @@ po::options_description build_options_description()
       "pass settings value to the file export using the format section/key=value, e.g "
       "export-pdf/paper-size=a3. Use --help-export to list all available settings.")
     ("command", po::value<std::vector<std::string>>(),
-      "run a quoted set of command-line options in this process. May be repeated to reuse warm caches.")
+      "run newline-delimited command options in this process. Value may be text, a file, or '-' for "
+      "stdin; may be repeated to reuse warm caches.")
     ("D,D", po::value<std::vector<std::string>>(), "var=val -pre-define variables")
     ("p,p", po::value<std::string>(), "customizer parameter file")
     ("P,P", po::value<std::string>(), "customizer parameter set")
@@ -1397,10 +1398,35 @@ int run_command_lines(const std::vector<std::string>& commands, std::string& err
     return 1;
   }
 
-  for (size_t i = 0; i < commands.size(); ++i) {
+  std::vector<std::string> commandLines;
+  for (const auto& source : commands) {
+    std::string contents = source;
+    if (source == "-") {
+      contents.assign(std::istreambuf_iterator<char>(std::cin), {});
+    } else if (fs::exists(source)) {
+      std::ifstream input(source);
+      if (!input) {
+        error = "Cannot read command file '" + source + "'.";
+        return 1;
+      }
+      contents.assign(std::istreambuf_iterator<char>(input), {});
+    }
+
+    std::istringstream lines(contents);
+    for (std::string line; std::getline(lines, line);) {
+      if (!line.empty() && line.back() == '\r') line.pop_back();
+      if (line.find_first_not_of(" \t") != std::string::npos) commandLines.push_back(std::move(line));
+    }
+  }
+  if (commandLines.empty()) {
+    error = "No commands given.";
+    return 1;
+  }
+
+  for (size_t i = 0; i < commandLines.size(); ++i) {
     std::vector<std::string> args;
     try {
-      args = po::split_unix(commands[i]);
+      args = po::split_unix(commandLines[i]);
     } catch (const std::exception& e) {
       error = "Command " + std::to_string(i + 1) + ": " + e.what();
       return 1;

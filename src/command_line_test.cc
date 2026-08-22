@@ -15,6 +15,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -204,4 +206,35 @@ TEST_CASE("run_command_lines executes independent command strings with one warm 
   REQUIRE(fs::exists(first));
   REQUIRE(fs::exists(second));
   CHECK(fs::file_size(first) == fs::file_size(second));
+}
+
+TEST_CASE("run_command_lines expands newlines, files, and stdin into commands", "[commandline]")
+{
+  const auto input = writeScad("batch_sources.scad", "cube(2);\n");
+  const auto quote = [](const fs::path& path) { return "\"" + path.string() + "\""; };
+  const auto command = [&](const fs::path& output) {
+    fs::remove(output);
+    return "-o " + quote(output) + " " + quote(input);
+  };
+  std::string error;
+
+  const auto literalFirst = fs::temp_directory_path() / "batch_literal_first.off";
+  const auto literalSecond = fs::temp_directory_path() / "batch_literal_second.off";
+  REQUIRE(run_command_lines({command(literalFirst) + "\n" + command(literalSecond)}, error) == 0);
+  CHECK(fs::exists(literalFirst));
+  CHECK(fs::exists(literalSecond));
+
+  const auto fileOutput = fs::temp_directory_path() / "batch_file.off";
+  const auto commandFile = fs::temp_directory_path() / "openscad_batch_commands.txt";
+  std::ofstream(commandFile) << command(fileOutput) << '\n';
+  REQUIRE(run_command_lines({commandFile.string()}, error) == 0);
+  CHECK(fs::exists(fileOutput));
+
+  const auto stdinOutput = fs::temp_directory_path() / "batch_stdin.off";
+  std::istringstream stdinCommands(command(stdinOutput) + "\n");
+  auto *oldStdin = std::cin.rdbuf(stdinCommands.rdbuf());
+  const int stdinRc = run_command_lines({"-"}, error);
+  std::cin.rdbuf(oldStdin);
+  REQUIRE(stdinRc == 0);
+  CHECK(fs::exists(stdinOutput));
 }
