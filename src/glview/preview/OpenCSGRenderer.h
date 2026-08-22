@@ -69,6 +69,10 @@ public:
   }
 
   [[nodiscard]] const std::vector<OpenCSG::Primitive *>& primitives() const { return primitives_; }
+  [[nodiscard]] bool transparent() const { return transparent_; }
+  void setTransparent(bool transparent) { transparent_ = transparent; }
+  [[nodiscard]] size_t stableKey() const { return stable_key_; }
+  void setStableKey(size_t stable_key) { stable_key_ = stable_key; }
 
 private:
   // primitives_ is used to create the OpenCSG depth buffer (unlit rendering).
@@ -76,6 +80,8 @@ private:
   // Both may use the same underlying VBOs
   std::vector<OpenCSG::Primitive *> primitives_;
   std::vector<std::unique_ptr<OpenCSG::Primitive>> owned_primitives_;
+  bool transparent_ = false;
+  size_t stable_key_ = 0;
 };
 
 class OpenCSGRenderer : public VBORenderer
