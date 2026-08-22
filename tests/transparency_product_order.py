@@ -8,10 +8,12 @@ import tempfile
 from pathlib import Path
 
 
-def render(openscad: str, source: str, output: Path) -> bytes:
+def render(openscad: str, source: str, output: Path, enabled: bool) -> bytes:
+    feature = ["--enable=transparency-ordering"] if enabled else []
     subprocess.run(
         [
             openscad,
+            *feature,
             "--imgsize=512,512",
             "--autocenter",
             "--viewall",
@@ -36,19 +38,27 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
-        results = {}
-        for index, permutation in enumerate(itertools.permutations(statements)):
-            source = tmpdir / f"order-{index}.scad"
-            source.write_text("\n".join(permutation) + "\n")
-            image = render(sys.argv[1], str(source), tmpdir / f"order-{index}.png")
-            results[index] = hashlib.sha256(image).hexdigest()
+        results = {False: {}, True: {}}
+        for enabled in results:
+            for index, permutation in enumerate(itertools.permutations(statements)):
+                source = tmpdir / f"order-{index}.scad"
+                source.write_text("\n".join(permutation) + "\n")
+                image = render(
+                    sys.argv[1], str(source), tmpdir / f"order-{enabled}-{index}.png", enabled
+                )
+                results[enabled][index] = hashlib.sha256(image).hexdigest()
 
-    hashes = set(results.values())
-    if len(hashes) == 1:
+    disabled_hashes = set(results[False].values())
+    enabled_hashes = set(results[True].values())
+    if len(disabled_hashes) > 1 and len(enabled_hashes) == 1:
         return 0
 
-    print(f"transparent product rendering produced {len(hashes)} images for 6 source orders:", file=sys.stderr)
-    for index, digest in results.items():
+    print(
+        f"expected multiple disabled images and one enabled image; got "
+        f"{len(disabled_hashes)} disabled and {len(enabled_hashes)} enabled",
+        file=sys.stderr,
+    )
+    for index, digest in results[True].items():
         print(f"  order-{index}: {digest}", file=sys.stderr)
     return 1
 

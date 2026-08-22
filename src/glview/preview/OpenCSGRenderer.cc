@@ -175,6 +175,7 @@ void OpenCSGRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shader
   const bool select_rendering =
     shaderinfo && shaderinfo->type == ShaderUtils::ShaderType::SELECT_RENDERING;
   const bool has_transparency =
+    Feature::ExperimentalTransparencyOrdering.is_enabled() &&
     std::any_of(vertex_state_containers_.begin(), vertex_state_containers_.end(),
                 [](const auto& product) { return product->transparent(); });
   if (select_rendering || !has_transparency) {
