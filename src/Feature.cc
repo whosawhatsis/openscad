@@ -61,6 +61,8 @@ const Feature Feature::ExperimentalStreamingPreview(
   "Start processing preview geometry as the isolated compute worker produces it, rather than "
   "waiting for the whole preview to finish. Requires process isolation; has no effect without it. "
   "Takes effect on the next preview -- one already running keeps the setting it started with.");
+const Feature Feature::ExperimentalTransparencyOrdering(
+  "transparency-ordering", "Enable depth-sorted OpenCSG transparency ordering.");
 
 #ifdef ENABLE_PYTHON
 const Feature Feature::ExperimentalPythonEngine(

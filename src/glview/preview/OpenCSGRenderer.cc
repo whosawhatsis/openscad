@@ -33,6 +33,9 @@
 
 #include "Feature.h"
 #include <cassert>
+#include <algorithm>
+#include <cmath>
+#include <functional>
 #include <memory>
 #include <memory.h>
 #include <cstddef>
@@ -330,7 +333,7 @@ void OpenCSGRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shader
                    shaderinfo->type == ShaderUtils::ShaderType::SELECT_RENDERING ||
                    shaderinfo->type == ShaderUtils::ShaderType::AGENT_RENDERING);
 
-  for (const auto& product : vertex_state_containers_) {
+  const auto draw_product = [&](const auto& product) {
     if (product->primitives().size() > 1) {
 #if OPENCSG_VERSION >= 0x0180
       if (enable_shader) OpenCSG::setVertexShader(opencsg_vertex_shader_code_);
@@ -375,7 +378,130 @@ void OpenCSGRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shader
     }
     GL_TRACE0("glDepthFunc(GL_LEQUAL)");
     GL_CHECKD(glDepthFunc(GL_LEQUAL));
+  };
+
+  const bool select_rendering =
+    shaderinfo && shaderinfo->type == ShaderUtils::ShaderType::SELECT_RENDERING;
+  const bool has_transparency =
+    Feature::ExperimentalTransparencyOrdering.is_enabled() &&
+    std::any_of(vertex_state_containers_.begin(), vertex_state_containers_.end(),
+                [](const auto& product) { return product->transparent(); });
+  if (select_rendering || !has_transparency) {
+    for (const auto& product : vertex_state_containers_) draw_product(product);
+    return;
   }
+
+  GLint viewport[4];
+  GLfloat clear_color[4];
+  GL_CHECKD(glGetIntegerv(GL_VIEWPORT, viewport));
+  GL_CHECKD(glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color));
+  const size_t pixels = static_cast<size_t>(viewport[2]) * viewport[3];
+
+  for (const auto& product : vertex_state_containers_) {
+    if (!product->transparent()) draw_product(product);
+  }
+
+  std::vector<GLubyte> opaque_color(pixels * 4);
+  std::vector<GLfloat> opaque_depth(pixels);
+  GL_CHECKD(glReadPixels(viewport[0], viewport[1], viewport[2], viewport[3], GL_RGBA, GL_UNSIGNED_BYTE,
+                         opaque_color.data()));
+  GL_CHECKD(glReadPixels(viewport[0], viewport[1], viewport[2], viewport[3], GL_DEPTH_COMPONENT,
+                         GL_FLOAT, opaque_depth.data()));
+
+  struct ProductImage {
+    size_t key;
+    std::vector<GLubyte> color;
+    std::vector<GLfloat> depth;
+  };
+  std::vector<ProductImage> images;
+  GL_CHECKD(glDisable(GL_BLEND));
+  for (const auto& product : vertex_state_containers_) {
+    if (!product->transparent()) continue;
+    GL_CHECKD(glClearColor(0, 0, 0, 0));
+    GL_CHECKD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT));
+    draw_product(product);
+    ProductImage image{product->stableKey(), std::vector<GLubyte>(pixels * 4),
+                       std::vector<GLfloat>(pixels)};
+    GL_CHECKD(glReadPixels(viewport[0], viewport[1], viewport[2], viewport[3], GL_RGBA, GL_UNSIGNED_BYTE,
+                           image.color.data()));
+    GL_CHECKD(glReadPixels(viewport[0], viewport[1], viewport[2], viewport[3], GL_DEPTH_COMPONENT,
+                           GL_FLOAT, image.depth.data()));
+    images.push_back(std::move(image));
+  }
+
+  std::vector<size_t> order;
+  order.reserve(images.size());
+  for (size_t pixel = 0; pixel < pixels; ++pixel) {
+    order.clear();
+    for (size_t i = 0; i < images.size(); ++i) {
+      if (images[i].depth[pixel] < opaque_depth[pixel] && images[i].depth[pixel] < 1.0f) {
+        order.push_back(i);
+      }
+    }
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+      if (images[a].depth[pixel] != images[b].depth[pixel]) {
+        return images[a].depth[pixel] > images[b].depth[pixel];
+      }
+      return images[a].key < images[b].key;
+    });
+    for (const size_t i : order) {
+      const size_t offset = pixel * 4;
+      const float alpha = images[i].color[offset + 3] / 255.0f;
+      for (size_t channel = 0; channel < 3; ++channel) {
+        opaque_color[offset + channel] = static_cast<GLubyte>(std::lround(
+          images[i].color[offset + channel] * alpha + opaque_color[offset + channel] * (1 - alpha)));
+      }
+    }
+  }
+
+  GL_CHECKD(glClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]));
+  GL_CHECKD(glDisable(GL_DEPTH_TEST));
+  GL_CHECKD(glDisable(GL_LIGHTING));
+  GL_CHECKD(glDisable(GL_BLEND));
+  GL_CHECKD(glColor4f(1, 1, 1, 1));
+
+  GLuint texture;
+  GL_CHECKD(glGenTextures(1, &texture));
+  GL_CHECKD(glBindTexture(GL_TEXTURE_2D, texture));
+  GL_CHECKD(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+  GL_CHECKD(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+  GL_CHECKD(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, viewport[2], viewport[3], 0, GL_RGBA,
+                         GL_UNSIGNED_BYTE, opaque_color.data()));
+  GL_CHECKD(glEnable(GL_TEXTURE_2D));
+  GL_CHECKD(glMatrixMode(GL_PROJECTION));
+  GL_CHECKD(glPushMatrix());
+  GL_CHECKD(glLoadIdentity());
+  GL_CHECKD(glOrtho(0, viewport[2], 0, viewport[3], -1, 1));
+  GL_CHECKD(glMatrixMode(GL_MODELVIEW));
+  GL_CHECKD(glPushMatrix());
+  GL_CHECKD(glLoadIdentity());
+  GL_CHECKD(glBegin(GL_QUADS));
+  glTexCoord2f(0, 0);
+  glVertex2i(0, 0);
+  glTexCoord2f(1, 0);
+  glVertex2i(viewport[2], 0);
+  glTexCoord2f(1, 1);
+  glVertex2i(viewport[2], viewport[3]);
+  glTexCoord2f(0, 1);
+  glVertex2i(0, viewport[3]);
+  GL_CHECKD(glEnd());
+  GL_CHECKD(glPopMatrix());
+  GL_CHECKD(glMatrixMode(GL_PROJECTION));
+  GL_CHECKD(glPopMatrix());
+  GL_CHECKD(glMatrixMode(GL_MODELVIEW));
+  GL_CHECKD(glDisable(GL_TEXTURE_2D));
+  GL_CHECKD(glBindTexture(GL_TEXTURE_2D, 0));
+  GL_CHECKD(glDeleteTextures(1, &texture));
+
+  GL_CHECKD(glColorMask(false, false, false, false));
+  GL_CHECKD(glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT));
+  GL_CHECKD(glEnable(GL_DEPTH_TEST));
+  for (const auto& product : vertex_state_containers_) {
+    if (!product->transparent()) draw_product(product);
+  }
+  GL_CHECKD(glColorMask(true, true, true, true));
+  GL_CHECKD(glEnable(GL_LIGHTING));
+  GL_CHECKD(glEnable(GL_BLEND));
 #endif  // ENABLE_OPENCSG
 }
 
@@ -396,6 +522,19 @@ bool OpenCSGRenderer::buildProduct(PendingProduct& p, const std::function<bool()
   Color4f last_color;
 
   if (!shouldContinue()) return false;
+
+  bool transparent = !highlight_mode && !background_mode && !product.intersections.empty();
+  std::string stable_key;
+  for (const auto& csgobj : product.intersections) {
+    Color4f color;
+    getShaderColor(ColorMode::MATERIAL, csgobj.leaf->color, color);
+    transparent = transparent && color.a() < 1.0f;
+    stable_key += csgobj.leaf->polyset ? csgobj.leaf->polyset->dump() : std::string();
+    stable_key += std::to_string(color.r()) + std::to_string(color.g()) + std::to_string(color.b()) +
+                  std::to_string(color.a());
+  }
+  vertex_state_container->setTransparent(transparent);
+  vertex_state_container->setStableKey(std::hash<std::string>{}(stable_key));
 
   for (const auto& csgobj : product.intersections) {
     if (csgobj.leaf->polyset) {
