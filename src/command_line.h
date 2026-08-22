@@ -37,3 +37,9 @@ public:
    that. See the feature page for row 02.
  */
 int run_command_line(const std::vector<std::string>& args, std::string& error);
+
+/*!
+   Runs shell-style command strings sequentially in the current process. Each string is an
+   independent OpenSCAD invocation without argv[0]. Execution stops at the first failure.
+ */
+int run_command_lines(const std::vector<std::string>& commands, std::string& error);

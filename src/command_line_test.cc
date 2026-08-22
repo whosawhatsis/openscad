@@ -184,3 +184,24 @@ TEST_CASE("changing a -D variable misses the cache only for what it affects", "[
   // ...and the two exports genuinely differ, i.e. the cache did not serve stale geometry.
   CHECK(fs::file_size(out1) != fs::file_size(out2));
 }
+
+TEST_CASE("run_command_lines executes independent command strings with one warm cache", "[commandline]")
+{
+  const auto input = writeScad("batch export input.scad", "sphere(r = 3, $fn = 24);\n");
+  const auto first = fs::temp_directory_path() / "batch export first.off";
+  const auto second = fs::temp_directory_path() / "batch export second.off";
+  fs::remove(first);
+  fs::remove(second);
+
+  const auto quote = [](const fs::path& path) { return "\"" + path.string() + "\""; };
+  std::string error;
+  const int rc = run_command_lines(
+    {"-o " + quote(first) + " " + quote(input), "-o " + quote(second) + " " + quote(input)}, error);
+
+  CAPTURE(error);
+  REQUIRE(rc == 0);
+  REQUIRE(error.empty());
+  REQUIRE(fs::exists(first));
+  REQUIRE(fs::exists(second));
+  CHECK(fs::file_size(first) == fs::file_size(second));
+}
