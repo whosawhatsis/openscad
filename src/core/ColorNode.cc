@@ -55,9 +55,10 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
   auto node = std::make_shared<ColorNode>(inst);
   node->isMaterial = isMaterial;
 
-  Parameters parameters = Parameters::parse(std::move(arguments), inst->location(),
-                                            isMaterial ? std::vector<std::string>{"c", "alpha", "name"}
-                                                       : std::vector<std::string>{"c", "alpha"});
+  Parameters parameters =
+    Parameters::parse(std::move(arguments), inst->location(),
+                      isMaterial ? std::vector<std::string>{"c", "alpha", "name", "roughness"}
+                                 : std::vector<std::string>{"c", "alpha", "roughness"});
   if (parameters["c"].type() == Value::Type::VECTOR) {
     const auto& vec = parameters["c"].toVector();
     Vector4f color;
@@ -89,6 +90,46 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
           "color() expects alpha between 0.0 and 1.0. Value of %1$.1f is out of range", node->color.a());
     }
   }
+  if (parameters["roughness"].isDefined()) {
+    const auto& value = parameters["roughness"];
+    // A bare number is reserved for a future conventional scalar PBR microfacet
+    // roughness, so it must not be read as a procedural bump.
+    if (value.type() != Value::Type::VECTOR) {
+      LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+          "%1$s() roughness must be a vector [scale, strength] or [scale, strength, seed]",
+          isMaterial ? "material" : "color");
+    } else {
+      const auto& vec = value.toVector();
+      if (vec.size() < 2 || vec.size() > 3) {
+        LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+            "%1$s() roughness expects 2 or 3 values [scale, strength, seed], got %2$d",
+            isMaterial ? "material" : "color", (int)vec.size());
+      } else {
+        Vector3d roughness{0.0, 0.0, 0.0};
+        bool ok = true;
+        for (size_t i = 0; i < vec.size(); ++i) {
+          if (vec[i].type() != Value::Type::NUMBER) {
+            LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+                "%1$s() roughness values must be numbers", isMaterial ? "material" : "color");
+            ok = false;
+            break;
+          }
+          roughness[i] = vec[i].toDouble();
+        }
+        if (ok && roughness[0] <= 0.0) {
+          LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+              "%1$s() roughness scale must be greater than 0, got %2$.6g",
+              isMaterial ? "material" : "color", roughness[0]);
+          ok = false;
+        }
+        if (ok) {
+          node->roughness = roughness;
+          node->hasRoughness = true;
+        }
+      }
+    }
+  }
+
   if (isMaterial && parameters["name"].type() == Value::Type::STRING) {
     const auto& name = parameters["name"].toString();
     if (Material::isValidName(name)) {
@@ -117,12 +158,17 @@ static std::shared_ptr<AbstractNode> builtin_material(const ModuleInstantiation 
 
 std::string ColorNode::toString() const
 {
+  // Always normalised to the three-element form so the geometry cache key is
+  // canonical; emitted only when set, so existing dumps stay byte-identical.
+  const std::string roughnessStr = hasRoughness ? STR(", roughness = [", this->roughness[0], ", ",
+                                                      this->roughness[1], ", ", this->roughness[2], "]")
+                                                : std::string();
   if (isMaterial) {
     return STR("material([", this->color.r(), ", ", this->color.g(), ", ", this->color.b(), ", ",
-               this->color.a(), "], name = \"", materialName, "\")");
+               this->color.a(), "], name = \"", materialName, "\"", roughnessStr, ")");
   }
   return STR("color([", this->color.r(), ", ", this->color.g(), ", ", this->color.b(), ", ",
-             this->color.a(), "])");
+             this->color.a(), "]", roughnessStr, ")");
 }
 
 std::string ColorNode::name() const
@@ -138,11 +184,13 @@ void register_builtin_color()
                    "color(c = [r, g, b], alpha = 1.0)",
                    "color(\"#hexvalue\")",
                    "color(\"colorname\", 1.0)",
+                   "color(c = [r, g, b], roughness = [scale, strength, seed])",
                  });
   Builtins::init("material", new BuiltinModule(builtin_material, &Feature::ExperimentalMultiMaterial),
                  {
                    "material(c = [r, g, b, a], name = \"name\")",
                    "material(c = [r, g, b], alpha = 1.0, name = \"name\")",
                    "material(\"colorname\", 1.0, \"name\")",
+                   "material(c = [r, g, b], roughness = [scale, strength, seed])",
                  });
 }

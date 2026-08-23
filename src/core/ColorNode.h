@@ -18,4 +18,10 @@ public:
   Color4f color;
   std::string materialName;
   bool isMaterial{false};
+
+  // Procedural bump roughness: implicit 3D coherent noise sampled in object-local
+  // coordinates, perturbing only the lighting normal. Never changes geometry.
+  // [scale (mm), strength, seed]; only meaningful when hasRoughness is true.
+  Vector3d roughness{0.0, 0.0, 0.0};
+  bool hasRoughness{false};
 };
