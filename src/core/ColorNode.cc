@@ -44,7 +44,6 @@
 
 #include "Feature.h"
 #include "core/Material.h"
-#include "core/Settings.h"
 #include "core/Parameters.h"
 #include "core/module.h"
 #include "geometry/linalg.h"
@@ -140,8 +139,8 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
   }
   const char *const moduleName = isMaterial ? "material" : "color";
 
-  if (parameters["finish"].isDefined()) {
-    const auto& value = parameters["finish"];
+  if (parameters["bump"].isDefined()) {
+    const auto& value = parameters["bump"];
     if (value.type() == Value::Type::NUMBER) {
       // A bare scalar is the scale; strength defaults to 1 and seed to 0. This
       // spelling is only safe because the attribute is not called "roughness" --
@@ -149,49 +148,49 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
       const double scale = value.toDouble();
       if (scale <= 0.0) {
         LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
-            "%1$s() finish scale must be greater than 0, got %2$.6g", moduleName, scale);
+            "%1$s() bump scale must be greater than 0, got %2$.6g", moduleName, scale);
       } else {
-        node->finish = Vector3d{scale, 1.0, 0.0};
-        node->hasFinish = true;
+        node->bump = Vector3d{scale, 1.0, 0.0};
+        node->hasBump = true;
       }
     } else if (value.type() != Value::Type::VECTOR) {
       LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
-          "%1$s() finish must be a scale, or a vector [scale, strength] or "
+          "%1$s() bump must be a scale, or a vector [scale, strength] or "
           "[scale, strength, seed]",
           moduleName);
     } else {
       const auto& vec = value.toVector();
       if (vec.size() < 2 || vec.size() > 3) {
         LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
-            "%1$s() finish expects 2 or 3 values [scale, strength, seed], got %2$d", moduleName,
+            "%1$s() bump expects 2 or 3 values [scale, strength, seed], got %2$d", moduleName,
             (int)vec.size());
       } else {
-        Vector3d finish{0.0, 1.0, 0.0};
+        Vector3d bump{0.0, 1.0, 0.0};
         bool ok = true;
         for (size_t i = 0; i < vec.size(); ++i) {
           if (vec[i].type() != Value::Type::NUMBER) {
             LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
-                "%1$s() finish values must be numbers", moduleName);
+                "%1$s() bump values must be numbers", moduleName);
             ok = false;
             break;
           }
-          finish[i] = vec[i].toDouble();
+          bump[i] = vec[i].toDouble();
         }
-        if (ok && finish[0] <= 0.0) {
+        if (ok && bump[0] <= 0.0) {
           LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
-              "%1$s() finish scale must be greater than 0, got %2$.6g", moduleName, finish[0]);
+              "%1$s() bump scale must be greater than 0, got %2$.6g", moduleName, bump[0]);
           ok = false;
         }
         if (ok) {
-          node->finish = finish;
-          node->hasFinish = true;
+          node->bump = bump;
+          node->hasBump = true;
         }
       }
     }
   }
 
   // Conventional scalar PBR attributes. Deliberately scalars: the vector spelling
-  // belongs to finish, so the two can never be confused for one another.
+  // belongs to bump, so the two can never be confused for one another.
   struct PbrParam {
     const char *name;
     double *target;
@@ -240,29 +239,20 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
         break;
       }
     }
-    if (!resolved) {
-      const auto preference = Settings::SettingsMaterials::defaultColor(node->materialName);
-      if (!preference.empty()) {
-        resolved = OpenSCAD::parse_color(preference);
-        if (!resolved) {
-          LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
-              "Unable to parse the default color \"%1$s\" set for material \"%2$s\" in "
-              "Preferences",
-              preference, node->materialName);
-        }
-      }
-    }
+    // The Preferences table is deliberately NOT consulted here. It is an
+    // extension of the colour scheme - a viewport default for a material whose
+    // colour the model never set - so it must stay out of the node tree, and
+    // therefore out of every export. Only what the model says is part of the
+    // model. The display-time lookup lives in the renderer.
 
     if (resolved) {
       node->color = *resolved;
       // An alpha written on the call overrides the one the default carries.
       if (parameters["alpha"].type() == Value::Type::NUMBER) node->color.setAlpha(explicitAlpha);
-    } else {
-      LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
-          "No color for material \"%1$s\": give material() a color, add one to "
-          "$material_colors, or set a default for it in Preferences",
-          node->materialName);
     }
+    // No warning when nothing resolves: a material with no colour is a legitimate
+    // declaration, and the viewport still has the Preferences table and then the
+    // colour scheme to fall back on.
   }
 
   return children.instantiate(node);
@@ -283,11 +273,11 @@ static std::shared_ptr<AbstractNode> builtin_material(const ModuleInstantiation 
 std::string ColorNode::toString() const
 {
   // Emitted only when set, so dumps of scripts that use none of these stay
-  // byte-identical; finish is normalised to its three-element form so that the
+  // byte-identical; bump is normalised to its three-element form so that the
   // geometry cache key (which is this string) is canonical.
   std::string attrs;
-  if (hasFinish) {
-    attrs += STR(", finish = [", this->finish[0], ", ", this->finish[1], ", ", this->finish[2], "]");
+  if (hasBump) {
+    attrs += STR(", bump = [", this->bump[0], ", ", this->bump[1], ", ", this->bump[2], "]");
   }
   if (hasPbrRoughness) {
     attrs += STR(", roughness = ", this->pbrRoughness);
@@ -316,7 +306,7 @@ void register_builtin_color()
                    "color(c = [r, g, b], alpha = 1.0)",
                    "color(\"#hexvalue\")",
                    "color(\"colorname\", 1.0)",
-                   "color(c = [r, g, b], finish = [scale, strength, seed])",
+                   "color(c = [r, g, b], bump = [scale, strength, seed])",
                    "color(c = [r, g, b], roughness = 0.5, metallic = 0.0)",
                  });
   Builtins::init("material", new BuiltinModule(builtin_material, &Feature::ExperimentalMultiMaterial),
@@ -325,7 +315,7 @@ void register_builtin_color()
                    "material(\"name\", c = [r, g, b, a])",
                    "material(\"name\", c = [r, g, b], alpha = 1.0)",
                    "material(\"name\", \"colorname\", 1.0)",
-                   "material(\"name\", c = [r, g, b], finish = [scale, strength, seed])",
+                   "material(\"name\", c = [r, g, b], bump = [scale, strength, seed])",
                    "material(\"name\", c = [r, g, b], roughness = 0.5, metallic = 0.0)",
                  });
 }
