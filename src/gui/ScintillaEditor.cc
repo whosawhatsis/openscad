@@ -221,6 +221,9 @@ ScintillaEditor::ScintillaEditor(QWidget *parent) : EditorInterface(parent)
   connect(qsci, &QsciScintilla::textChanged, this, &ScintillaEditor::contentsChanged);
   connect(qsci, &QsciScintilla::modificationChanged, this, &ScintillaEditor::fireModificationChanged);
   connect(qsci, &QsciScintilla::userListActivated, this, &ScintillaEditor::onUserListSelected);
+  connect(qsci, &QsciScintilla::SCN_AUTOCCOMPLETED, this, [this](const char *selection, int, int, int) {
+    api->completeSelection(QString::fromUtf8(selection));
+  });
   qsci->installEventFilter(this);
   qsci->viewport()->installEventFilter(this);
 

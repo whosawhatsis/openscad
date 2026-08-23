@@ -215,7 +215,7 @@ static std::shared_ptr<AbstractNode> builtin_if(const ModuleInstantiation *inst,
 
 void register_builtin_control()
 {
-  Builtins::init("children", new BuiltinModule(builtin_children),
+  Builtins::init("children", new BuiltinModule(builtin_children, nullptr, BuiltinModule::Kind::Leaf),
                  {
                    "children()",
                    "children(number)",

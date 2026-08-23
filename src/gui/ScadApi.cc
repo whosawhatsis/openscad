@@ -11,7 +11,9 @@
 #include "core/BuiltinContext.h"
 #include "core/Builtins.h"
 #include "core/EvaluationSession.h"
+#include "core/module.h"
 #include "core/parsersettings.h"
+#include "Feature.h"
 #include "gui/ScintillaEditor.h"
 
 namespace {
@@ -62,6 +64,17 @@ ScadApi::ScadApi(ScintillaEditor *editor, QsciLexer *lexer) : QsciAbstractAPIs(l
     for (const auto& it : iter.second) calltipList.append(QString::fromStdString(it));
 
     funcs.append(ApiFunc(QString::fromStdString(iter.first), calltipList));
+  }
+
+  for (const auto& [name, function] : Builtins::instance().getFunctions()) {
+    completions.append(CompletionItem(QString::fromStdString(name), CompletionItem::Kind::Function));
+  }
+  for (const auto& [name, module] : Builtins::instance().getModules()) {
+    const auto builtin = dynamic_cast<const BuiltinModule *>(module);
+    if (!builtin) continue;
+    const auto kind = builtin->kind() == BuiltinModule::Kind::Leaf ? CompletionItem::Kind::LeafModule
+                                                                   : CompletionItem::Kind::ChildModule;
+    completions.append(CompletionItem(QString::fromStdString(name), kind));
   }
 }
 
@@ -122,8 +135,8 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
     return;
   }
 
-  for (const auto& func : funcs) {
-    const QString& name = func.get_name();
+  for (const auto& item : completions) {
+    const QString& name = item.label();
     if (name.startsWith(c)) {
       if (!list.contains(name)) {
         list << name;
@@ -143,6 +156,23 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
 
 void ScadApi::autoCompletionSelected(const QString& /*selection*/)
 {
+}
+
+void ScadApi::completeSelection(const QString& selection)
+{
+  if (!Feature::ExperimentalEditorEnhancements.is_enabled()) return;
+
+  for (const auto& item : completions) {
+    if (item.label() != selection) continue;
+
+    editor->insert(item.insertionSuffix());
+    if (item.cursorBack() != 0) {
+      int line, col;
+      editor->qsci->getCursorPosition(&line, &col);
+      editor->qsci->setCursorPosition(line, col - item.cursorBack());
+    }
+    return;
+  }
 }
 
 QStringList ScadApi::callTips(const QStringList& context, int /*commas*/,

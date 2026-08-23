@@ -32,9 +32,11 @@ public:
 class BuiltinModule : public AbstractModule
 {
 public:
+  enum class Kind { Leaf, Child };
+
   BuiltinModule(std::shared_ptr<AbstractNode> (*instantiate)(const ModuleInstantiation *,
                                                              const std::shared_ptr<const Context>&),
-                const Feature *feature = nullptr);
+                const Feature *feature = nullptr, Kind kind = Kind::Child);
   BuiltinModule(std::shared_ptr<AbstractNode> (*instantiate)(const ModuleInstantiation *, Arguments,
                                                              const Children&),
                 const Feature *feature = nullptr);
@@ -43,9 +45,11 @@ public:
   std::shared_ptr<AbstractNode> instantiate(
     const std::shared_ptr<const Context>& defining_context, const ModuleInstantiation *inst,
     const std::shared_ptr<const Context>& context) const override;
+  Kind kind() const { return kind_; }
   static void noChildren(const ModuleInstantiation *, Arguments&, std::string auxmsg = {});
 
 private:
+  Kind kind_;
   std::function<std::shared_ptr<AbstractNode>(const ModuleInstantiation *,
                                               const std::shared_ptr<const Context>&)>
     do_instantiate;

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "core/SourceFile.h"
+#include "gui/CompletionItem.h"
 
 class ApiFunc
 {
@@ -70,6 +71,7 @@ class ScadApi : public QsciAbstractAPIs
 private:
   ScintillaEditor *editor;
   QList<ApiFunc> funcs;
+  QList<CompletionItem> completions;
 
 protected:
   void autoCompleteFolder(const QStringList& context, const QString& text, const int col,
@@ -81,6 +83,7 @@ public:
 
   void updateAutoCompletionList(const QStringList& context, QStringList& list) override;
   void autoCompletionSelected(const QString& selection) override;
+  void completeSelection(const QString& selection);
   QStringList callTips(const QStringList& context, int commas, QsciScintilla::CallTipsStyle style,
                        QList<int>& shifts) override;
 

@@ -8,6 +8,7 @@ class TestMainWindow : public UXTest
 private slots:
   void checkOpenTabPropagateToWindow();
   void checkEditorEnhancementsFeatureFlag();
+  void checkCallableCompletionAddsStructure();
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();
 };

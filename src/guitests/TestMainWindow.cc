@@ -36,6 +36,29 @@ void TestMainWindow::checkEditorEnhancementsFeatureFlag()
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
 }
 
+void TestMainWindow::checkCallableCompletionAddsStructure()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  editor->setupAutoComplete();
+
+  editor->setPlainText("cub");
+  editor->setCursorPosition(0, 3);
+  editor->qsci->autoCompleteFromAPIs();
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->toPlainText(), QString("cube();"));
+
+  editor->setPlainText("translat");
+  editor->setCursorPosition(0, 8);
+  editor->qsci->autoCompleteFromAPIs();
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->toPlainText(), QString("translate()"));
+
+  Feature::enable_feature("editor-enhancements", false);
+}
+
 void TestMainWindow::checkReturnInsideBracesUsesKandRIndentation()
 {
   restoreWindowInitialState();
