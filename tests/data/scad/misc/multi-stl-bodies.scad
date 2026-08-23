@@ -8,7 +8,7 @@ color("red") cube(2);
 color("blue") translate([1, 0, 0]) cube(2);
 
 // An enclosing wrapper replaces every nested body boundary with one new body.
-material(c = "grey", name = "shell") {
+material("shell", "grey") {
   color("red") translate([10, 0, 0]) cube(2);
   color("blue") translate([12, 0, 0]) cube(2);
 }
@@ -20,10 +20,15 @@ translate([0, 10, 0]) {
   material(c = "blue", name = "PETG") translate([4, 0, 0]) cube(2);
 }
 
+// A material needs no colour: the name is its first and most fundamental
+// argument, so material("name") alone is a complete declaration and must not
+// paint the body with an unset colour.
+material("brass") translate([50, 0, 0]) cube(2);
+
 // A body-combining operation produces one body carrying the first operand's
 // attributes.
 difference() {
-  material(c = "grey", name = "PLA") translate([20, 0, 0]) cube(3);
+  material("PLA", "grey") translate([20, 0, 0]) cube(3);
   translate([21, 1, 1]) cube(1);
 }
 

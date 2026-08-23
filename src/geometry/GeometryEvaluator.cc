@@ -518,7 +518,9 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
       if ((geom = res.constptr())) {
         auto mutableGeom = res.asMutableGeometry();
         if (mutableGeom) {
-          mutableGeom->setColor(node.color);
+          // color() always carries a colour; material() need not, so a
+          // colourless material() must not paint an unset Color4f.
+          if (!node.isMaterial || node.color.isValid()) mutableGeom->setColor(node.color);
           if (Feature::ExperimentalMultiMaterial.is_enabled()) {
             // Both wrappers declare a body, so either can be exported as its own
             // object or file. Only material() declares what the body is made
@@ -528,7 +530,11 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
             // model that only uses color() renders exactly as it does with this
             // feature disabled.
             if (node.isMaterial) {
-              mutableGeom->setBodyColor(node.color);
+              // material("PLA") with no colour is the natural minimal form now
+              // that the name comes first; it names the material without
+              // claiming what colour it is, so leave the geometry's colour
+              // alone rather than flooding it with an unset Color4f.
+              if (node.color.isValid()) mutableGeom->setBodyColor(node.color);
               mutableGeom->setMaterialName(node.materialName);
             }
             mutableGeom->setBodyBoundary();

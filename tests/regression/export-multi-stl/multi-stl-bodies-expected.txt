@@ -5,7 +5,8 @@
 -ABS.stl [40, 0, 0] [44, 3, 3]
 -PETG.stl [4, 10, 0] [6, 12, 2]
 -PLA.stl [20, 0, 0] [23, 3, 3]
+-brass.stl [50, 0, 0] [52, 2, 2]
 -shell.stl [10, 0, 0] [14, 2, 2]
-files: 8
+files: 9
 rerun without --overwrite: refused
 rerun with --overwrite: accepted
