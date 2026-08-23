@@ -1357,6 +1357,8 @@ static int compute_worker_export(const std::string& input, const std::string& ou
                              {},
                              {},
                              "",
+                             false,
+                             false,
                              output + ".parameters.json",
                              format == FileFormat::CSG ? output + ".products.json" : "",
                              csg_products_limit,
