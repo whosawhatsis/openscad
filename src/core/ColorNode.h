@@ -16,4 +16,6 @@ public:
   std::string name() const override;
 
   Color4f color;
+  std::string materialName;
+  bool isMaterial{false};
 };

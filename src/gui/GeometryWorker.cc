@@ -49,7 +49,7 @@ void GeometryWorker::work()
 #endif
   std::shared_ptr<const Geometry> root_geom;
   try {
-    GeometryEvaluator evaluator(*this->tree);
+    GeometryEvaluator evaluator(*this->tree, true);
     root_geom = evaluator.evaluateGeometry(*this->tree->root(), true);
 #ifdef ENABLE_MANIFOLD
     if (auto manifold = std::dynamic_pointer_cast<const ManifoldGeometry>(root_geom)) {

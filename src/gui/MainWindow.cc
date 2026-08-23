@@ -30,6 +30,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCheckBox>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDockWidget>
@@ -40,6 +41,7 @@
 #include <QFileInfo>
 #include <QFont>
 #include <QFontMetrics>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QInputDialog>
@@ -1134,7 +1136,7 @@ void MainWindow::compileCSG()
     this->progresswidget = new ProgressWidget(this);
     connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
 
-    GeometryEvaluator geomevaluator(this->tree);
+    GeometryEvaluator geomevaluator(this->tree, true);
 #ifdef ENABLE_OPENCSG
     CSGTreeEvaluator csgrenderer(this->tree, &geomevaluator);
 #endif
@@ -2963,14 +2965,52 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
 
   auto title = QString(_("Export %1 File")).arg(type_name);
   auto filter = QString(_("%1 Files (*%2)")).arg(type_name, suffix);
-  auto exportFilename = QFileDialog::getSaveFileName(this, title, exportPath(suffix), filter);
+  const bool isStl = exportInfo.format == FileFormat::ASCII_STL ||
+                     exportInfo.format == FileFormat::BINARY_STL;
+  QFileDialog dialog(this, title, exportPath(suffix), filter);
+  dialog.setAcceptMode(QFileDialog::AcceptSave);
+  dialog.setDefaultSuffix(suffix);
+  QCheckBox *multiStl = nullptr;
+  if (isStl) {
+    dialog.setOption(QFileDialog::DontUseNativeDialog);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite);
+    multiStl = new QCheckBox(_("Export bodies as separate files (common origin)"), &dialog);
+    if (auto layout = qobject_cast<QGridLayout *>(dialog.layout())) {
+      layout->addWidget(multiStl, layout->rowCount(), 0, 1, layout->columnCount());
+    }
+  }
+  if (dialog.exec() != QDialog::Accepted) return;
+  const auto selectedFiles = dialog.selectedFiles();
+  auto exportFilename = selectedFiles.isEmpty() ? QString() : selectedFiles.front();
   auto guard2 = scopedSetCurrentOutput();
   if (exportFilename.isEmpty()) {
     return;
   }
   this->exportPaths[suffix] = exportFilename;
 
-  const bool exportResult = exportFileByName(rootGeom, exportFilename.toStdString(), exportInfo);
+  bool exportResult;
+  if (multiStl && multiStl->isChecked()) {
+    const auto filenames = multi_stl_filenames(rootGeom, exportFilename.toStdString());
+    const bool anyExists = std::any_of(filenames.begin(), filenames.end(), [](const auto& filename) {
+      return std::filesystem::exists(std::filesystem::u8path(filename));
+    });
+    if (anyExists &&
+        QMessageBox::warning(this, _("Overwrite files?"),
+                             _("One or more multi-STL output files already exist. Overwrite them?"),
+                             QMessageBox::Yes | QMessageBox::Abort, QMessageBox::Abort) !=
+          QMessageBox::Yes) {
+      return;
+    }
+    exportResult = export_stl_files(rootGeom, exportFilename.toStdString(), exportInfo, anyExists);
+  } else {
+    if (isStl && std::filesystem::exists(std::filesystem::u8path(exportFilename.toStdString())) &&
+        QMessageBox::warning(this, _("Overwrite file?"), _("The selected STL file already exists. Overwrite it?"),
+                             QMessageBox::Yes | QMessageBox::Abort, QMessageBox::Abort) !=
+          QMessageBox::Yes) {
+      return;
+    }
+    exportResult = exportFileByName(rootGeom, exportFilename.toStdString(), exportInfo);
+  }
 
   if (exportResult) fileExportedMessage(type_name, exportFilename);
 }
