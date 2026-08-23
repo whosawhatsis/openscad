@@ -773,7 +773,7 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
       if (auto mutableGeom = result.asMutableGeometry()) {
         const auto& children = visitedchildren[node.index()];
         if (!children.empty() && children.front().second) {
-          mutableGeom->copyBodyAttributes(*children.front().second);
+          mutableGeom->takeBodyAttributesFrom(*children.front().second);
         }
         geom = mutableGeom;
       }
@@ -1063,7 +1063,7 @@ Response GeometryEvaluator::visit(State& state, const CgalAdvNode& node)
         const auto& children = visitedchildren[node.index()];
         if (!children.empty() && children.front().second) {
           auto attributed = geom->copy();
-          attributed->copyBodyAttributes(*children.front().second);
+          attributed->takeBodyAttributesFrom(*children.front().second);
           geom = std::move(attributed);
         }
       }
