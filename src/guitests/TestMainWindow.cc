@@ -181,8 +181,9 @@ void TestMainWindow::checkWorkerMessageSeverity()
   QVERIFY(collapse != nullptr);
   collapse->setChecked(true);
   Feature::enable_feature(Feature::ExperimentalStructuredDiagnostics.get_name(), false);
-  window->tabManager->open(QString::fromStdString(PlatformUtils::resourceBasePath()) +
-                           "/tests/basic-ux/empty.scad");
+  // Use the tab restoreWindowInitialState() already opened. Opening a second one here leaves a
+  // modified tab behind, and the next test's restoreWindowInitialState() closes tabs until one
+  // remains -- which puts up a save prompt and hangs the run.
   window->activeEditor->setPlainText("for (i = [0:7]) echo(missing);");
   QVERIFY(QMetaObject::invokeMethod(window, "on_designActionPreview_triggered"));
   QTRY_VERIFY_WITH_TIMEOUT(window->findChild<ProgressWidget *>() == nullptr, 5000);
