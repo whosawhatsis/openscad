@@ -56,7 +56,7 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
   node->isMaterial = isMaterial;
 
   Parameters parameters = Parameters::parse(std::move(arguments), inst->location(),
-                                            isMaterial ? std::vector<std::string>{"c", "alpha", "name"}
+                                            isMaterial ? std::vector<std::string>{"name", "c", "alpha"}
                                                        : std::vector<std::string>{"c", "alpha"});
   if (parameters["c"].type() == Value::Type::VECTOR) {
     const auto& vec = parameters["c"].toVector();
@@ -141,8 +141,9 @@ void register_builtin_color()
                  });
   Builtins::init("material", new BuiltinModule(builtin_material, &Feature::ExperimentalMultiMaterial),
                  {
-                   "material(c = [r, g, b, a], name = \"name\")",
-                   "material(c = [r, g, b], alpha = 1.0, name = \"name\")",
-                   "material(\"colorname\", 1.0, \"name\")",
+                   "material(\"name\")",
+                   "material(\"name\", c = [r, g, b, a])",
+                   "material(\"name\", c = [r, g, b], alpha = 1.0)",
+                   "material(\"name\", \"colorname\", 1.0)",
                  });
 }
