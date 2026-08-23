@@ -63,6 +63,9 @@ const Feature Feature::ExperimentalStreamingPreview(
   "Takes effect on the next preview -- one already running keeps the setting it started with.");
 const Feature Feature::ExperimentalTransparencyOrdering(
   "transparency-ordering", "Enable depth-sorted OpenCSG transparency ordering.");
+const Feature Feature::ExperimentalStructuredDiagnostics(
+  "structured-diagnostics",
+  "Stream, collapse, and retain unabridged diagnostics from isolated compute workers.");
 
 #ifdef ENABLE_PYTHON
 const Feature Feature::ExperimentalPythonEngine(
