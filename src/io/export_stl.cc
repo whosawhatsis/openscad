@@ -307,16 +307,39 @@ void export_stl(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
   }
 }
 
+Geometry::Geometries export_bodies(const std::shared_ptr<const Geometry>& geom)
+{
+  if (const auto list = std::dynamic_pointer_cast<const GeometryList>(geom)) {
+    return list->flatten();
+  }
+  Geometry::Geometries bodies;
+  bodies.emplace_back(nullptr, geom);
+  return bodies;
+}
+
+std::vector<std::string> export_body_names(const Geometry::Geometries& bodies)
+{
+  std::vector<std::string> materialNames;
+  materialNames.reserve(bodies.size());
+  for (const auto& body : bodies) materialNames.push_back(body.second->materialName());
+  const auto labels = Material::bodyLabels(materialNames);
+
+  std::vector<std::string> names;
+  names.reserve(labels.size());
+  for (size_t i = 0; i < labels.size(); ++i) {
+    if (!materialNames[i].empty()) {
+      names.push_back(labels[i]);
+    } else {
+      names.push_back(labels[i].empty() ? "OpenSCAD Model" : "OpenSCAD Model " + labels[i]);
+    }
+  }
+  return names;
+}
+
 std::vector<std::string> multi_stl_filenames(const std::shared_ptr<const Geometry>& geom,
                                              const std::string& filename)
 {
-  Geometry::Geometries bodies;
-  if (const auto list = std::dynamic_pointer_cast<const GeometryList>(geom)) {
-    bodies = list->flatten();
-  } else {
-    bodies.emplace_back(nullptr, geom);
-  }
-
+  const auto bodies = export_bodies(geom);
   std::vector<std::string> materialNames;
   materialNames.reserve(bodies.size());
   for (const auto& body : bodies) materialNames.push_back(body.second->materialName());
@@ -326,12 +349,7 @@ std::vector<std::string> multi_stl_filenames(const std::shared_ptr<const Geometr
 bool export_stl_files(const std::shared_ptr<const Geometry>& geom, const std::string& filename,
                       const ExportInfo& exportInfo, bool overwrite)
 {
-  Geometry::Geometries bodies;
-  if (const auto list = std::dynamic_pointer_cast<const GeometryList>(geom)) {
-    bodies = list->flatten();
-  } else {
-    bodies.emplace_back(nullptr, geom);
-  }
+  const auto bodies = export_bodies(geom);
   const auto filenames = multi_stl_filenames(geom, filename);
 
   if (!overwrite) {

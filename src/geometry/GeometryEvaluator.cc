@@ -541,10 +541,9 @@ Response GeometryEvaluator::visit(State& state, const AbstractNode& node)
     std::shared_ptr<const Geometry> geom;
     if (!isSmartCached(node)) {
       const auto& nodeChildren = visitedchildren[node.index()];
-      const bool hasBoundaries = std::any_of(nodeChildren.begin(), nodeChildren.end(),
-                                             [](const auto& item) {
-                                               return containsBodyBoundary(item.second);
-                                             });
+      const bool hasBoundaries =
+        std::any_of(nodeChildren.begin(), nodeChildren.end(),
+                    [](const auto& item) { return containsBodyBoundary(item.second); });
       if (preserveBodies && hasBoundaries) {
         auto children = visitedchildren[node.index()];
         if (children.size() == 1) geom = children.front().second;
@@ -801,14 +800,14 @@ Response GeometryEvaluator::visit(State& state, const TransformNode& node)
       } else {
         ResultObject res;
         const auto& nodeChildren = visitedchildren[node.index()];
-        const bool hasBoundaries = std::any_of(nodeChildren.begin(), nodeChildren.end(),
-                                               [](const auto& item) {
-                                                 return containsBodyBoundary(item.second);
-                                               });
+        const bool hasBoundaries =
+          std::any_of(nodeChildren.begin(), nodeChildren.end(),
+                      [](const auto& item) { return containsBodyBoundary(item.second); });
         if (preserveBodies && hasBoundaries) {
           auto children = visitedchildren[node.index()];
           if (children.size() == 1) res = ResultObject::constResult(children.front().second);
-          else if (!children.empty()) res = ResultObject::mutableResult(std::make_shared<GeometryList>(children));
+          else if (!children.empty())
+            res = ResultObject::mutableResult(std::make_shared<GeometryList>(children));
         } else {
           res = applyToChildren(node, OpenSCADOperator::UNION);
         }

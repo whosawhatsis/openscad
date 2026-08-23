@@ -17,12 +17,8 @@ bool isValidName(const std::string& name)
          });
 }
 
-std::vector<std::string> stlFilenames(const std::string& filename,
-                                      const std::vector<std::string>& materialNames)
+std::vector<std::string> bodyLabels(const std::vector<std::string>& materialNames)
 {
-  const std::filesystem::path path(filename);
-  const auto stem = path.stem().string();
-  const auto extension = path.extension().string();
   std::unordered_map<std::string, size_t> totals;
   std::unordered_map<std::string, size_t> indexes;
   for (const auto& name : materialNames) ++totals[name];
@@ -30,8 +26,27 @@ std::vector<std::string> stlFilenames(const std::string& filename,
   std::vector<std::string> result;
   result.reserve(materialNames.size());
   for (const auto& name : materialNames) {
-    std::string suffix = name.empty() ? "" : "-" + name;
-    if (totals[name] > 1) suffix += "-" + std::to_string(++indexes[name]);
+    std::string label = name;
+    if (totals[name] > 1) {
+      if (!label.empty()) label += "-";
+      label += std::to_string(++indexes[name]);
+    }
+    result.push_back(std::move(label));
+  }
+  return result;
+}
+
+std::vector<std::string> stlFilenames(const std::string& filename,
+                                      const std::vector<std::string>& materialNames)
+{
+  const std::filesystem::path path(filename);
+  const auto stem = path.stem().string();
+  const auto extension = path.extension().string();
+
+  std::vector<std::string> result;
+  result.reserve(materialNames.size());
+  for (const auto& label : bodyLabels(materialNames)) {
+    const std::string suffix = label.empty() ? "" : "-" + label;
     result.push_back((path.parent_path() / (stem + suffix + extension)).string());
   }
   return result;

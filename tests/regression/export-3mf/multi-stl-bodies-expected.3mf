@@ -1,0 +1,342 @@
+<?xml version="1.0" encoding="utf-8"?>
+<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" unit="millimeter" xml:lang="en-US">
+	<metadata name="Title">multi-stl-bodies.scad</metadata>
+	<metadata name="Application">OpenSCAD (https://www.openscad.org/)</metadata>
+	<metadata name="CreationDate">XXXX-XX-XXTXXXXXXXXZ</metadata>
+	<resources>
+		<basematerials id="1">
+			<base name="Default" displaycolor="#F9D72CFF" />
+			<base name="Color 1" displaycolor="#FF0000FF" />
+			<base name="Color 2" displaycolor="#0000FFFF" />
+			<base name="Color 3" displaycolor="#808080FF" />
+			<base name="Color 4" displaycolor="#008000FF" />
+		</basematerials>
+		<object id="2" name="OpenSCAD Model 1" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
+			<mesh>
+				<vertices>
+					<vertex x="0" y="0" z="0" />
+					<vertex x="0" y="0" z="2.000000" />
+					<vertex x="0" y="2.000000" z="0" />
+					<vertex x="0" y="2.000000" z="2.000000" />
+					<vertex x="2.000000" y="0" z="0" />
+					<vertex x="2.000000" y="0" z="2.000000" />
+					<vertex x="2.000000" y="2.000000" z="0" />
+					<vertex x="2.000000" y="2.000000" z="2.000000" />
+				</vertices>
+				<triangles>
+					<triangle v1="0" v2="1" v3="3" pid="1" p1="1" />
+					<triangle v1="0" v2="2" v3="6" pid="1" p1="1" />
+					<triangle v1="0" v2="3" v3="2" pid="1" p1="1" />
+					<triangle v1="0" v2="4" v3="5" pid="1" p1="1" />
+					<triangle v1="0" v2="5" v3="1" pid="1" p1="1" />
+					<triangle v1="0" v2="6" v3="4" pid="1" p1="1" />
+					<triangle v1="1" v2="5" v3="3" pid="1" p1="1" />
+					<triangle v1="2" v2="3" v3="6" pid="1" p1="1" />
+					<triangle v1="3" v2="5" v3="7" pid="1" p1="1" />
+					<triangle v1="3" v2="7" v3="6" pid="1" p1="1" />
+					<triangle v1="4" v2="6" v3="5" pid="1" p1="1" />
+					<triangle v1="5" v2="6" v3="7" pid="1" p1="1" />
+				</triangles>
+			</mesh>
+		</object>
+		<object id="3" name="OpenSCAD Model 2" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
+			<mesh>
+				<vertices>
+					<vertex x="1.000000" y="0" z="0" />
+					<vertex x="1.000000" y="0" z="2.000000" />
+					<vertex x="1.000000" y="2.000000" z="0" />
+					<vertex x="1.000000" y="2.000000" z="2.000000" />
+					<vertex x="3.000000" y="0" z="0" />
+					<vertex x="3.000000" y="0" z="2.000000" />
+					<vertex x="3.000000" y="2.000000" z="0" />
+					<vertex x="3.000000" y="2.000000" z="2.000000" />
+				</vertices>
+				<triangles>
+					<triangle v1="0" v2="1" v3="3" pid="1" p1="2" />
+					<triangle v1="0" v2="2" v3="6" pid="1" p1="2" />
+					<triangle v1="0" v2="3" v3="2" pid="1" p1="2" />
+					<triangle v1="0" v2="4" v3="5" pid="1" p1="2" />
+					<triangle v1="0" v2="5" v3="1" pid="1" p1="2" />
+					<triangle v1="0" v2="6" v3="4" pid="1" p1="2" />
+					<triangle v1="1" v2="5" v3="3" pid="1" p1="2" />
+					<triangle v1="2" v2="3" v3="6" pid="1" p1="2" />
+					<triangle v1="3" v2="5" v3="7" pid="1" p1="2" />
+					<triangle v1="3" v2="7" v3="6" pid="1" p1="2" />
+					<triangle v1="4" v2="6" v3="5" pid="1" p1="2" />
+					<triangle v1="5" v2="6" v3="7" pid="1" p1="2" />
+				</triangles>
+			</mesh>
+		</object>
+		<object id="4" name="shell" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
+			<mesh>
+				<vertices>
+					<vertex x="10.000000" y="0" z="0" />
+					<vertex x="10.000000" y="0" z="2.000000" />
+					<vertex x="10.000000" y="2.000000" z="0" />
+					<vertex x="10.000000" y="2.000000" z="2.000000" />
+					<vertex x="12.000000" y="0" z="0" />
+					<vertex x="12.000000" y="0" z="2.000000" />
+					<vertex x="12.000000" y="2.000000" z="0" />
+					<vertex x="12.000000" y="2.000000" z="2.000000" />
+					<vertex x="14.000000" y="0" z="0" />
+					<vertex x="14.000000" y="0" z="2.000000" />
+					<vertex x="14.000000" y="2.000000" z="0" />
+					<vertex x="14.000000" y="2.000000" z="2.000000" />
+				</vertices>
+				<triangles>
+					<triangle v1="0" v2="1" v3="3" pid="1" p1="3" />
+					<triangle v1="0" v2="2" v3="6" pid="1" p1="3" />
+					<triangle v1="0" v2="3" v3="2" pid="1" p1="3" />
+					<triangle v1="0" v2="4" v3="5" pid="1" p1="3" />
+					<triangle v1="0" v2="5" v3="1" pid="1" p1="3" />
+					<triangle v1="0" v2="6" v3="4" pid="1" p1="3" />
+					<triangle v1="1" v2="5" v3="3" pid="1" p1="3" />
+					<triangle v1="2" v2="3" v3="6" pid="1" p1="3" />
+					<triangle v1="3" v2="5" v3="7" pid="1" p1="3" />
+					<triangle v1="3" v2="7" v3="6" pid="1" p1="3" />
+					<triangle v1="4" v2="6" v3="10" pid="1" p1="3" />
+					<triangle v1="4" v2="8" v3="9" pid="1" p1="3" />
+					<triangle v1="4" v2="9" v3="5" pid="1" p1="3" />
+					<triangle v1="4" v2="10" v3="8" pid="1" p1="3" />
+					<triangle v1="5" v2="9" v3="7" pid="1" p1="3" />
+					<triangle v1="6" v2="7" v3="10" pid="1" p1="3" />
+					<triangle v1="7" v2="9" v3="11" pid="1" p1="3" />
+					<triangle v1="7" v2="11" v3="10" pid="1" p1="3" />
+					<triangle v1="8" v2="10" v3="9" pid="1" p1="3" />
+					<triangle v1="9" v2="10" v3="11" pid="1" p1="3" />
+				</triangles>
+			</mesh>
+		</object>
+		<object id="5" name="OpenSCAD Model 3" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
+			<mesh>
+				<vertices>
+					<vertex x="0" y="10.000000" z="0" />
+					<vertex x="0" y="10.000000" z="2.000000" />
+					<vertex x="0" y="12.000000" z="0" />
+					<vertex x="0" y="12.000000" z="2.000000" />
+					<vertex x="2.000000" y="10.000000" z="0" />
+					<vertex x="2.000000" y="10.000000" z="2.000000" />
+					<vertex x="2.000000" y="12.000000" z="0" />
+					<vertex x="2.000000" y="12.000000" z="2.000000" />
+				</vertices>
+				<triangles>
+					<triangle v1="0" v2="1" v3="3" pid="1" p1="1" />
+					<triangle v1="0" v2="2" v3="6" pid="1" p1="1" />
+					<triangle v1="0" v2="3" v3="2" pid="1" p1="1" />
+					<triangle v1="0" v2="4" v3="5" pid="1" p1="1" />
+					<triangle v1="0" v2="5" v3="1" pid="1" p1="1" />
+					<triangle v1="0" v2="6" v3="4" pid="1" p1="1" />
+					<triangle v1="1" v2="5" v3="3" pid="1" p1="1" />
+					<triangle v1="2" v2="3" v3="6" pid="1" p1="1" />
+					<triangle v1="3" v2="5" v3="7" pid="1" p1="1" />
+					<triangle v1="3" v2="7" v3="6" pid="1" p1="1" />
+					<triangle v1="4" v2="6" v3="5" pid="1" p1="1" />
+					<triangle v1="5" v2="6" v3="7" pid="1" p1="1" />
+				</triangles>
+			</mesh>
+		</object>
+		<object id="6" name="PETG" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
+			<mesh>
+				<vertices>
+					<vertex x="4.000000" y="10.000000" z="0" />
+					<vertex x="4.000000" y="10.000000" z="2.000000" />
+					<vertex x="4.000000" y="12.000000" z="0" />
+					<vertex x="4.000000" y="12.000000" z="2.000000" />
+					<vertex x="6.000000" y="10.000000" z="0" />
+					<vertex x="6.000000" y="10.000000" z="2.000000" />
+					<vertex x="6.000000" y="12.000000" z="0" />
+					<vertex x="6.000000" y="12.000000" z="2.000000" />
+				</vertices>
+				<triangles>
+					<triangle v1="0" v2="1" v3="3" pid="1" p1="2" />
+					<triangle v1="0" v2="2" v3="6" pid="1" p1="2" />
+					<triangle v1="0" v2="3" v3="2" pid="1" p1="2" />
+					<triangle v1="0" v2="4" v3="5" pid="1" p1="2" />
+					<triangle v1="0" v2="5" v3="1" pid="1" p1="2" />
+					<triangle v1="0" v2="6" v3="4" pid="1" p1="2" />
+					<triangle v1="1" v2="5" v3="3" pid="1" p1="2" />
+					<triangle v1="2" v2="3" v3="6" pid="1" p1="2" />
+					<triangle v1="3" v2="5" v3="7" pid="1" p1="2" />
+					<triangle v1="3" v2="7" v3="6" pid="1" p1="2" />
+					<triangle v1="4" v2="6" v3="5" pid="1" p1="2" />
+					<triangle v1="5" v2="6" v3="7" pid="1" p1="2" />
+				</triangles>
+			</mesh>
+		</object>
+		<object id="7" name="PLA" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
+			<mesh>
+				<vertices>
+					<vertex x="20.000000" y="0" z="0" />
+					<vertex x="20.000000" y="0" z="3.000000" />
+					<vertex x="20.000000" y="3.000000" z="0" />
+					<vertex x="20.000000" y="3.000000" z="3.000000" />
+					<vertex x="21.000000" y="1.000000" z="1.000000" />
+					<vertex x="21.000000" y="1.000000" z="2.000000" />
+					<vertex x="21.000000" y="2.000000" z="1.000000" />
+					<vertex x="21.000000" y="2.000000" z="2.000000" />
+					<vertex x="22.000000" y="1.000000" z="1.000000" />
+					<vertex x="22.000000" y="1.000000" z="2.000000" />
+					<vertex x="22.000000" y="2.000000" z="1.000000" />
+					<vertex x="22.000000" y="2.000000" z="2.000000" />
+					<vertex x="23.000000" y="0" z="0" />
+					<vertex x="23.000000" y="0" z="3.000000" />
+					<vertex x="23.000000" y="3.000000" z="0" />
+					<vertex x="23.000000" y="3.000000" z="3.000000" />
+				</vertices>
+				<triangles>
+					<triangle v1="0" v2="1" v3="3" pid="1" p1="3" />
+					<triangle v1="0" v2="2" v3="14" pid="1" p1="3" />
+					<triangle v1="0" v2="3" v3="2" pid="1" p1="3" />
+					<triangle v1="0" v2="12" v3="13" pid="1" p1="3" />
+					<triangle v1="0" v2="13" v3="1" pid="1" p1="3" />
+					<triangle v1="0" v2="14" v3="12" pid="1" p1="3" />
+					<triangle v1="1" v2="13" v3="3" pid="1" p1="3" />
+					<triangle v1="2" v2="3" v3="14" pid="1" p1="3" />
+					<triangle v1="3" v2="13" v3="15" pid="1" p1="3" />
+					<triangle v1="3" v2="15" v3="14" pid="1" p1="3" />
+					<triangle v1="4" v2="5" v3="9" pid="1" p1="3" />
+					<triangle v1="4" v2="6" v3="7" pid="1" p1="3" />
+					<triangle v1="4" v2="7" v3="5" pid="1" p1="3" />
+					<triangle v1="4" v2="8" v3="10" pid="1" p1="3" />
+					<triangle v1="4" v2="9" v3="8" pid="1" p1="3" />
+					<triangle v1="4" v2="10" v3="6" pid="1" p1="3" />
+					<triangle v1="5" v2="7" v3="9" pid="1" p1="3" />
+					<triangle v1="6" v2="10" v3="7" pid="1" p1="3" />
+					<triangle v1="7" v2="10" v3="11" pid="1" p1="3" />
+					<triangle v1="7" v2="11" v3="9" pid="1" p1="3" />
+					<triangle v1="8" v2="9" v3="10" pid="1" p1="3" />
+					<triangle v1="9" v2="11" v3="10" pid="1" p1="3" />
+					<triangle v1="12" v2="14" v3="13" pid="1" p1="3" />
+					<triangle v1="13" v2="14" v3="15" pid="1" p1="3" />
+				</triangles>
+			</mesh>
+		</object>
+		<object id="8" name="OpenSCAD Model 4" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
+			<mesh>
+				<vertices>
+					<vertex x="30.000000" y="0" z="0" />
+					<vertex x="30.000000" y="0" z="3.000000" />
+					<vertex x="30.000000" y="3.000000" z="0" />
+					<vertex x="30.000000" y="3.000000" z="3.000000" />
+					<vertex x="31.000000" y="1.000000" z="1.000000" />
+					<vertex x="31.000000" y="1.000000" z="2.000000" />
+					<vertex x="31.000000" y="2.000000" z="1.000000" />
+					<vertex x="31.000000" y="2.000000" z="2.000000" />
+					<vertex x="32.000000" y="1.000000" z="1.000000" />
+					<vertex x="32.000000" y="1.000000" z="2.000000" />
+					<vertex x="32.000000" y="2.000000" z="1.000000" />
+					<vertex x="32.000000" y="2.000000" z="2.000000" />
+					<vertex x="33.000000" y="0" z="0" />
+					<vertex x="33.000000" y="0" z="3.000000" />
+					<vertex x="33.000000" y="3.000000" z="0" />
+					<vertex x="33.000000" y="3.000000" z="3.000000" />
+				</vertices>
+				<triangles>
+					<triangle v1="0" v2="1" v3="3" />
+					<triangle v1="0" v2="2" v3="14" />
+					<triangle v1="0" v2="3" v3="2" />
+					<triangle v1="0" v2="12" v3="13" />
+					<triangle v1="0" v2="13" v3="1" />
+					<triangle v1="0" v2="14" v3="12" />
+					<triangle v1="1" v2="13" v3="3" />
+					<triangle v1="2" v2="3" v3="14" />
+					<triangle v1="3" v2="13" v3="15" />
+					<triangle v1="3" v2="15" v3="14" />
+					<triangle v1="4" v2="5" v3="9" pid="1" p1="1" />
+					<triangle v1="4" v2="6" v3="7" pid="1" p1="1" />
+					<triangle v1="4" v2="7" v3="5" pid="1" p1="1" />
+					<triangle v1="4" v2="8" v3="10" pid="1" p1="1" />
+					<triangle v1="4" v2="9" v3="8" pid="1" p1="1" />
+					<triangle v1="4" v2="10" v3="6" pid="1" p1="1" />
+					<triangle v1="5" v2="7" v3="9" pid="1" p1="1" />
+					<triangle v1="6" v2="10" v3="7" pid="1" p1="1" />
+					<triangle v1="7" v2="10" v3="11" pid="1" p1="1" />
+					<triangle v1="7" v2="11" v3="9" pid="1" p1="1" />
+					<triangle v1="8" v2="9" v3="10" pid="1" p1="1" />
+					<triangle v1="9" v2="11" v3="10" pid="1" p1="1" />
+					<triangle v1="12" v2="14" v3="13" />
+					<triangle v1="13" v2="14" v3="15" />
+				</triangles>
+			</mesh>
+		</object>
+		<object id="9" name="ABS" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
+			<mesh>
+				<vertices>
+					<vertex x="40.000000" y="0" z="0" />
+					<vertex x="40.000000" y="0" z="3.000000" />
+					<vertex x="40.000000" y="3.000000" z="0" />
+					<vertex x="40.000000" y="3.000000" z="3.000000" />
+					<vertex x="41.000000" y="1.000000" z="1.000000" />
+					<vertex x="41.000000" y="1.000000" z="2.000000" />
+					<vertex x="41.000000" y="2.000000" z="1.000000" />
+					<vertex x="41.000000" y="2.000000" z="2.000000" />
+					<vertex x="42.000000" y="1.000000" z="1.000000" />
+					<vertex x="42.000000" y="1.000000" z="2.000000" />
+					<vertex x="42.000000" y="2.000000" z="1.000000" />
+					<vertex x="42.000000" y="2.000000" z="2.000000" />
+					<vertex x="43.000000" y="0" z="0" />
+					<vertex x="43.000000" y="0" z="1.000000" />
+					<vertex x="43.000000" y="0" z="3.000000" />
+					<vertex x="43.000000" y="1.000000" z="0" />
+					<vertex x="43.000000" y="1.000000" z="1.000000" />
+					<vertex x="43.000000" y="3.000000" z="0" />
+					<vertex x="43.000000" y="3.000000" z="3.000000" />
+					<vertex x="44.000000" y="0" z="0" />
+					<vertex x="44.000000" y="0" z="1.000000" />
+					<vertex x="44.000000" y="1.000000" z="0" />
+					<vertex x="44.000000" y="1.000000" z="1.000000" />
+				</vertices>
+				<triangles>
+					<triangle v1="0" v2="1" v3="3" pid="1" p1="4" />
+					<triangle v1="0" v2="2" v3="17" pid="1" p1="4" />
+					<triangle v1="0" v2="3" v3="2" pid="1" p1="4" />
+					<triangle v1="0" v2="12" v3="13" pid="1" p1="4" />
+					<triangle v1="0" v2="13" v3="14" pid="1" p1="4" />
+					<triangle v1="0" v2="14" v3="1" pid="1" p1="4" />
+					<triangle v1="0" v2="15" v3="12" pid="1" p1="4" />
+					<triangle v1="0" v2="17" v3="15" pid="1" p1="4" />
+					<triangle v1="1" v2="14" v3="3" pid="1" p1="4" />
+					<triangle v1="2" v2="3" v3="17" pid="1" p1="4" />
+					<triangle v1="3" v2="14" v3="18" pid="1" p1="4" />
+					<triangle v1="3" v2="18" v3="17" pid="1" p1="4" />
+					<triangle v1="4" v2="5" v3="9" pid="1" p1="4" />
+					<triangle v1="4" v2="6" v3="7" pid="1" p1="4" />
+					<triangle v1="4" v2="7" v3="5" pid="1" p1="4" />
+					<triangle v1="4" v2="8" v3="10" pid="1" p1="4" />
+					<triangle v1="4" v2="9" v3="8" pid="1" p1="4" />
+					<triangle v1="4" v2="10" v3="6" pid="1" p1="4" />
+					<triangle v1="5" v2="7" v3="9" pid="1" p1="4" />
+					<triangle v1="6" v2="10" v3="7" pid="1" p1="4" />
+					<triangle v1="7" v2="10" v3="11" pid="1" p1="4" />
+					<triangle v1="7" v2="11" v3="9" pid="1" p1="4" />
+					<triangle v1="8" v2="9" v3="10" pid="1" p1="4" />
+					<triangle v1="9" v2="11" v3="10" pid="1" p1="4" />
+					<triangle v1="12" v2="15" v3="21" pid="1" p1="4" />
+					<triangle v1="12" v2="19" v3="20" pid="1" p1="4" />
+					<triangle v1="12" v2="20" v3="13" pid="1" p1="4" />
+					<triangle v1="12" v2="21" v3="19" pid="1" p1="4" />
+					<triangle v1="13" v2="16" v3="14" pid="1" p1="4" />
+					<triangle v1="13" v2="20" v3="16" pid="1" p1="4" />
+					<triangle v1="14" v2="16" v3="17" pid="1" p1="4" />
+					<triangle v1="14" v2="17" v3="18" pid="1" p1="4" />
+					<triangle v1="15" v2="16" v3="21" pid="1" p1="4" />
+					<triangle v1="15" v2="17" v3="16" pid="1" p1="4" />
+					<triangle v1="16" v2="20" v3="22" pid="1" p1="4" />
+					<triangle v1="16" v2="22" v3="21" pid="1" p1="4" />
+					<triangle v1="19" v2="21" v3="20" pid="1" p1="4" />
+					<triangle v1="20" v2="21" v3="22" pid="1" p1="4" />
+				</triangles>
+			</mesh>
+		</object>
+	</resources>
+	<build p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX">
+		<item objectid="2" partnumber="Part 1" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" />
+		<item objectid="3" partnumber="Part 2" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" />
+		<item objectid="4" partnumber="Part 3" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" />
+		<item objectid="5" partnumber="Part 4" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" />
+		<item objectid="6" partnumber="Part 5" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" />
+		<item objectid="7" partnumber="Part 6" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" />
+		<item objectid="8" partnumber="Part 7" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" />
+		<item objectid="9" partnumber="Part 8" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" />
+	</build>
+</model>

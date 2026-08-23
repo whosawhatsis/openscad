@@ -476,8 +476,8 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
   } else {
     // start measuring render time
     RenderStatistic renderStatistic;
-    const bool preserveBodies = cmd.multiStl || export_format == FileFormat::AMF ||
-                                export_format == FileFormat::_3MF;
+    const bool preserveBodies =
+      cmd.multiStl || export_format == FileFormat::AMF || export_format == FileFormat::_3MF;
     GeometryEvaluator geomevaluator(tree, preserveBodies);
     std::unique_ptr<OffscreenView> glview;
     std::shared_ptr<const Geometry> root_geom;
@@ -530,8 +530,7 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
         return 1;
       }
       if (!export_stl_files(root_geom, filename_str, exportInfo, cmd.overwrite)) return 1;
-    } else if (dim > 0 &&
-               !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
+    } else if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
       return 1;
     }
 
