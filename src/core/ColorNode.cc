@@ -40,8 +40,11 @@
 #include "core/Children.h"
 #include "core/ColorUtil.h"
 #include "core/ModuleInstantiation.h"
+#include <optional>
+
 #include "Feature.h"
 #include "core/Material.h"
+#include "core/Settings.h"
 #include "core/Parameters.h"
 #include "core/module.h"
 #include "geometry/linalg.h"
@@ -60,6 +63,50 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
     Parameters::parse(std::move(arguments), inst->location(),
                       isMaterial ? std::vector<std::string>{"name", "c", "alpha", "roughness"}
                                  : std::vector<std::string>{"c", "alpha", "roughness"});
+  if (isMaterial && parameters["name"].type() == Value::Type::STRING) {
+    const auto& name = parameters["name"].toString();
+    if (Material::isValidName(name)) {
+      node->materialName = name;
+    } else {
+      LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+          "material() name must start and end with an ASCII letter or digit and contain only "
+          "letters, digits, '.', '-' or '_'");
+    }
+  }
+
+  // Shared by the c argument and by the default-colour table, so a colour
+  // written in Preferences or in $material_colors is interpreted exactly like
+  // one written as an argument.
+  const auto colorFromValue = [&](const Value& value, const char *what) -> std::optional<Color4f> {
+    if (value.type() == Value::Type::VECTOR) {
+      const auto& vec = value.toVector();
+      Vector4f color{-1.0f, -1.0f, -1.0f, 1.0f};
+      for (size_t i = 0; i < 4 && i < vec.size(); ++i) {
+        color[i] = (float)vec[i].toDouble();
+        if (color[i] > 1 || color[i] < 0) {
+          LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+              "%1$s expects numbers between 0.0 and 1.0. Value of %2$.1f is out of range", what,
+              color[i]);
+        }
+      }
+      if (vec.size() < 4) color[3] = 1.0f;
+      return Color4f{color};
+    }
+    if (value.type() == Value::Type::STRING) {
+      const auto colorname = value.toString();
+      const auto parsed = OpenSCAD::parse_color(colorname);
+      if (!parsed) {
+        LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+            "Unable to parse color \"%1$s\"", colorname);
+        LOG(message_group::HtmlLink,
+            "For a list of valid color names, see the <a href=\"open-window://colorlist\"><b>Color "
+            "List</b></a> window.");
+      }
+      return parsed;
+    }
+    return {};
+  };
+
   if (parameters["c"].type() == Value::Type::VECTOR) {
     const auto& vec = parameters["c"].toVector();
     Vector4f color;
@@ -173,14 +220,48 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
     *param.flag = true;
   }
 
-  if (isMaterial && parameters["name"].type() == Value::Type::STRING) {
-    const auto& name = parameters["name"].toString();
-    if (Material::isValidName(name)) {
-      node->materialName = name;
+  // A material with no colour of its own takes a default: from $material_colors
+  // in the model first, so a shared script carries its own colours, and from the
+  // Preferences table second, which is personal to this machine. An explicit
+  // colour argument has already won by getting here with rgb set; an explicit
+  // alpha survives either way.
+  if (isMaterial && !node->materialName.empty() && !node->color.hasRgb()) {
+    const float explicitAlpha = node->color.a();
+    std::optional<Color4f> resolved;
+
+    const Value& table = parameters["$material_colors"];
+    if (table.type() == Value::Type::VECTOR) {
+      for (const auto& entry : table.toVector()) {
+        if (entry.type() != Value::Type::VECTOR) continue;
+        const auto& pair = entry.toVector();
+        if (pair.size() < 2 || pair[0].type() != Value::Type::STRING) continue;
+        if (pair[0].toString() != node->materialName) continue;
+        resolved = colorFromValue(pair[1], "$material_colors");
+        break;
+      }
+    }
+    if (!resolved) {
+      const auto preference = Settings::SettingsMaterials::defaultColor(node->materialName);
+      if (!preference.empty()) {
+        resolved = OpenSCAD::parse_color(preference);
+        if (!resolved) {
+          LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+              "Unable to parse the default color \"%1$s\" set for material \"%2$s\" in "
+              "Preferences",
+              preference, node->materialName);
+        }
+      }
+    }
+
+    if (resolved) {
+      node->color = *resolved;
+      // An alpha written on the call overrides the one the default carries.
+      if (parameters["alpha"].type() == Value::Type::NUMBER) node->color.setAlpha(explicitAlpha);
     } else {
       LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
-          "material() name must start and end with an ASCII letter or digit and contain only "
-          "letters, digits, '.', '-' or '_'");
+          "No color for material \"%1$s\": give material() a color, add one to "
+          "$material_colors, or set a default for it in Preferences",
+          node->materialName);
     }
   }
 
