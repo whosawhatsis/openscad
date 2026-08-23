@@ -520,8 +520,17 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
         if (mutableGeom) {
           mutableGeom->setColor(node.color);
           if (Feature::ExperimentalMultiMaterial.is_enabled()) {
-            mutableGeom->setBodyColor(node.color);
-            mutableGeom->setMaterialName(node.materialName);
+            // Both wrappers declare a body, so either can be exported as its own
+            // object or file. Only material() declares what the body is made
+            // *of*: its colour is the volume's material and is what a
+            // body-combining operation inherits from its first operand. color()
+            // stays purely visual - it never repaints a boolean product, so a
+            // model that only uses color() renders exactly as it does with this
+            // feature disabled.
+            if (node.isMaterial) {
+              mutableGeom->setBodyColor(node.color);
+              mutableGeom->setMaterialName(node.materialName);
+            }
             mutableGeom->setBodyBoundary();
           }
         }
