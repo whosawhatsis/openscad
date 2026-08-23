@@ -39,6 +39,7 @@
 #include "core/Children.h"
 #include "core/ColorUtil.h"
 #include "core/ModuleInstantiation.h"
+#include "Feature.h"
 #include "core/Material.h"
 #include "core/Parameters.h"
 #include "core/module.h"
@@ -138,7 +139,7 @@ void register_builtin_color()
                    "color(\"#hexvalue\")",
                    "color(\"colorname\", 1.0)",
                  });
-  Builtins::init("material", new BuiltinModule(builtin_material),
+  Builtins::init("material", new BuiltinModule(builtin_material, &Feature::ExperimentalMultiMaterial),
                  {
                    "material(c = [r, g, b, a], name = \"name\")",
                    "material(c = [r, g, b], alpha = 1.0, name = \"name\")",

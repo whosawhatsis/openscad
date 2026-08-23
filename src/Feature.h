@@ -28,6 +28,7 @@ public:
   static const Feature ExperimentalStreamingPreview;
   static const Feature ExperimentalTransparencyOrdering;
   static const Feature ExperimentalStructuredDiagnostics;
+  static const Feature ExperimentalMultiMaterial;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif

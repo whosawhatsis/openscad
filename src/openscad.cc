@@ -741,6 +741,10 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       if (!collectUsdAnimationObjects(csgRoot, objects)) objects.clear();
       usdFrames->push_back({root_geom, std::move(objects)});
     } else if (cmd.multiStl) {
+      if (!Feature::ExperimentalMultiMaterial.is_enabled()) {
+        LOG("Option --multi-stl requires --enable=multi-material.");
+        return 1;
+      }
       if (export_format != FileFormat::ASCII_STL && export_format != FileFormat::BINARY_STL) {
         LOG("Option --multi-stl requires STL output.");
         return 1;

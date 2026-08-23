@@ -965,7 +965,7 @@ list(APPEND EXPORT_OBJ_TEST_FILES ${TEST_SCAD_DIR}/obj/obj-import-export_cube.sc
 list(APPEND EXPORT_OBJ_TEST_FILES ${TEST_SCAD_DIR}/3D/features/polyhedron-cube.scad)
 
 list(APPEND EXPORT_3MF_TEST_FILES ${TEST_SCAD_DIR}/3mf/3mf-export.scad)
-list(APPEND EXPORT_3MF_TEST_FILES ${TEST_SCAD_DIR}/misc/multi-stl-bodies.scad)
+list(APPEND EXPORT_3MF_MULTI_MATERIAL_TEST_FILES ${TEST_SCAD_DIR}/misc/multi-stl-bodies.scad)
 list(APPEND EXPORT_3MF_LAZY_UNION_TEST_FILES ${TEST_SCAD_DIR}/experimental/lazyunion-color-cubes.scad)
 
 list(APPEND EXPORT_POV_TEST_FILES ${TEST_SCAD_DIR}/pov/pov-export.scad)
@@ -1040,6 +1040,7 @@ add_cmdline_test(export-obj              EXPERIMENTAL OPENSCAD SUFFIX obj FILES 
 if (ENABLE_LIB3MF_TESTS)
 add_cmdline_test(export-3mf              EXPERIMENTAL OPENSCAD SUFFIX 3mf FILES ${EXPORT_3MF_TEST_FILES} ARGS --enable=predictible-output)
 add_cmdline_test(export-3mf              EXPERIMENTAL OPENSCAD SUFFIX 3mf FILES ${EXPORT_3MF_LAZY_UNION_TEST_FILES} ARGS --enable=predictible-output --enable=lazy-union)
+add_cmdline_test(export-3mf              EXPERIMENTAL OPENSCAD SUFFIX 3mf FILES ${EXPORT_3MF_MULTI_MATERIAL_TEST_FILES} ARGS --enable=predictible-output --enable=multi-material)
 add_cmdline_test(export-3mf-stdio        EXPERIMENTAL OPENSCAD SUFFIX 3mf FILES ${EXPORT_3MF_TEST_FILES} STDIO ARGS --enable=predictible-output --export-format 3mf)
 endif()
 add_cmdline_test(export-pov-as-is        EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold)
@@ -1129,7 +1130,7 @@ add_cmdline_test(export-svg-fill-only SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX 
 # FIXME: We don't actually need to compare the output of cgalstlsanitytest
 # with anything. It's self-contained and returns != 0 on error
 add_cmdline_test(export-stl-sanitytest  SCRIPT ${STLEXPORTSANITYTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/normal-nan.scad ARGS ${OPENSCAD_EXE_ARG})
-add_cmdline_test(export-multi-stl       EXPERIMENTAL SCRIPT ${MULTISTLEXPORTTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/multi-stl-bodies.scad ARGS ${OPENSCAD_EXE_ARG} --enable=predictible-output --export-format asciistl --render)
+add_cmdline_test(export-multi-stl       EXPERIMENTAL SCRIPT ${MULTISTLEXPORTTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/multi-stl-bodies.scad ARGS ${OPENSCAD_EXE_ARG} --enable=predictible-output --enable=multi-material --export-format asciistl --render)
 
 # Export/import color support
 add_cmdline_test(offcolorpngtest EXPERIMENTAL SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX png FILES ${COLOR_3D_TEST_FILES} EXPECTEDDIR render-manifold ARGS ${OPENSCAD_EXE_ARG} --format=OFF --backend=manifold --render)
@@ -1581,7 +1582,6 @@ if(APPLE)
   set_tests_properties(
     # Fails to create a 3MF file to stdout, see #6895
     export-3mf-stdio_3mf-export
-    export-3mf-stdio_multi-stl-bodies
     PROPERTIES DISABLED TRUE
   )
 elseif(UNIX)
