@@ -79,6 +79,7 @@ private:
                    const QColor& defaultColor);
 
   bool eventFilter(QObject *obj, QEvent *event) override;
+  bool handleKeyEventBracePairReturn(QKeyEvent *);
   bool handleKeyEventNavigateNumber(QKeyEvent *);
   bool handleWheelEventNavigateNumber(QWheelEvent *);
   bool handleKeyEventBlockCopy(QKeyEvent *);

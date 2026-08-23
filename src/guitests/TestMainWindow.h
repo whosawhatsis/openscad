@@ -9,6 +9,7 @@ private slots:
   void checkOpenTabPropagateToWindow();
   void checkTestResetDoesNotPersistAutoReload();
   void checkOpeningLargeFileDoesNotParseInGui();
+  void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();
   void checkEachWindowHasAComputeWorker();
   void checkIsolatedWindowsCanPreviewConcurrently();

@@ -20,6 +20,7 @@
 #include "gui/Console.h"
 #include "gui/ComputeWorker.h"
 #include "gui/ProgressWidget.h"
+#include "gui/ScintillaEditor.h"
 #include "gui/parameter/ParameterWidget.h"
 #include "glview/Camera.h"
 #include "glview/ColorMap.h"
@@ -86,6 +87,28 @@ void TestMainWindow::checkOpeningLargeFileDoesNotParseInGui()
   }
 }
 
+void TestMainWindow::checkReturnInsideBracesUsesKandRIndentation()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  editor->qsci->setAutoIndent(true);
+  editor->qsci->setIndentationWidth(2);
+  editor->qsci->setIndentationsUseTabs(false);
+  editor->setPlainText("{}");
+  editor->setCursorPosition(0, 1);
+
+  editor->qsci->setFocus();
+  QTest::keyClick(editor->qsci, Qt::Key_Return);
+
+  QCOMPARE(editor->toPlainText(), QString("{\n}"));
+
+  editor->setPlainText("{\n}");
+  editor->setCursorPosition(0, 1);
+  QTest::keyClick(editor->qsci, Qt::Key_Return);
+
+  QCOMPARE(editor->toPlainText(), QString("{\n  \n}"));
+}
 void TestMainWindow::checkSaveToShouldUpdateWindowTitle()
 {
   restoreWindowInitialState();

@@ -1075,6 +1075,9 @@ bool ScintillaEditor::eventFilter(QObject *obj, QEvent *e)
                 (keyEvent->modifiers() & Qt::KeypadModifier ? "KEYPAD" : "keypad") %
                 (keyEvent->modifiers() & Qt::GroupSwitchModifier ? "GROUP" : "group"));
 
+      if (handleKeyEventBracePairReturn(keyEvent)) {
+        return true;
+      }
       if (handleKeyEventNavigateNumber(keyEvent)) {
         return true;
       }
@@ -1089,6 +1092,26 @@ bool ScintillaEditor::eventFilter(QObject *obj, QEvent *e)
   } else return EditorInterface::eventFilter(obj, e);
 
   return false;
+}
+
+bool ScintillaEditor::handleKeyEventBracePairReturn(QKeyEvent *keyEvent)
+{
+  if (keyEvent->type() != QEvent::KeyPress ||
+      (keyEvent->key() != Qt::Key_Return && keyEvent->key() != Qt::Key_Enter) ||
+      (keyEvent->modifiers() & ~Qt::KeypadModifier) != Qt::NoModifier) {
+    return false;
+  }
+
+  const auto pos = qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
+  if (pos == 0 || qsci->SendScintilla(QsciScintilla::SCI_GETCHARAT, pos - 1) != '{' ||
+      qsci->SendScintilla(QsciScintilla::SCI_GETCHARAT, pos) != '}' ||
+      qsci->SendScintilla(QsciScintilla::SCI_GETSTYLEAT, pos - 1) != ScadLexer2::OtherText ||
+      qsci->SendScintilla(QsciScintilla::SCI_GETSTYLEAT, pos) != ScadLexer2::OtherText) {
+    return false;
+  }
+
+  qsci->insert("\n");
+  return true;
 }
 
 bool ScintillaEditor::handleKeyEventBlockMove(QKeyEvent *keyEvent)
