@@ -32,6 +32,7 @@
 #include <clocale>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <ios>
 #include <memory>
 #include <ostream>
@@ -40,6 +41,7 @@
 #include <vector>
 
 #include "Feature.h"
+#include "core/Material.h"
 #include "geometry/Geometry.h"
 #include "geometry/PolySet.h"
 #include "geometry/PolySetUtils.h"
@@ -303,4 +305,49 @@ void export_stl(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
     output << "endsolid OpenSCAD_Model\n";
     setlocale(LC_NUMERIC, "");  // Restore default locale
   }
+}
+
+std::vector<std::string> multi_stl_filenames(const std::shared_ptr<const Geometry>& geom,
+                                             const std::string& filename)
+{
+  Geometry::Geometries bodies;
+  if (const auto list = std::dynamic_pointer_cast<const GeometryList>(geom)) {
+    bodies = list->flatten();
+  } else {
+    bodies.emplace_back(nullptr, geom);
+  }
+
+  std::vector<std::string> materialNames;
+  materialNames.reserve(bodies.size());
+  for (const auto& body : bodies) materialNames.push_back(body.second->materialName());
+  return Material::stlFilenames(filename, materialNames);
+}
+
+bool export_stl_files(const std::shared_ptr<const Geometry>& geom, const std::string& filename,
+                      const ExportInfo& exportInfo, bool overwrite)
+{
+  Geometry::Geometries bodies;
+  if (const auto list = std::dynamic_pointer_cast<const GeometryList>(geom)) {
+    bodies = list->flatten();
+  } else {
+    bodies.emplace_back(nullptr, geom);
+  }
+  const auto filenames = multi_stl_filenames(geom, filename);
+
+  if (!overwrite) {
+    for (const auto& output : filenames) {
+      if (std::filesystem::exists(std::filesystem::u8path(output))) {
+        LOG(message_group::Export_Error,
+            "Multi-STL export would overwrite '%1$s'; use --overwrite to replace existing files",
+            output);
+        return false;
+      }
+    }
+  }
+
+  size_t index = 0;
+  for (const auto& body : bodies) {
+    if (!exportFileByName(body.second, filenames[index++], exportInfo)) return false;
+  }
+  return true;
 }

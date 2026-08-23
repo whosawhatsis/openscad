@@ -1,5 +1,6 @@
 #include "geometry/GeometryEvaluator.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iterator>
@@ -62,7 +63,22 @@ class Geometry;
 class Polygon2d;
 class Tree;
 
-GeometryEvaluator::GeometryEvaluator(const Tree& tree) : tree(tree)
+namespace {
+bool containsBodyBoundary(const std::shared_ptr<const Geometry>& geometry)
+{
+  if (!geometry) return false;
+  if (geometry->isBodyBoundary()) return true;
+  if (const auto list = std::dynamic_pointer_cast<const GeometryList>(geometry)) {
+    for (const auto& child : list->getChildren()) {
+      if (containsBodyBoundary(child.second)) return true;
+    }
+  }
+  return false;
+}
+}  // namespace
+
+GeometryEvaluator::GeometryEvaluator(const Tree& tree, bool preserveBodies)
+  : tree(tree), preserveBodies(preserveBodies)
 {
 }
 
@@ -465,13 +481,22 @@ std::unique_ptr<Polygon2d> GeometryEvaluator::applyToChildren2D(const AbstractNo
 void GeometryEvaluator::addToParent(const State& state, const AbstractNode& node,
                                     const std::shared_ptr<const Geometry>& geom)
 {
+  std::shared_ptr<const Geometry> attributedGeom = geom;
+  const auto children = this->visitedchildren.find(node.index());
+  if (geom && !geom->isBodyBoundary() && geom->materialName().empty() && !geom->hasBodyColor() &&
+      children != this->visitedchildren.end() && !children->second.empty() &&
+      children->second.front().second) {
+    auto copy = geom->copy();
+    copy->copyBodyAttributes(*children->second.front().second);
+    attributedGeom = std::move(copy);
+  }
   this->visitedchildren.erase(node.index());
   if (state.parent()) {
     this->visitedchildren[state.parent()->index()].push_back(
-      std::make_pair(node.shared_from_this(), geom));
+      std::make_pair(node.shared_from_this(), attributedGeom));
   } else {
     // Root node
-    this->root = geom;
+    this->root = attributedGeom;
     assert(this->visitedchildren.empty());
   }
 }
@@ -486,7 +511,12 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
       ResultObject res = applyToChildren(node, OpenSCADOperator::UNION);
       if ((geom = res.constptr())) {
         auto mutableGeom = res.asMutableGeometry();
-        if (mutableGeom) mutableGeom->setColor(node.color);
+        if (mutableGeom) {
+          mutableGeom->setColor(node.color);
+          mutableGeom->setBodyColor(node.color);
+          mutableGeom->setMaterialName(node.materialName);
+          mutableGeom->setBodyBoundary();
+        }
         geom = mutableGeom;
       }
     } else {
@@ -510,7 +540,18 @@ Response GeometryEvaluator::visit(State& state, const AbstractNode& node)
   if (state.isPostfix()) {
     std::shared_ptr<const Geometry> geom;
     if (!isSmartCached(node)) {
-      geom = applyToChildren(node, OpenSCADOperator::UNION).constptr();
+      const auto& nodeChildren = visitedchildren[node.index()];
+      const bool hasBoundaries = std::any_of(nodeChildren.begin(), nodeChildren.end(),
+                                             [](const auto& item) {
+                                               return containsBodyBoundary(item.second);
+                                             });
+      if (preserveBodies && hasBoundaries) {
+        auto children = visitedchildren[node.index()];
+        if (children.size() == 1) geom = children.front().second;
+        else if (!children.empty()) geom = std::make_shared<GeometryList>(children);
+      } else {
+        geom = applyToChildren(node, OpenSCADOperator::UNION).constptr();
+      }
     } else {
       geom = smartCacheGet(node, state.preferNef());
     }
@@ -583,8 +624,15 @@ Response GeometryEvaluator::lazyEvaluateRootNode(State& state, const AbstractNod
       // Only use valid geometries
       if (chgeom && !chgeom->isEmpty()) geometries.push_back(item);
     }
+    const bool hasBoundaries = std::any_of(geometries.begin(), geometries.end(), [](const auto& item) {
+      return containsBodyBoundary(item.second);
+    });
     if (geometries.size() == 1) geom = geometries.front().second;
-    else if (geometries.size() > 1) geom = std::make_shared<GeometryList>(geometries);
+    else if (geometries.size() > 1 && (!preserveBodies || hasBoundaries)) {
+      geom = std::make_shared<GeometryList>(geometries);
+    } else if (geometries.size() > 1) {
+      geom = applyToChildren(node, OpenSCADOperator::UNION).constptr();
+    }
 
     this->root = geom;
   }
@@ -601,7 +649,7 @@ Response GeometryEvaluator::lazyEvaluateRootNode(State& state, const AbstractNod
 Response GeometryEvaluator::visit(State& state, const RootNode& node)
 {
   // If we didn't enable lazy unions, just union the top-level objects
-  if (!Feature::ExperimentalLazyUnion.is_enabled()) {
+  if (!preserveBodies && !Feature::ExperimentalLazyUnion.is_enabled()) {
     return visit(state, (const GroupNode&)node);
   }
   return lazyEvaluateRootNode(state, node);
@@ -716,7 +764,14 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
   if (state.isPostfix()) {
     std::shared_ptr<const Geometry> geom;
     if (!isSmartCached(node)) {
-      geom = applyToChildren(node, node.type).constptr();
+      ResultObject result = applyToChildren(node, node.type);
+      if (auto mutableGeom = result.asMutableGeometry()) {
+        const auto& children = visitedchildren[node.index()];
+        if (!children.empty() && children.front().second) {
+          mutableGeom->copyBodyAttributes(*children.front().second);
+        }
+        geom = mutableGeom;
+      }
     } else {
       geom = smartCacheGet(node, state.preferNef());
     }
@@ -744,23 +799,45 @@ Response GeometryEvaluator::visit(State& state, const TransformNode& node)
         LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
             "Transformation matrix contains Not-a-Number and/or Infinity - removing object.");
       } else {
-        // First union all children
-        ResultObject res = applyToChildren(node, OpenSCADOperator::UNION);
+        ResultObject res;
+        const auto& nodeChildren = visitedchildren[node.index()];
+        const bool hasBoundaries = std::any_of(nodeChildren.begin(), nodeChildren.end(),
+                                               [](const auto& item) {
+                                                 return containsBodyBoundary(item.second);
+                                               });
+        if (preserveBodies && hasBoundaries) {
+          auto children = visitedchildren[node.index()];
+          if (children.size() == 1) res = ResultObject::constResult(children.front().second);
+          else if (!children.empty()) res = ResultObject::mutableResult(std::make_shared<GeometryList>(children));
+        } else {
+          res = applyToChildren(node, OpenSCADOperator::UNION);
+        }
         if ((geom = res.constptr())) {
           if (geom->getDimension() == 2) {
-            auto polygons = std::dynamic_pointer_cast<Polygon2d>(res.asMutableGeometry());
-            assert(polygons);
-
             Transform2d mat2;
             mat2.matrix() << node.matrix(0, 0), node.matrix(0, 1), node.matrix(0, 3), node.matrix(1, 0),
               node.matrix(1, 1), node.matrix(1, 3), node.matrix(3, 0), node.matrix(3, 1),
               node.matrix(3, 3);
-            polygons->transform(mat2);
+            auto mutableGeometry = res.asMutableGeometry();
+            if (auto polygons = std::dynamic_pointer_cast<Polygon2d>(mutableGeometry)) {
+              polygons->transform(mat2);
+              geom = polygons;
+            } else if (auto list = std::dynamic_pointer_cast<GeometryList>(mutableGeometry)) {
+              for (auto& item : list->children) {
+                auto geometry = item.second->copy();
+                auto *polygon = dynamic_cast<Polygon2d *>(geometry.get());
+                assert(polygon);
+                polygon->transform(mat2);
+                item.second = std::shared_ptr<const Geometry>(std::move(geometry));
+              }
+              geom = list;
+            }
             // FIXME: We lose the transform if we copied a const geometry above. Probably similar issue
             // in multiple places A 2D transformation may flip the winding order of a polygon. If that
             // happens with a sanitized polygon, we need to reverse the winding order for it to be
             // correct.
-            if (polygons->isSanitized() && mat2.matrix().determinant() <= 0) {
+            if (const auto polygons = std::dynamic_pointer_cast<const Polygon2d>(geom);
+                polygons && polygons->isSanitized() && mat2.matrix().determinant() <= 0) {
               geom = ClipperUtils::sanitize(*polygons);
             }
           } else if (geom->getDimension() == 3) {
@@ -976,6 +1053,14 @@ Response GeometryEvaluator::visit(State& state, const CgalAdvNode& node)
         break;
       }
       default: assert(false && "not implemented");
+      }
+      if (geom) {
+        const auto& children = visitedchildren[node.index()];
+        if (!children.empty() && children.front().second) {
+          auto attributed = geom->copy();
+          attributed->copyBodyAttributes(*children.front().second);
+          geom = std::move(attributed);
+        }
       }
     } else {
       geom = smartCacheGet(node, state.preferNef());

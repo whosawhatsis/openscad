@@ -309,6 +309,10 @@ bool exportFileStdOut(const std::shared_ptr<const class Geometry>& root_geom,
                       const ExportInfo& exportInfo);
 
 void export_stl(const std::shared_ptr<const Geometry>& geom, std::ostream& output, bool binary = true);
+bool export_stl_files(const std::shared_ptr<const Geometry>& geom, const std::string& filename,
+                      const ExportInfo& exportInfo, bool overwrite);
+std::vector<std::string> multi_stl_filenames(const std::shared_ptr<const Geometry>& geom,
+                                             const std::string& filename);
 void export_3mf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_obj(const std::shared_ptr<const Geometry>& geom, std::ostream& output);

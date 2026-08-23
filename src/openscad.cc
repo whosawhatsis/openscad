@@ -178,6 +178,8 @@ struct CommandLine {
   const AnimateArgs animate;
   const std::vector<std::string> summaryOptions;
   const std::string summaryFile;
+  const bool multiStl;
+  const bool overwrite;
 };
 
 namespace {
@@ -474,7 +476,9 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
   } else {
     // start measuring render time
     RenderStatistic renderStatistic;
-    GeometryEvaluator geomevaluator(tree);
+    const bool preserveBodies = cmd.multiStl || export_format == FileFormat::AMF ||
+                                export_format == FileFormat::_3MF;
+    GeometryEvaluator geomevaluator(tree, preserveBodies);
     std::unique_ptr<OffscreenView> glview;
     std::shared_ptr<const Geometry> root_geom;
     if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG) &&
@@ -512,7 +516,22 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
                                              input_filename, &cmd.camera, cmd.exportOptions);
-    if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
+    if (cmd.multiStl) {
+      if (export_format != FileFormat::ASCII_STL && export_format != FileFormat::BINARY_STL) {
+        LOG("Option --multi-stl requires STL output.");
+        return 1;
+      }
+      if (cmd.is_stdout) {
+        LOG("Option --multi-stl is not supported when exporting to stdout.");
+        return 1;
+      }
+      if (!root_geom || root_geom->getDimension() != 3 || root_geom->isEmpty()) {
+        LOG("Current top level object is not a non-empty 3D object.");
+        return 1;
+      }
+      if (!export_stl_files(root_geom, filename_str, exportInfo, cmd.overwrite)) return 1;
+    } else if (dim > 0 &&
+               !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
       return 1;
     }
 
@@ -855,6 +874,8 @@ int openscad_main(int argc, char **argv)
       "file extensions.  For ASCII stl export, specify 'asciistl', and for binary stl export, specify "
       "'binstl'.  ASCII export is the current stl default, but binary stl is planned as the future "
       "default so asciistl should be explicitly specified in scripts when needed.\n")
+    ("multi-stl", "export each body to a separate STL file")
+    ("overwrite", "allow multi-STL export to replace existing files")
     ("o,o", po::value<std::vector<std::string>>(),
       "output specified file instead of running the GUI. The file extension specifies the type: stl, "
       "off, wrl, amf, 3mf, csg, dxf, svg, pdf, png, echo, ast, term, nef3, nefdbg, param, pov. May be "
@@ -1175,7 +1196,9 @@ int openscad_main(int argc, char **argv)
                                 animate,
                                 vm.count("summary") ? vm["summary"].as<std::vector<std::string>>()
                                                     : std::vector<std::string>{},
-                                vm.count("summary-file") ? vm["summary-file"].as<std::string>() : ""};
+                                vm.count("summary-file") ? vm["summary-file"].as<std::string>() : "",
+                                vm.count("multi-stl") > 0,
+                                vm.count("overwrite") > 0};
           rc |= cmdline(cmd);
         }
       }
