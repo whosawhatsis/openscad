@@ -78,7 +78,7 @@ bool containsBodyBoundary(const std::shared_ptr<const Geometry>& geometry)
 }  // namespace
 
 GeometryEvaluator::GeometryEvaluator(const Tree& tree, bool preserveBodies)
-  : tree(tree), preserveBodies(preserveBodies)
+  : tree(tree), preserveBodies(preserveBodies && Feature::ExperimentalMultiMaterial.is_enabled())
 {
 }
 
@@ -489,9 +489,9 @@ void GeometryEvaluator::addToParent(const State& state, const AbstractNode& node
   // defined to inherit the first operand's attributes (CsgOpNode, CgalAdvNode)
   // do so themselves, and doing it here as well would repaint a whole union
   // with the colour of whichever body happened to come first.
-  if (geom && !geom->isBodyBoundary() && geom->materialName().empty() && !geom->hasBodyColor() &&
-      children != this->visitedchildren.end() && children->second.size() == 1 &&
-      children->second.front().second) {
+  if (Feature::ExperimentalMultiMaterial.is_enabled() && geom && !geom->isBodyBoundary() &&
+      geom->materialName().empty() && !geom->hasBodyColor() && children != this->visitedchildren.end() &&
+      children->second.size() == 1 && children->second.front().second) {
     auto copy = geom->copy();
     copy->copyBodyAttributes(*children->second.front().second);
     attributedGeom = std::move(copy);
@@ -519,9 +519,11 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
         auto mutableGeom = res.asMutableGeometry();
         if (mutableGeom) {
           mutableGeom->setColor(node.color);
-          mutableGeom->setBodyColor(node.color);
-          mutableGeom->setMaterialName(node.materialName);
-          mutableGeom->setBodyBoundary();
+          if (Feature::ExperimentalMultiMaterial.is_enabled()) {
+            mutableGeom->setBodyColor(node.color);
+            mutableGeom->setMaterialName(node.materialName);
+            mutableGeom->setBodyBoundary();
+          }
         }
         geom = mutableGeom;
       }
@@ -772,7 +774,8 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
       ResultObject result = applyToChildren(node, node.type);
       if (auto mutableGeom = result.asMutableGeometry()) {
         const auto& children = visitedchildren[node.index()];
-        if (!children.empty() && children.front().second) {
+        if (Feature::ExperimentalMultiMaterial.is_enabled() && !children.empty() &&
+            children.front().second) {
           mutableGeom->takeBodyAttributesFrom(*children.front().second);
         }
         geom = mutableGeom;
@@ -1059,7 +1062,7 @@ Response GeometryEvaluator::visit(State& state, const CgalAdvNode& node)
       }
       default: assert(false && "not implemented");
       }
-      if (geom) {
+      if (geom && Feature::ExperimentalMultiMaterial.is_enabled()) {
         const auto& children = visitedchildren[node.index()];
         if (!children.empty() && children.front().second) {
           auto attributed = geom->copy();

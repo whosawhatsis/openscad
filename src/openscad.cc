@@ -517,6 +517,10 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
                                              input_filename, &cmd.camera, cmd.exportOptions);
     if (cmd.multiStl) {
+      if (!Feature::ExperimentalMultiMaterial.is_enabled()) {
+        LOG("Option --multi-stl requires --enable=multi-material.");
+        return 1;
+      }
       if (export_format != FileFormat::ASCII_STL && export_format != FileFormat::BINARY_STL) {
         LOG("Option --multi-stl requires STL output.");
         return 1;

@@ -2561,7 +2561,8 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
   auto title = QString(_("Export %1 File")).arg(type_name);
   auto filter = QString(_("%1 Files (*%2)")).arg(type_name, suffix);
   const bool isStl =
-    exportInfo.format == FileFormat::ASCII_STL || exportInfo.format == FileFormat::BINARY_STL;
+    (exportInfo.format == FileFormat::ASCII_STL || exportInfo.format == FileFormat::BINARY_STL) &&
+    Feature::ExperimentalMultiMaterial.is_enabled();
   QFileDialog dialog(this, title, exportPath(suffix), filter);
   dialog.setAcceptMode(QFileDialog::AcceptSave);
   dialog.setDefaultSuffix(suffix);
