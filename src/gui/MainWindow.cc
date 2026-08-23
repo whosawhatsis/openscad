@@ -2965,8 +2965,8 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
 
   auto title = QString(_("Export %1 File")).arg(type_name);
   auto filter = QString(_("%1 Files (*%2)")).arg(type_name, suffix);
-  const bool isStl = exportInfo.format == FileFormat::ASCII_STL ||
-                     exportInfo.format == FileFormat::BINARY_STL;
+  const bool isStl =
+    exportInfo.format == FileFormat::ASCII_STL || exportInfo.format == FileFormat::BINARY_STL;
   QFileDialog dialog(this, title, exportPath(suffix), filter);
   dialog.setAcceptMode(QFileDialog::AcceptSave);
   dialog.setDefaultSuffix(suffix);
@@ -2994,19 +2994,18 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
     const bool anyExists = std::any_of(filenames.begin(), filenames.end(), [](const auto& filename) {
       return std::filesystem::exists(std::filesystem::u8path(filename));
     });
-    if (anyExists &&
-        QMessageBox::warning(this, _("Overwrite files?"),
-                             _("One or more multi-STL output files already exist. Overwrite them?"),
-                             QMessageBox::Yes | QMessageBox::Abort, QMessageBox::Abort) !=
-          QMessageBox::Yes) {
+    if (anyExists && QMessageBox::warning(
+                       this, _("Overwrite files?"),
+                       _("One or more multi-STL output files already exist. Overwrite them?"),
+                       QMessageBox::Yes | QMessageBox::Abort, QMessageBox::Abort) != QMessageBox::Yes) {
       return;
     }
     exportResult = export_stl_files(rootGeom, exportFilename.toStdString(), exportInfo, anyExists);
   } else {
     if (isStl && std::filesystem::exists(std::filesystem::u8path(exportFilename.toStdString())) &&
-        QMessageBox::warning(this, _("Overwrite file?"), _("The selected STL file already exists. Overwrite it?"),
-                             QMessageBox::Yes | QMessageBox::Abort, QMessageBox::Abort) !=
-          QMessageBox::Yes) {
+        QMessageBox::warning(
+          this, _("Overwrite file?"), _("The selected STL file already exists. Overwrite it?"),
+          QMessageBox::Yes | QMessageBox::Abort, QMessageBox::Abort) != QMessageBox::Yes) {
       return;
     }
     exportResult = exportFileByName(rootGeom, exportFilename.toStdString(), exportInfo);

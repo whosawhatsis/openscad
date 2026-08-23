@@ -64,6 +64,16 @@ struct triangle {
 };
 
 static int objectid;
+static std::vector<std::string> bodynames;
+
+// AMF names an object with a "name" metadata element, and XML-escapes it. The
+// name itself is already restricted to letters, digits, '.', '-' and '_' by
+// Material::isValidName, so only the generated fallback needs no escaping.
+static std::string next_object_name()
+{
+  const size_t index = static_cast<size_t>(objectid);
+  return index < bodynames.size() ? bodynames[index] : std::string("OpenSCAD Model");
+}
 
 #ifdef ENABLE_CGAL
 static size_t add_vertex(std::vector<vertex_str>& vertices, const Point& p)
@@ -121,8 +131,10 @@ static void append_amf(const CGALNefGeometry& root_N, std::ostream& output)
       } while (hc != hc_end);
     }
 
-    output << " <object id=\"" << objectid++ << "\">\r\n"
+    output << " <object id=\"" << objectid << "\">\r\n"
+           << "  <metadata type=\"name\">" << next_object_name() << "</metadata>\r\n"
            << "  <mesh>\r\n";
+    ++objectid;
     output << "   <vertices>\r\n";
     for (const auto& s : vertices) {
       output << "    <vertex><coordinates>\r\n";
@@ -179,6 +191,7 @@ void export_amf(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
          << "</metadata>\r\n";
 
   objectid = 0;
+  bodynames = export_body_names(export_bodies(geom));
   append_amf(geom, output);
 
   output << "</amf>\r\n";
