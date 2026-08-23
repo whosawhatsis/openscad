@@ -483,8 +483,14 @@ void GeometryEvaluator::addToParent(const State& state, const AbstractNode& node
 {
   std::shared_ptr<const Geometry> attributedGeom = geom;
   const auto children = this->visitedchildren.find(node.index());
+  // A node that passes its single child's geometry through - a render node, a
+  // group with one child - passes the child's body identity through with it.
+  // Anything that combined several children must not: the operations that are
+  // defined to inherit the first operand's attributes (CsgOpNode, CgalAdvNode)
+  // do so themselves, and doing it here as well would repaint a whole union
+  // with the colour of whichever body happened to come first.
   if (geom && !geom->isBodyBoundary() && geom->materialName().empty() && !geom->hasBodyColor() &&
-      children != this->visitedchildren.end() && !children->second.empty() &&
+      children != this->visitedchildren.end() && children->second.size() == 1 &&
       children->second.front().second) {
     auto copy = geom->copy();
     copy->copyBodyAttributes(*children->second.front().second);

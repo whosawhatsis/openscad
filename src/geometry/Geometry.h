@@ -53,13 +53,17 @@ public:
   }
   [[nodiscard]] bool hasBodyColor() const { return hasBodyColor_; }
   [[nodiscard]] const Color4f& bodyColor() const { return bodyColor_; }
+  // Body identity only. This deliberately does not repaint the geometry with
+  // the body colour: a geometry that came out of a boolean or a render() node
+  // already carries the per-face colours of the operands it was built from, and
+  // flooding it with one colour is what color()/render() colour preservation
+  // exists to prevent. color() itself paints, in the ColorNode visitor.
   void copyBodyAttributes(const Geometry& other)
   {
     materialName_ = other.materialName_;
     bodyBoundary_ = other.bodyBoundary_;
     bodyColor_ = other.bodyColor_;
     hasBodyColor_ = other.hasBodyColor_;
-    if (hasBodyColor_) setColor(bodyColor_);
   }
 
   virtual void transform(const Transform3d& /*mat*/) { assert(!"transform not implemented!"); }
