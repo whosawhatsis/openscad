@@ -9,8 +9,7 @@
 			<base name="Color 1" displaycolor="#FF0000FF" />
 			<base name="Color 2" displaycolor="#0000FFFF" />
 			<base name="Color 3" displaycolor="#808080FF" />
-			<base name="Color 4" displaycolor="#9DCB51FF" />
-			<base name="Color 5" displaycolor="#008000FF" />
+			<base name="Color 4" displaycolor="#008000FF" />
 		</basematerials>
 		<object id="2" name="OpenSCAD Model 1" type="model" p:UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX" pid="1" pindex="0">
 			<mesh>
@@ -195,18 +194,18 @@
 					<triangle v1="2" v2="3" v3="14" pid="1" p1="3" />
 					<triangle v1="3" v2="13" v3="15" pid="1" p1="3" />
 					<triangle v1="3" v2="15" v3="14" pid="1" p1="3" />
-					<triangle v1="4" v2="5" v3="9" pid="1" p1="4" />
-					<triangle v1="4" v2="6" v3="7" pid="1" p1="4" />
-					<triangle v1="4" v2="7" v3="5" pid="1" p1="4" />
-					<triangle v1="4" v2="8" v3="10" pid="1" p1="4" />
-					<triangle v1="4" v2="9" v3="8" pid="1" p1="4" />
-					<triangle v1="4" v2="10" v3="6" pid="1" p1="4" />
-					<triangle v1="5" v2="7" v3="9" pid="1" p1="4" />
-					<triangle v1="6" v2="10" v3="7" pid="1" p1="4" />
-					<triangle v1="7" v2="10" v3="11" pid="1" p1="4" />
-					<triangle v1="7" v2="11" v3="9" pid="1" p1="4" />
-					<triangle v1="8" v2="9" v3="10" pid="1" p1="4" />
-					<triangle v1="9" v2="11" v3="10" pid="1" p1="4" />
+					<triangle v1="4" v2="5" v3="9" pid="1" p1="3" />
+					<triangle v1="4" v2="6" v3="7" pid="1" p1="3" />
+					<triangle v1="4" v2="7" v3="5" pid="1" p1="3" />
+					<triangle v1="4" v2="8" v3="10" pid="1" p1="3" />
+					<triangle v1="4" v2="9" v3="8" pid="1" p1="3" />
+					<triangle v1="4" v2="10" v3="6" pid="1" p1="3" />
+					<triangle v1="5" v2="7" v3="9" pid="1" p1="3" />
+					<triangle v1="6" v2="10" v3="7" pid="1" p1="3" />
+					<triangle v1="7" v2="10" v3="11" pid="1" p1="3" />
+					<triangle v1="7" v2="11" v3="9" pid="1" p1="3" />
+					<triangle v1="8" v2="9" v3="10" pid="1" p1="3" />
+					<triangle v1="9" v2="11" v3="10" pid="1" p1="3" />
 					<triangle v1="12" v2="14" v3="13" pid="1" p1="3" />
 					<triangle v1="13" v2="14" v3="15" pid="1" p1="3" />
 				</triangles>
@@ -288,18 +287,18 @@
 					<vertex x="44.000000" y="1.000000" z="1.000000" />
 				</vertices>
 				<triangles>
-					<triangle v1="0" v2="1" v3="3" pid="1" p1="5" />
-					<triangle v1="0" v2="2" v3="17" pid="1" p1="5" />
-					<triangle v1="0" v2="3" v3="2" pid="1" p1="5" />
-					<triangle v1="0" v2="12" v3="13" pid="1" p1="5" />
-					<triangle v1="0" v2="13" v3="14" pid="1" p1="5" />
-					<triangle v1="0" v2="14" v3="1" pid="1" p1="5" />
-					<triangle v1="0" v2="15" v3="12" pid="1" p1="5" />
-					<triangle v1="0" v2="17" v3="15" pid="1" p1="5" />
-					<triangle v1="1" v2="14" v3="3" pid="1" p1="5" />
-					<triangle v1="2" v2="3" v3="17" pid="1" p1="5" />
-					<triangle v1="3" v2="14" v3="18" pid="1" p1="5" />
-					<triangle v1="3" v2="18" v3="17" pid="1" p1="5" />
+					<triangle v1="0" v2="1" v3="3" pid="1" p1="4" />
+					<triangle v1="0" v2="2" v3="17" pid="1" p1="4" />
+					<triangle v1="0" v2="3" v3="2" pid="1" p1="4" />
+					<triangle v1="0" v2="12" v3="13" pid="1" p1="4" />
+					<triangle v1="0" v2="13" v3="14" pid="1" p1="4" />
+					<triangle v1="0" v2="14" v3="1" pid="1" p1="4" />
+					<triangle v1="0" v2="15" v3="12" pid="1" p1="4" />
+					<triangle v1="0" v2="17" v3="15" pid="1" p1="4" />
+					<triangle v1="1" v2="14" v3="3" pid="1" p1="4" />
+					<triangle v1="2" v2="3" v3="17" pid="1" p1="4" />
+					<triangle v1="3" v2="14" v3="18" pid="1" p1="4" />
+					<triangle v1="3" v2="18" v3="17" pid="1" p1="4" />
 					<triangle v1="4" v2="5" v3="9" pid="1" p1="4" />
 					<triangle v1="4" v2="6" v3="7" pid="1" p1="4" />
 					<triangle v1="4" v2="7" v3="5" pid="1" p1="4" />
@@ -312,20 +311,20 @@
 					<triangle v1="7" v2="11" v3="9" pid="1" p1="4" />
 					<triangle v1="8" v2="9" v3="10" pid="1" p1="4" />
 					<triangle v1="9" v2="11" v3="10" pid="1" p1="4" />
-					<triangle v1="12" v2="15" v3="21" pid="1" p1="1" />
-					<triangle v1="12" v2="19" v3="20" pid="1" p1="1" />
-					<triangle v1="12" v2="20" v3="13" pid="1" p1="1" />
-					<triangle v1="12" v2="21" v3="19" pid="1" p1="1" />
-					<triangle v1="13" v2="16" v3="14" pid="1" p1="5" />
-					<triangle v1="13" v2="20" v3="16" pid="1" p1="1" />
-					<triangle v1="14" v2="16" v3="17" pid="1" p1="5" />
-					<triangle v1="14" v2="17" v3="18" pid="1" p1="5" />
-					<triangle v1="15" v2="16" v3="21" pid="1" p1="1" />
-					<triangle v1="15" v2="17" v3="16" pid="1" p1="5" />
-					<triangle v1="16" v2="20" v3="22" pid="1" p1="1" />
-					<triangle v1="16" v2="22" v3="21" pid="1" p1="1" />
-					<triangle v1="19" v2="21" v3="20" pid="1" p1="1" />
-					<triangle v1="20" v2="21" v3="22" pid="1" p1="1" />
+					<triangle v1="12" v2="15" v3="21" pid="1" p1="4" />
+					<triangle v1="12" v2="19" v3="20" pid="1" p1="4" />
+					<triangle v1="12" v2="20" v3="13" pid="1" p1="4" />
+					<triangle v1="12" v2="21" v3="19" pid="1" p1="4" />
+					<triangle v1="13" v2="16" v3="14" pid="1" p1="4" />
+					<triangle v1="13" v2="20" v3="16" pid="1" p1="4" />
+					<triangle v1="14" v2="16" v3="17" pid="1" p1="4" />
+					<triangle v1="14" v2="17" v3="18" pid="1" p1="4" />
+					<triangle v1="15" v2="16" v3="21" pid="1" p1="4" />
+					<triangle v1="15" v2="17" v3="16" pid="1" p1="4" />
+					<triangle v1="16" v2="20" v3="22" pid="1" p1="4" />
+					<triangle v1="16" v2="22" v3="21" pid="1" p1="4" />
+					<triangle v1="19" v2="21" v3="20" pid="1" p1="4" />
+					<triangle v1="20" v2="21" v3="22" pid="1" p1="4" />
 				</triangles>
 			</mesh>
 		</object>

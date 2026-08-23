@@ -65,6 +65,13 @@ public:
     bodyColor_ = other.bodyColor_;
     hasBodyColor_ = other.hasBodyColor_;
   }
+  // A body-combining operation consumes its operands and produces one body,
+  // which takes the first operand's colour as well as its name.
+  void takeBodyAttributesFrom(const Geometry& other)
+  {
+    copyBodyAttributes(other);
+    if (hasBodyColor_) setColor(bodyColor_);
+  }
 
   virtual void transform(const Transform3d& /*mat*/) { assert(!"transform not implemented!"); }
   virtual void resize(const Vector3d& /*newsize*/, const Eigen::Matrix<bool, 3, 1>& /*autosize*/)
