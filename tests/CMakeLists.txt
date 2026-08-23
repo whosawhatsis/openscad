@@ -1267,10 +1267,10 @@ add_cmdline_test(preview-cgal   EXPERIMENTAL OPENSCAD SUFFIX png  FILES ${EXPERI
 #
 # Feature 15: procedural bump roughness on material() and color().
 #
-list(APPEND EXPERIMENTAL_MATERIAL_ROUGHNESS_FILES
-  ${TEST_SCAD_DIR}/misc/material-roughness-tests.scad
+list(APPEND EXPERIMENTAL_MATERIAL_FINISH_FILES
+  ${TEST_SCAD_DIR}/misc/material-finish-tests.scad
 )
-add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_ROUGHNESS_FILES} ARGS --enable=multi-material)
+add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_FINISH_FILES} ARGS --enable=multi-material)
 add_cmdline_test(throwntogether EXPERIMENTAL OPENSCAD SUFFIX png  FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} ARGS --preview=throwntogether --enable=textmetrics)
 add_cmdline_test(render-csg-cgal      EXPERIMENTAL SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX png FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} EXPECTEDDIR render ARGS ${OPENSCAD_EXE_ARG} --format=csg --render --enable=textmetrics)
 add_cmdline_test(render-cgal    EXPERIMENTAL OPENSCAD SUFFIX png FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} EXPECTEDDIR render ARGS --render --enable=textmetrics --backend=cgal)

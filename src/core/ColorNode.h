@@ -19,9 +19,18 @@ public:
   std::string materialName;
   bool isMaterial{false};
 
-  // Procedural bump roughness: implicit 3D coherent noise sampled in object-local
-  // coordinates, perturbing only the lighting normal. Never changes geometry.
-  // [scale (mm), strength, seed]; only meaningful when hasRoughness is true.
-  Vector3d roughness{0.0, 0.0, 0.0};
-  bool hasRoughness{false};
+  // Procedural bump: implicit 3D coherent noise sampled in object-local
+  // coordinates, perturbing only the lighting normal. Supra-pixel detail you can
+  // see individually. Never changes geometry.
+  // [scale (mm), strength, seed]; only meaningful when hasFinish is true.
+  Vector3d finish{0.0, 0.0, 0.0};
+  bool hasFinish{false};
+
+  // Conventional scalar PBR metallic-roughness, both in [0,1]. Sub-pixel and
+  // statistical: these widen the specular lobe and shift diffuse/specular
+  // balance, and move no normal. Independent of finish; an object may set both.
+  double pbrRoughness{0.0};
+  bool hasPbrRoughness{false};
+  double metallic{0.0};
+  bool hasMetallic{false};
 };
