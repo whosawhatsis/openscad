@@ -1,0 +1,23 @@
+group() {
+	material([1, 0, 0, 1], name = "", roughness = [2, 0.5, 0]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+	material([1, 0, 0, 1], name = "", roughness = [2, 0.5, 7]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+	color([0, 0, 1, 1], roughness = [1, 0.25, 0]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+	material([1, 0, 0, 1], name = "") {
+		cube(size = [10, 10, 10], center = false);
+	}
+	color([0, 0, 1, 1]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+	material([0, 0.501961, 0, 1], name = "", roughness = [3, 1, 0]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+	material([0, 0.501961, 0, 1], name = "", roughness = [3, 1, 0]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+}
