@@ -383,6 +383,18 @@ const char *ScadLexer2::language() const
   return "SCAD";
 }
 
+const char *ScadLexer2::blockStart(int *style) const
+{
+  if (style) *style = OtherText;
+  return "{";
+}
+
+const char *ScadLexer2::blockEnd(int *style) const
+{
+  if (style) *style = OtherText;
+  return "}";
+}
+
 QStringList ScadLexer2::autoCompletionWordSeparators() const
 {
   QStringList wl;
