@@ -7,6 +7,7 @@ class TestMainWindow : public UXTest
   Q_OBJECT;
 private slots:
   void checkOpenTabPropagateToWindow();
+  void checkEditorEnhancementsFeatureFlag();
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();
 };

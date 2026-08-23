@@ -4,6 +4,7 @@
 #include <QStringList>
 #include <QTest>
 
+#include "Feature.h"
 #include "gui/ScintillaEditor.h"
 #include "platform/PlatformUtils.h"
 
@@ -27,6 +28,12 @@ void TestMainWindow::checkOpenTabPropagateToWindow()
 
   // The window title must also have the name of open file
   QCOMPARE(window->windowTitle(), QFileInfo(filename).fileName());
+}
+
+void TestMainWindow::checkEditorEnhancementsFeatureFlag()
+{
+  QCOMPARE(Feature::ExperimentalEditorEnhancements.get_name(), std::string("editor-enhancements"));
+  QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
 }
 
 void TestMainWindow::checkReturnInsideBracesUsesKandRIndentation()

@@ -49,6 +49,8 @@ const Feature Feature::ExperimentalDiscretizationByError(
 const Feature Feature::ExperimentalAiFeatures("ai-features",
                                               "Enable AI features (Note: AI integration is under "
                                               "development and does not connect to external APIs yet).");
+const Feature Feature::ExperimentalEditorEnhancements(
+  "editor-enhancements", "Enable experimental editor enhancements.");
 
 #ifdef ENABLE_PYTHON
 const Feature Feature::ExperimentalPythonEngine(
