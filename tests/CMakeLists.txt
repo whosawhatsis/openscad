@@ -267,6 +267,11 @@ if(EXAMPLES_DIR)
 endif(EXAMPLES_DIR)
 
 file(GLOB FEATURES_3D_FILES   ${TEST_SCAD_DIR}/3D/features/*.scad)
+# Driven only by preview-transparency-product-order, which checks product ordering rather
+# than a rendered image. Left in the generic sweeps it fails eight of them as "missing
+# expected output", because it has no expected images and is not meant to have any.
+list(REMOVE_ITEM FEATURES_3D_FILES
+  ${TEST_SCAD_DIR}/3D/features/transparency-product-depth.scad)
 file(GLOB DEPRECATED_3D_FILES ${TEST_SCAD_DIR}/3D/deprecated/*.scad)
 file(GLOB ISSUES_3D_FILES     ${TEST_SCAD_DIR}/3D/issues/*.scad)
 file(GLOB SCAD_AMF_FILES           ${TEST_SCAD_DIR}/amf/*.scad)
