@@ -1,5 +1,6 @@
 #include "TestMainWindow.h"
 
+#include <QScopeGuard>
 #include <QString>
 #include <QStringList>
 #include <QTest>
@@ -59,6 +60,8 @@ void TestMainWindow::checkCallableCompletionAddsStructure()
   auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
   QVERIFY(editor);
   Feature::enable_feature("editor-enhancements");
+  // A failed QCOMPARE returns from the slot, so the reset cannot live at the end of the body.
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
   editor->setupAutoComplete();
 
   editor->setPlainText("cub");
@@ -72,8 +75,14 @@ void TestMainWindow::checkCallableCompletionAddsStructure()
   editor->qsci->autoCompleteFromAPIs();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->toPlainText(), QString("translate()"));
+}
 
-  Feature::enable_feature("editor-enhancements", false);
+// Must run immediately after checkCallableCompletionAddsStructure: that test enables an
+// experimental feature globally, and an early return from a failed QCOMPARE must not leave it
+// enabled for everything that follows.
+void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
+{
+  QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
 }
 
 void TestMainWindow::checkReturnInsideBracesUsesKandRIndentation()
