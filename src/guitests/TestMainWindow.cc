@@ -36,6 +36,23 @@ void TestMainWindow::checkEditorEnhancementsFeatureFlag()
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
 }
 
+void TestMainWindow::checkKeywordCompletionRemainsAvailable()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
+  editor->setupAutoComplete();
+
+  // Language keywords come from Builtins::keywordList, not from the module/function
+  // registries, and must keep completing with the experimental feature disabled.
+  editor->setPlainText("els");
+  editor->setCursorPosition(0, 3);
+  editor->qsci->autoCompleteFromAPIs();
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->toPlainText(), QString("else"));
+}
+
 void TestMainWindow::checkCallableCompletionAddsStructure()
 {
   restoreWindowInitialState();
