@@ -7,6 +7,7 @@
 #include <QString>
 #include <QStringList>
 #include <string>
+#include <unordered_map>
 
 #include "core/BuiltinContext.h"
 #include "core/Builtins.h"
@@ -59,22 +60,32 @@ QStringList getSorted(const QFileInfoList& list, C cond)
 
 ScadApi::ScadApi(ScintillaEditor *editor, QsciLexer *lexer) : QsciAbstractAPIs(lexer), editor(editor)
 {
+  std::unordered_map<std::string, CompletionItem::Kind> kinds;
+  for (const auto& [name, function] : Builtins::instance().getFunctions()) {
+    kinds.emplace(name, CompletionItem::Kind::Function);
+  }
+  for (const auto& [name, module] : Builtins::instance().getModules()) {
+    const auto *builtin = dynamic_cast<const BuiltinModule *>(module);
+    if (!builtin) continue;
+    kinds.emplace(name, builtin->kind() == BuiltinModule::Kind::Leaf
+                          ? CompletionItem::Kind::LeafModule
+                          : CompletionItem::Kind::ChildModule);
+  }
+
+  // keywordList is the authoritative set of completable names: it holds every registered
+  // builtin plus the language keywords (else, module, true, ...) that have no registry entry.
+  // Deriving completions from it keeps the offered names identical to the pre-CompletionItem
+  // behavior; the registries only supply the semantic kind.
   for (const auto& iter : Builtins::keywordList) {
     QStringList calltipList;
     for (const auto& it : iter.second) calltipList.append(QString::fromStdString(it));
 
     funcs.append(ApiFunc(QString::fromStdString(iter.first), calltipList));
-  }
 
-  for (const auto& [name, function] : Builtins::instance().getFunctions()) {
-    completions.append(CompletionItem(QString::fromStdString(name), CompletionItem::Kind::Function));
-  }
-  for (const auto& [name, module] : Builtins::instance().getModules()) {
-    const auto builtin = dynamic_cast<const BuiltinModule *>(module);
-    if (!builtin) continue;
-    const auto kind = builtin->kind() == BuiltinModule::Kind::Leaf ? CompletionItem::Kind::LeafModule
-                                                                   : CompletionItem::Kind::ChildModule;
-    completions.append(CompletionItem(QString::fromStdString(name), kind));
+    const auto kind = kinds.find(iter.first);
+    completions.append(
+      CompletionItem(QString::fromStdString(iter.first),
+                     kind == kinds.end() ? CompletionItem::Kind::Keyword : kind->second));
   }
 }
 

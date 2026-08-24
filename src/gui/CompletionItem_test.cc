@@ -16,7 +16,9 @@ TEST_CASE("completion items generate callable structure", "[completion]")
   CHECK(CompletionItem{"center", Kind::NamedParameter}.insertionText() == "center = ");
   CHECK(CompletionItem{"sin", Kind::Function}.cursorBack() == 1);
   CHECK(CompletionItem{"cube", Kind::LeafModule}.cursorBack() == 2);
+  CHECK(CompletionItem{"else", Kind::Keyword}.insertionText() == "else");
   CHECK(CompletionItem{"size", Kind::Variable}.cursorBack() == 0);
+  CHECK(CompletionItem{"else", Kind::Keyword}.cursorBack() == 0);
 }
 
 TEST_CASE("builtin callback shape determines module kind", "[completion]")

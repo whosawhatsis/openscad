@@ -6,7 +6,7 @@
 class CompletionItem
 {
 public:
-  enum class Kind { Function, LeafModule, ChildModule, Variable, NamedParameter };
+  enum class Kind { Function, LeafModule, ChildModule, Variable, NamedParameter, Keyword };
 
   CompletionItem(QString label, Kind kind) : label_(std::move(label)), kind_(kind) {}
 
@@ -19,7 +19,8 @@ public:
     case Kind::Function:
     case Kind::ChildModule:    return label_ + "()";
     case Kind::LeafModule:     return label_ + "();";
-    case Kind::Variable:       return label_;
+    case Kind::Variable:
+    case Kind::Keyword:        return label_;
     case Kind::NamedParameter: return label_ + " = ";
     }
     return label_;
@@ -34,6 +35,7 @@ public:
     case Kind::ChildModule:    return 1;
     case Kind::LeafModule:     return 2;
     case Kind::Variable:
+    case Kind::Keyword:
     case Kind::NamedParameter: return 0;
     }
     return 0;
