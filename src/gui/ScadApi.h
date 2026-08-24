@@ -72,6 +72,7 @@ private:
   ScintillaEditor *editor;
   QList<ApiFunc> funcs;
   QList<CompletionItem> completions;
+  QList<CompletionItem> userCompletions;
 
 protected:
   void autoCompleteFolder(const QStringList& context, const QString& text, const int col,

@@ -16,6 +16,7 @@
 #include "core/parsersettings.h"
 #include "Feature.h"
 #include "gui/ScintillaEditor.h"
+#include "gui/UserSymbols.h"
 
 namespace {
 
@@ -155,6 +156,15 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
     }
   }
 
+  if (Feature::ExperimentalEditorEnhancements.is_enabled()) {
+    for (const auto& item : userCompletions) {
+      if (item.label().startsWith(c) && !list.contains(item.label())) {
+        list << item.label();
+      }
+    }
+    return;
+  }
+
   // for auto-complete on user varables
   if (list.isEmpty()) {
     foreach (const QString& name, userVariableNames) {
@@ -173,7 +183,7 @@ void ScadApi::completeSelection(const QString& selection)
 {
   if (!Feature::ExperimentalEditorEnhancements.is_enabled()) return;
 
-  for (const auto& item : completions) {
+  for (const auto& item : userCompletions + completions) {
     if (item.label() != selection) continue;
 
     editor->insert(item.insertionSuffix());
@@ -207,6 +217,16 @@ void ScadApi::correctUserVarNamesForCompletionFromSourceFile(const SourceFile *s
   if (!sourceFile) return;
 
   userVariableNames.clear();
+  userCompletions.clear();
+
+  for (const auto& item : userCompletionItems(*sourceFile)) {
+    const bool wanted =
+      item.kind() == CompletionItem::Kind::Variable
+        ? flagAutoCompleteIncludeVariables
+        : (item.kind() == CompletionItem::Kind::Function ? flagAutoCompleteIncludeFunctions
+                                                         : flagAutoCompleteIncludeModules);
+    if (wanted) userCompletions.append(item);
+  }
 
   if (flagAutoCompleteIncludeVariables) {
     for (const auto& assignment : sourceFile->scope->assignments) {

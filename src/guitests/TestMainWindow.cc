@@ -6,6 +6,8 @@
 #include <QTest>
 
 #include "Feature.h"
+#include "core/SourceFile.h"
+#include "openscad.h"
 #include "gui/ScintillaEditor.h"
 #include "platform/PlatformUtils.h"
 
@@ -80,6 +82,39 @@ void TestMainWindow::checkCallableCompletionAddsStructure()
 // Must run immediately after checkCallableCompletionAddsStructure: that test enables an
 // experimental feature globally, and an early return from a failed QCOMPARE must not leave it
 // enabled for everything that follows.
+void TestMainWindow::checkUserModuleCompletionAddsStructure()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  // A user module that uses its children completes without a terminating semicolon;
+  // one that does not gets the semicolon, exactly as for builtins.
+  // The declarations parse; the buffer additionally holds a half-typed name, which
+  // does not. That is the normal editing state - completion runs against the last
+  // successful parse, not the malformed buffer.
+  const QString declarations = "module wrapper() { children(); }\nmodule widget() { cube(); }\n";
+  editor->setPlainText(declarations + "wrap");
+
+  // Parse the buffer directly. The production path runs behind an autocompleteMode
+  // setting and three preference toggles, and MainWindow does not parse an unsaved
+  // buffer at all - neither of which this test is about.
+  SourceFile *parsed = nullptr;
+  QVERIFY(parse(parsed, declarations.toStdString(), "<test>", "<test>", 0));
+  QVERIFY(parsed != nullptr);
+  editor->correctUserVarNamesForCompletionFromSourceFile(parsed, true, true, true);
+
+  editor->setCursorPosition(2, 4);
+  editor->qsci->autoCompleteFromAPIs();
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QVERIFY2(editor->toPlainText().endsWith("wrapper()"),
+           qPrintable("got: " + QString(editor->toPlainText()).replace("\n", "\\n")));
+  QVERIFY(!editor->toPlainText().endsWith("wrapper();"));
+}
+
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
 {
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());

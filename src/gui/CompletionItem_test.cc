@@ -4,7 +4,14 @@
 #include "core/Builtins.h"
 #include "core/Children.h"
 #include "core/module.h"
+#include "core/SourceFile.h"
+#include "core/UserModule.h"
 #include "gui/CompletionItem.h"
+#include "gui/UserSymbols.h"
+#include "openscad.h"
+
+#include <string>
+#include <vector>
 
 TEST_CASE("completion items generate callable structure", "[completion]")
 {
@@ -59,4 +66,75 @@ TEST_CASE("statement builtins complete as leaf modules", "[completion]")
   CHECK(kindOf("let") == BuiltinModule::Kind::Child);
   CHECK(kindOf("translate") == BuiltinModule::Kind::Child);
   CHECK(kindOf("union") == BuiltinModule::Kind::Child);
+}
+
+// ---------------------------------------------------------------------------
+// User-defined symbol completion
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const SourceFile& parseSnippet(const std::string& text)
+{
+  Builtins::initialize();
+  static std::vector<SourceFile *> keepAlive;
+  SourceFile *file = nullptr;
+  REQUIRE(parse(file, text, "<test>", "<test>", 0));
+  REQUIRE(file != nullptr);
+  keepAlive.push_back(file);
+  return *file;
+}
+
+CompletionItem::Kind kindOfSymbol(const std::string& source, const QString& name)
+{
+  for (const auto& item : userCompletionItems(parseSnippet(source))) {
+    if (item.label() == name) return item.kind();
+  }
+  FAIL("no completion item named " << name.toStdString());
+  return CompletionItem::Kind::Variable;
+}
+
+}  // namespace
+
+TEST_CASE("user modules are classified leaf or child-capable", "[completion]")
+{
+  using Kind = CompletionItem::Kind;
+
+  // A module that never uses its children terminates with a semicolon.
+  CHECK(kindOfSymbol("module leaf() { cube(); }", "leaf") == Kind::LeafModule);
+
+  // A direct children() invocation makes it child-capable.
+  CHECK(kindOfSymbol("module wrap() { children(); }", "wrap") == Kind::ChildModule);
+
+  // Legacy singular child() counts too.
+  CHECK(kindOfSymbol("module old() { child(0); }", "old") == Kind::ChildModule);
+
+  // Conditional and nested-scope uses count - the module can still take children.
+  CHECK(kindOfSymbol("module cond() { if (true) children(); }", "cond") == Kind::ChildModule);
+  CHECK(kindOfSymbol("module deep() { translate([1,0,0]) union() { children(); } }", "deep") ==
+        Kind::ChildModule);
+  CHECK(kindOfSymbol("module els() { if (false) cube(); else children(); }", "els") ==
+        Kind::ChildModule);
+
+  // A body-level reference to $children counts even without invoking children().
+  CHECK(kindOfSymbol("module counted() { echo($children); }", "counted") == Kind::ChildModule);
+
+  // A nested module declaration is not the outer module's body.
+  CHECK(kindOfSymbol("module outer() { module inner() { children(); } cube(); }", "outer") ==
+        Kind::LeafModule);
+
+  // A string literal that happens to contain $children is not a reference to it.
+  CHECK(kindOfSymbol("module quoted() { echo(\"$children\"); }", "quoted") == Kind::LeafModule);
+
+  // Transitive use through a helper does not count.
+  CHECK(kindOfSymbol("module helper() { children(); } module caller() { helper(); }", "caller") ==
+        Kind::LeafModule);
+}
+
+TEST_CASE("user functions and variables carry their own kinds", "[completion]")
+{
+  using Kind = CompletionItem::Kind;
+
+  CHECK(kindOfSymbol("function f(x) = x * 2;", "f") == Kind::Function);
+  CHECK(kindOfSymbol("size = 12;", "size") == Kind::Variable);
 }

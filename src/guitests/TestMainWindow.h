@@ -10,6 +10,7 @@ private slots:
   void checkEditorEnhancementsFeatureFlag();
   void checkKeywordCompletionRemainsAvailable();
   void checkCallableCompletionAddsStructure();
+  void checkUserModuleCompletionAddsStructure();
   void checkEditorEnhancementsFlagNotLeaked();
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();
