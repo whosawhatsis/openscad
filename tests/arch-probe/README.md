@@ -12,12 +12,28 @@ baseline has no FMA instruction and rounds after every multiply. Same source, di
 Run on two machines of different architectures, from the same commit, then diff:
 
 ```sh
-tests/arch-probe/run-probe.sh <path-to-openscad-binary> report-$(uname -m).txt
+tests/arch-probe/run-probe.py <path-to-openscad-binary> report-$(uname -m).txt
 ```
 
 Any model whose hash differs between the two reports produces architecture-dependent geometry.
 `10-svg-arcs` is a **known-positive control**: with an unpatched binary it must differ, or the
 harness is not measuring what it claims.
+
+## What the hash covers, and why
+
+The hash is canonical: facet normals are ignored, vertices are sorted, and coordinates are
+quantised to 1e-6 before hashing. Each of those removes a false positive found the hard way when
+this harness was first written against raw file hashes:
+
+* **Normals** are cross products; they diverge at the 1e-16 level between architectures for free,
+  and every consumer recomputes them. A raw hash flagged all ten models on that alone.
+* **Order** is not stable for minkowski and hull. An order-sensitive comparison reported a
+  whole-model difference for geometry that was in fact identical to 1e-15.
+* **Quantisation** keeps ordinary floating-point noise out. Real divergence of this class flips an
+  integer segment count and moves vertices by ~1e-1 — eight orders of magnitude clear of the
+  threshold. A value sitting exactly on a quantisation boundary could still flip; that would show
+  as a one-off difference with an unchanged vertex count, which is the signature to check for
+  before believing a positive.
 
 ## Why hashes and not goldens
 
