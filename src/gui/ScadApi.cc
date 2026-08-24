@@ -183,6 +183,7 @@ void ScadApi::completeSelection(const QString& selection)
 {
   if (!Feature::ExperimentalEditorEnhancements.is_enabled()) return;
 
+  // User symbols first: a user-defined name shadows a builtin of the same name.
   for (const auto& item : userCompletions + completions) {
     if (item.label() != selection) continue;
 
@@ -214,6 +215,8 @@ void ScadApi::correctUserVarNamesForCompletionFromSourceFile(const SourceFile *s
                                                              bool flagAutoCompleteIncludeModules,
                                                              bool flagAutoCompleteIncludeFunctions)
 {
+  // No parsed file means the source is currently malformed. Keep the last reliable
+  // symbol set rather than emptying the list mid-edit.
   if (!sourceFile) return;
 
   userVariableNames.clear();

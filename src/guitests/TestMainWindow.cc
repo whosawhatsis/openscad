@@ -113,6 +113,17 @@ void TestMainWindow::checkUserModuleCompletionAddsStructure()
   QVERIFY2(editor->toPlainText().endsWith("wrapper()"),
            qPrintable("got: " + QString(editor->toPlainText()).replace("\n", "\\n")));
   QVERIFY(!editor->toPlainText().endsWith("wrapper();"));
+
+  // While the source is malformed there is no parsed file to harvest. The last
+  // reliable symbol set must survive, rather than completion going dead mid-edit.
+  editor->correctUserVarNamesForCompletionFromSourceFile(nullptr, true, true, true);
+  editor->setPlainText(declarations + "wrap");
+  editor->setCursorPosition(2, 4);
+  editor->qsci->autoCompleteFromAPIs();
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QVERIFY2(
+    editor->toPlainText().endsWith("wrapper()"),
+    qPrintable("after malformed parse, got: " + QString(editor->toPlainText()).replace("\n", "\\n")));
 }
 
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
