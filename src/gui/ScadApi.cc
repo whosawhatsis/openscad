@@ -187,11 +187,32 @@ void ScadApi::completeSelection(const QString& selection)
   for (const auto& item : userCompletions + completions) {
     if (item.label() != selection) continue;
 
-    editor->insert(item.insertionSuffix());
-    if (item.cursorBack() != 0) {
-      int line, col;
-      editor->qsci->getCursorPosition(&line, &col);
-      editor->qsci->setCursorPosition(line, col - item.cursorBack());
+    int line, col;
+    editor->qsci->getCursorPosition(&line, &col);
+    const QString tail = editor->qsci->text(line).mid(col);
+
+    int skip = 0;
+    while (skip < tail.size() && (tail.at(skip) == ' ' || tail.at(skip) == '\t')) ++skip;
+    const QChar next = skip < tail.size() ? tail.at(skip) : QChar();
+
+    const auto insertion = item.insertionFor(next);
+    if (!insertion.text.isEmpty()) {
+      editor->insert(insertion.text);
+      if (insertion.cursorBack != 0) {
+        editor->qsci->getCursorPosition(&line, &col);
+        editor->qsci->setCursorPosition(line, col - insertion.cursorBack);
+      }
+      return;
+    }
+
+    // Reusing parentheses that are already there: step inside them only when they
+    // are empty, so an existing argument is neither overwritten nor split.
+    if (next == '(') {
+      int inner = skip + 1;
+      while (inner < tail.size() && (tail.at(inner) == ' ' || tail.at(inner) == '\t')) ++inner;
+      if (inner < tail.size() && tail.at(inner) == ')') {
+        editor->qsci->setCursorPosition(line, col + skip + 1);
+      }
     }
     return;
   }

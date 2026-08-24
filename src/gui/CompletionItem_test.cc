@@ -68,6 +68,45 @@ TEST_CASE("statement builtins complete as leaf modules", "[completion]")
   CHECK(kindOf("union") == BuiltinModule::Kind::Child);
 }
 
+TEST_CASE("completion inserts only the punctuation that is missing", "[completion]")
+{
+  using Kind = CompletionItem::Kind;
+  const QChar none;
+
+  const CompletionItem leaf{"cube", Kind::LeafModule};
+  const CompletionItem child{"translate", Kind::ChildModule};
+  const CompletionItem func{"sin", Kind::Function};
+  const CompletionItem param{"center", Kind::NamedParameter};
+  const CompletionItem var{"size", Kind::Variable};
+
+  // Nothing follows: the full structure is written.
+  CHECK(leaf.insertionFor(none).text == "();");
+  CHECK(leaf.insertionFor(none).cursorBack == 2);
+  CHECK(child.insertionFor(none).text == "()");
+  CHECK(child.insertionFor(none).cursorBack == 1);
+  CHECK(func.insertionFor(none).text == "()");
+
+  // An open parenthesis already there is reused, whatever it contains.
+  CHECK(leaf.insertionFor('(').text.isEmpty());
+  CHECK(leaf.insertionFor('(').cursorBack == 0);
+  CHECK(child.insertionFor('(').text.isEmpty());
+  CHECK(func.insertionFor('(').text.isEmpty());
+
+  // An existing semicolon is reused: parentheses still needed, terminator not.
+  CHECK(leaf.insertionFor(';').text == "()");
+  CHECK(leaf.insertionFor(';').cursorBack == 1);
+  // Only leaf modules terminate, so a following semicolon changes nothing for the others.
+  CHECK(child.insertionFor(';').text == "()");
+
+  // Named parameters reuse an existing '='.
+  CHECK(param.insertionFor(none).text == " = ");
+  CHECK(param.insertionFor('=').text.isEmpty());
+
+  // Plain identifiers never add punctuation.
+  CHECK(var.insertionFor(none).text.isEmpty());
+  CHECK(var.insertionFor('(').text.isEmpty());
+}
+
 // ---------------------------------------------------------------------------
 // User-defined symbol completion
 // ---------------------------------------------------------------------------

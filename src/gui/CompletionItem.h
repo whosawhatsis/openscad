@@ -28,6 +28,39 @@ public:
 
   QString insertionSuffix() const { return insertionText().mid(label_.size()); }
 
+  /**
+   * @brief What still has to be typed, given what already follows the caret.
+   *
+   * Completion runs over existing text as often as it runs at the end of a line.
+   * Only the missing punctuation is inserted: an existing parenthesis or
+   * semicolon is reused, and arguments already written are never touched.
+   *
+   * @param next First non-whitespace character after the caret, or a null
+   *             QChar at end of line.
+   */
+  struct Insertion {
+    QString text;
+    int cursorBack;
+  };
+
+  Insertion insertionFor(QChar next) const
+  {
+    switch (kind_) {
+    case Kind::Function:
+    case Kind::ChildModule:
+      // A call already opened is left exactly as it is; its arguments are not ours.
+      return next == '(' ? Insertion{{}, 0} : Insertion{"()", 1};
+    case Kind::LeafModule:
+      if (next == '(') return {{}, 0};
+      // A statement that already terminates does not need a second semicolon.
+      return next == ';' ? Insertion{"()", 1} : Insertion{"();", 2};
+    case Kind::NamedParameter: return next == '=' ? Insertion{{}, 0} : Insertion{" = ", 0};
+    case Kind::Variable:
+    case Kind::Keyword:        break;
+    }
+    return {{}, 0};
+  }
+
   int cursorBack() const
   {
     switch (kind_) {

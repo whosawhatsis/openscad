@@ -126,6 +126,53 @@ void TestMainWindow::checkUserModuleCompletionAddsStructure()
     qPrintable("after malformed parse, got: " + QString(editor->toPlainText()).replace("\n", "\\n")));
 }
 
+void TestMainWindow::checkCompletionReusesExistingPunctuation()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  const auto complete = [editor](const QString& text, int col) {
+    editor->setPlainText(text);
+    editor->setCursorPosition(0, col);
+    editor->qsci->autoCompleteFromAPIs();
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    return editor->toPlainText();
+  };
+
+  // Completing over a call that already has arguments must not duplicate the
+  // parentheses or append a stray semicolon - the arguments are not ours to touch.
+  QCOMPARE(complete("cub(10)", 3), QString("cube(10)"));
+  QCOMPARE(complete("translat([1,2,3])", 8), QString("translate([1,2,3])"));
+
+  // Empty parentheses already present are reused, not doubled, and the caret steps
+  // inside them so the next keystroke lands where an argument goes.
+  QCOMPARE(complete("cub()", 3), QString("cube()"));
+  {
+    int line = -1, col = -1;
+    editor->qsci->getCursorPosition(&line, &col);
+    QCOMPARE(col, 5);  // cube(|)
+  }
+
+  // With arguments present the caret must not be pushed into them.
+  QCOMPARE(complete("cub(10)", 3), QString("cube(10)"));
+  {
+    int line = -1, col = -1;
+    editor->qsci->getCursorPosition(&line, &col);
+    QCOMPARE(col, 4);  // cube|(10)
+  }
+
+  // An existing semicolon is reused rather than a second one added.
+  QCOMPARE(complete("cub;", 3), QString("cube();"));
+
+  // Nothing following: full structure is inserted, as before.
+  QCOMPARE(complete("cub", 3), QString("cube();"));
+  QCOMPARE(complete("translat", 8), QString("translate()"));
+}
+
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
 {
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
