@@ -15,13 +15,19 @@ false positives found the hard way:
     order-sensitive comparison reports a whole-model difference for geometry that
     is in fact identical.
   * Coordinates are quantised to QUANTUM before hashing, so ordinary
-    floating-point noise (~1e-15) does not register. Real divergence in this
-    class flips an integer segment count and moves vertices by ~1e-1, which is
-    eight orders of magnitude clear of the threshold.
+    floating-point noise (~1e-15) does not register.
+
+The hash is only a screen, and a deliberately imperfect one: a coordinate
+sitting on a quantisation boundary flips for a 1e-15 perturbation, so a
+differing hash with an unchanged vertex count may still be noise. The probe
+therefore also writes a full sorted vertex dump next to the report; feed two
+dumps to compare-probe.py for a tolerance-based verdict that does not care
+about boundaries. Trust the comparison, not the hash.
 
 Usage:  run-probe.py <openscad-binary> [report-path]
 """
 import hashlib
+import json
 import pathlib
 import platform
 import subprocess
@@ -31,18 +37,22 @@ import tempfile
 QUANTUM = 1e-6  # see module docstring
 
 
-def canonical_hash(stl_path):
+def read_vertices(stl_path):
     verts = []
     with open(stl_path) as fh:
         for line in fh:
             parts = line.split()
             if parts and parts[0] == "vertex":
-                verts.append(tuple(round(float(x) / QUANTUM) for x in parts[1:4]))
+                verts.append(tuple(float(x) for x in parts[1:4]))
     verts.sort()
+    return verts
+
+
+def canonical_hash(verts):
     digest = hashlib.sha256()
     for v in verts:
-        digest.update(("%d %d %d\n" % v).encode())
-    return digest.hexdigest(), len(verts)
+        digest.update(("%d %d %d\n" % tuple(round(c / QUANTUM) for c in v)).encode())
+    return digest.hexdigest()
 
 
 def main():
@@ -60,6 +70,7 @@ def main():
         "# quantum: %g  (vertices sorted; normals ignored)" % QUANTUM,
     ]
     failed = False
+    dump = {}
     with tempfile.TemporaryDirectory() as tmp:
         for model in sorted((here / "models").glob("*.scad")):
             out = pathlib.Path(tmp) / (model.stem + ".stl")
@@ -72,13 +83,18 @@ def main():
                 lines.extend("         " + ln for ln in (proc.stderr or "").splitlines())
                 failed = True
                 continue
-            digest, count = canonical_hash(out)
-            lines.append("%s  %-26s vertices=%d" % (digest, model.stem, count))
+            verts = read_vertices(out)
+            dump[model.stem] = verts
+            lines.append("%s  %-26s vertices=%d" % (canonical_hash(verts), model.stem, len(verts)))
 
     text = "\n".join(lines) + "\n"
     report_path.write_text(text)
+    dump_path = report_path.with_suffix(report_path.suffix + ".dump.json")
+    dump_path.write_text(json.dumps(dump))
     print(text, end="")
     print("Report written to %s" % report_path, file=sys.stderr)
+    print("Vertex dump written to %s (feed two of these to compare-probe.py)" % dump_path,
+          file=sys.stderr)
     return 1 if failed else 0
 
 
