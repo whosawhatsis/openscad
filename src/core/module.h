@@ -39,7 +39,7 @@ public:
                 const Feature *feature = nullptr, Kind kind = Kind::Child);
   BuiltinModule(std::shared_ptr<AbstractNode> (*instantiate)(const ModuleInstantiation *, Arguments,
                                                              const Children&),
-                const Feature *feature = nullptr);
+                const Feature *feature = nullptr, Kind kind = Kind::Child);
   BuiltinModule(std::shared_ptr<AbstractNode> (*instantiate)(const ModuleInstantiation *, Arguments),
                 const Feature *feature = nullptr);
   std::shared_ptr<AbstractNode> instantiate(

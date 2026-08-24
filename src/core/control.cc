@@ -224,12 +224,12 @@ void register_builtin_control()
                    "children([vector])",
                  });
 
-  Builtins::init("echo", new BuiltinModule(builtin_echo),
+  Builtins::init("echo", new BuiltinModule(builtin_echo, nullptr, BuiltinModule::Kind::Leaf),
                  {
                    "echo(arg, ...)",
                  });
 
-  Builtins::init("assert", new BuiltinModule(builtin_assert),
+  Builtins::init("assert", new BuiltinModule(builtin_assert, nullptr, BuiltinModule::Kind::Leaf),
                  {
                    "assert(boolean)",
                    "assert(boolean, string)",
