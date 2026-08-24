@@ -15,10 +15,32 @@
 #include "core/module.h"
 #include "core/parsersettings.h"
 #include "Feature.h"
+#include "gui/CompletionContext.h"
 #include "gui/ScintillaEditor.h"
 #include "gui/UserSymbols.h"
 
 namespace {
+
+// Whether a candidate of this kind may appear at this point in the grammar.
+// Keywords are allowed everywhere: Kind::Keyword covers both statement words
+// (module, function, else) and value words (true, false, undef, each), and
+// telling them apart needs per-name knowledge this does not have yet.
+bool kindFitsContext(CompletionItem::Kind kind, CompletionContext context)
+{
+  switch (context) {
+  case CompletionContext::None:    return false;
+  case CompletionContext::Unknown: return true;
+  case CompletionContext::Statement:
+    // A value is not a statement; a module instantiation is.
+    return kind == CompletionItem::Kind::LeafModule || kind == CompletionItem::Kind::ChildModule ||
+           kind == CompletionItem::Kind::Keyword;
+  case CompletionContext::Expression:
+  case CompletionContext::ArgumentName:
+    // A module cannot produce a value.
+    return kind != CompletionItem::Kind::LeafModule && kind != CompletionItem::Kind::ChildModule;
+  }
+  return true;
+}
 
 bool isInString(const std::u32string& text, const int col)
 {
@@ -139,9 +161,33 @@ void ScadApi::autoCompleteFolder(const QStringList& context, const QString& text
   }
 }
 
+// Cost: copies the buffer up to the caret on every keystroke that opens the popup.
+// Fine at the size OpenSCAD files actually reach, and completion is debounced, but it
+// is linear in file size. If it ever matters, Scintilla already knows whether a
+// position is inside a comment or a string (SCI_GETSTYLEAT, as ScadLexer2::blockStart
+// uses), which would replace the scan with a backwards walk of a few characters.
+QString ScadApi::textBeforeCursor() const
+{
+  int line, col;
+  editor->qsci->getCursorPosition(&line, &col);
+  const QString all = editor->toPlainText();
+
+  int index = 0;
+  for (int l = 0; l < line; ++l) {
+    const int next = all.indexOf('\n', index);
+    if (next < 0) return all;
+    index = next + 1;
+  }
+  return all.left(index + col);
+}
+
 void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& list)
 {
   const QString& c = context.last();
+  const CompletionContext where = Feature::ExperimentalEditorEnhancements.is_enabled()
+                                    ? classifyCompletionContext(textBeforeCursor())
+                                    : CompletionContext::Unknown;
+  if (where == CompletionContext::None) return;
   // for now we only auto-complete functions and modules
   if (c.isEmpty()) {
     return;
@@ -149,7 +195,7 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
 
   for (const auto& item : completions) {
     const QString& name = item.label();
-    if (name.startsWith(c)) {
+    if (name.startsWith(c) && kindFitsContext(item.kind(), where)) {
       if (!list.contains(name)) {
         list << name;
       }
@@ -158,7 +204,8 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
 
   if (Feature::ExperimentalEditorEnhancements.is_enabled()) {
     for (const auto& item : userCompletions) {
-      if (item.label().startsWith(c) && !list.contains(item.label())) {
+      if (item.label().startsWith(c) && kindFitsContext(item.kind(), where) &&
+          !list.contains(item.label())) {
         list << item.label();
       }
     }

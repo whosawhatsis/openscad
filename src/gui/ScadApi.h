@@ -78,6 +78,7 @@ protected:
   void autoCompleteFolder(const QStringList& context, const QString& text, const int col,
                           QStringList& list);
   void autoCompleteFunctions(const QStringList& context, QStringList& list);
+  QString textBeforeCursor() const;
 
 public:
   ScadApi(ScintillaEditor *editor, QsciLexer *lexer);

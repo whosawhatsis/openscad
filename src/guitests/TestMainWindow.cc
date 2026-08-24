@@ -173,6 +173,48 @@ void TestMainWindow::checkCompletionReusesExistingPunctuation()
   QCOMPARE(complete("translat", 8), QString("translate()"));
 }
 
+void TestMainWindow::checkCompletionFiltersByGrammarContext()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  const auto complete = [editor](const QString& text) {
+    editor->setPlainText(text);
+    const QStringList lines = text.split('\n');
+    editor->setCursorPosition(lines.size() - 1, lines.last().size());
+    editor->qsci->autoCompleteFromAPIs();
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    return editor->toPlainText();
+  };
+
+  // In expression position a module must not be offered. "cub" would otherwise
+  // complete to cube(); here only the function "cubic"-less builtins apply, so the
+  // text must be left exactly as typed.
+  QCOMPARE(complete("x = cub"), QString("x = cub\t"));
+
+  // The same prefix in statement position still completes the module.
+  QCOMPARE(complete("cub"), QString("cube();"));
+
+  // "sq" prefixes both the module square and the function sqrt, so the context alone
+  // decides which one is offered.
+  QCOMPARE(complete("x = sq"), QString("x = sqrt()"));
+  QCOMPARE(complete("sq"), QString("square();"));
+
+  // A function is not offered where a child module is required.
+  QCOMPARE(complete("translate([1,0,0]) sqr"), QString("translate([1,0,0]) sqr\t"));
+
+  // A transform's child position does offer modules.
+  QCOMPARE(complete("translate([1,0,0]) cub"), QString("translate([1,0,0]) cube();"));
+
+  // Nothing is offered inside comments or strings.
+  QCOMPARE(complete("// cub"), QString("// cub\t"));
+  QCOMPARE(complete("x = \"cub"), QString("x = \"cub\t"));
+}
+
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
 {
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());

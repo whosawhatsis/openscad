@@ -12,6 +12,7 @@ private slots:
   void checkCallableCompletionAddsStructure();
   void checkUserModuleCompletionAddsStructure();
   void checkCompletionReusesExistingPunctuation();
+  void checkCompletionFiltersByGrammarContext();
   void checkEditorEnhancementsFlagNotLeaked();
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();
