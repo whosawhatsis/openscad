@@ -19,7 +19,6 @@
 #include "Feature.h"
 #include "gui/CompletionContext.h"
 #include "gui/CompletionRanking.h"
-#include "gui/SnippetFields.h"
 #include "gui/UserSymbols.h"
 #include "gui/ScintillaEditor.h"
 #include "gui/UserSymbols.h"
@@ -281,13 +280,6 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
       if (!list.contains(text)) list << text;
     }
 
-    // QScintilla sorts this list alphabetically before handing it to Scintilla
-    // (qsciscintilla.cpp, "wlist.sort()" just before SCI_AUTOCSHOW), so the order
-    // above does not survive and SCI_AUTOCSETORDER cannot help - the sort happens
-    // above that setting. Remember the best candidate instead and move the
-    // highlight onto it once the popup exists; ScintillaEditor drives that from
-    // SCN_AUTOCSELECTIONCHANGE.
-    preferredSelection = list.value(0);
     return;
   }
 
@@ -305,19 +297,43 @@ void ScadApi::autoCompletionSelected(const QString& /*selection*/)
 {
 }
 
-void ScadApi::applyPreferredSelection()
+int ScadApi::wordStartColumn(const QString& lineText, int col)
 {
-  if (preferredSelection.isEmpty()) return;
+  int start = col;
+  while (start > 0) {
+    const QChar c = lineText.at(start - 1);
+    if (!c.isLetterOrNumber() && c != '_' && c != '$') break;
+    --start;
+  }
+  return start;
+}
 
-  // Scintilla re-syncs the highlight to the typed word whenever the list changes,
-  // so this has to hold its ground rather than fire once. The guard stops the
-  // notification our own call provokes from recursing.
-  static bool applying = false;
-  if (applying) return;
-  applying = true;
-  editor->qsci->SendScintilla(QsciScintilla::SCI_AUTOCSELECT, 0UL,
-                              preferredSelection.toUtf8().constData());
-  applying = false;
+QStringList ScadApi::completionList()
+{
+  int line, col;
+  editor->qsci->getCursorPosition(&line, &col);
+  const QString lineText = editor->qsci->text(line);
+  const int start = wordStartColumn(lineText, col);
+
+  QStringList list;
+  updateAutoCompletionList(QStringList{lineText.mid(start, col - start)}, list);
+
+  return list;
+}
+
+void ScadApi::acceptUserListSelection(const QString& text)
+{
+  int line, col;
+  editor->qsci->getCursorPosition(&line, &col);
+  const QString lineText = editor->qsci->text(line);
+  const int start = wordStartColumn(lineText, col);
+
+  editor->qsci->setSelection(line, start, line, col);
+  editor->qsci->replaceSelectedText(text);
+
+  // The caret now sits directly after the inserted entry, which is the state the
+  // AcsAPIs path leaves behind too, so the same completion logic applies.
+  completeSelection(text);
 }
 
 void ScadApi::completeSelection(const QString& selection)
@@ -346,16 +362,7 @@ void ScadApi::completeSelection(const QString& selection)
     const int end = editor->qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
     const int start = end - selection.toUtf8().size();
 
-    // The menu entry has to be space-free for Scintilla to insert it whole, so the
-    // conventional spacing goes on here, once the text is in the document.
-    const QString spaced = spacedAfterCommas(selection);
-    if (spaced != selection) {
-      editor->qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(start),
-                                  static_cast<long>(end));
-      editor->qsci->SendScintilla(QsciScintilla::SCI_REPLACESEL, 0UL, spaced.toUtf8().constData());
-    }
-
-    editor->beginSnippetSession(start, spaced);
+    editor->beginSnippetSession(start, selection);
     return;
   }
 

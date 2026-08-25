@@ -227,8 +227,11 @@ void TestMainWindow::checkCompletionFiltersByGrammarContext()
   QCOMPARE(complete("x = sq"), QString("x = sqrt()"));
   QCOMPARE(complete("sq"), QString("square();"));
 
-  // A function is not offered where a child module is required.
-  QCOMPARE(complete("translate([1,0,0]) sqr"), QString("translate([1,0,0]) sqr\t"));
+  // A function is not offered where a child module is required. "sqr" reaches the
+  // module square as a subsequence, which is legitimate here; what must not happen
+  // is the function sqrt being offered in child position.
+  const QString inChildPosition = complete("translate([1,0,0]) sqr");
+  QVERIFY2(!inChildPosition.contains("sqrt"), qPrintable("offered a function: " + inChildPosition));
 
   // A transform's child position does offer modules.
   QCOMPARE(complete("translate([1,0,0]) cub"), QString("translate([1,0,0]) cube();"));
@@ -334,21 +337,20 @@ void TestMainWindow::checkCompletionRanking()
   // The override must not trap the user: arrowing down still reaches the other
   // candidate. Without releasing on navigation the ranked choice would be forced
   // back on every keypress.
-  // (The sorted list is [cube, cubz] and the highlight has been forced to cubz,
-  // the last entry, so Up is the move that goes anywhere.)
+  // The list is shown in our order now, so the ranked choice is the first entry and
+  // Down is the move that goes anywhere.
   // The override must not trap the user: arrowing away from the ranked choice
   // reaches whatever they select. Asserted as an invariant rather than against a
   // particular neighbour, because the list's contents change as candidate kinds
   // are added - argument shapes already inserted themselves between these two.
-  const QString navigated = complete("cub", [editor] { QTest::keyClick(editor->qsci, Qt::Key_Up); });
+  const QString navigated = complete("cub", [editor] { QTest::keyClick(editor->qsci, Qt::Key_Down); });
   QVERIFY2(navigated != "cubz();",
            qPrintable("navigation did not release the ranked override; got: " + navigated));
   QVERIFY2(navigated.startsWith("cube"), qPrintable("unexpected candidate: " + navigated));
 
-  // A subsequence-only match cannot be offered through this path: Scintilla
-  // dismisses the list when nothing in it starts with the typed word, so there
-  // is nothing left to select. Candidates are prefix-filtered for that reason.
-  QCOMPARE(complete("lex"), QString("lex\t"));
+  // A subsequence-only match is reachable now that the popup is a user list: we
+  // choose the entries, so Scintilla never has to match the typed word.
+  QCOMPARE(complete("lex"), QString("linear_extrude()"));
 }
 
 void TestMainWindow::checkUsedLibrarySymbolsAreOffered()
@@ -522,6 +524,37 @@ void TestMainWindow::checkCaretAndTerminatorFromRealUse()
   // A child module's shape must not be terminated: something follows it.
   const auto childShape = completeWord("transl", 1);
   QCOMPARE(childShape.first, QString("translate([0, 0, 0])"));
+}
+
+void TestMainWindow::checkTypingOpensTheCompletionList()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  // Everything else drives the popup through triggerCompletion(). This is the path
+  // a person actually takes: QScintilla's own trigger is switched off while the
+  // popup is ours, so typing has to open it via SCN_CHARADDED.
+  editor->setPlainText("");
+  editor->setCursorPosition(0, 0);
+  editor->qsci->setFocus();
+  QTest::keyClicks(editor->qsci, "transl");
+  QVERIFY2(editor->qsci->isListActive(), "typing did not open the completion list");
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->toPlainText(), QString("translate()"));
+
+  // And the spacing of a seeded shape survives insertion, which is the whole point
+  // of driving a user list: QScintilla trims autocompletion entries at their first
+  // space, but not user-list entries.
+  editor->setPlainText("");
+  editor->setCursorPosition(0, 0);
+  QTest::keyClicks(editor->qsci, "transl");
+  QTest::keyClick(editor->qsci, Qt::Key_Down);
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->toPlainText(), QString("translate([0, 0, 0])"));
 }
 
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()

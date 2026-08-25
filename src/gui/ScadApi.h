@@ -79,7 +79,6 @@ private:
   QList<CompletionItem> importedCompletions;
   QHash<QString, QStringList> builtinParameters;
   QHash<QString, QStringList> userParameters;
-  QString preferredSelection;
 
 protected:
   void autoCompleteFolder(const QStringList& context, const QString& text, const int col,
@@ -93,12 +92,14 @@ public:
   void updateAutoCompletionList(const QStringList& context, QStringList& list) override;
   void autoCompletionSelected(const QString& selection) override;
   void completeSelection(const QString& selection);
-  /// Move the popup's highlight to the best-ranked candidate. QScintilla sorts the
-  /// list alphabetically before showing it, so this is the only way our order has
-  /// any effect; see the comment where preferredSelection is set.
-  void applyPreferredSelection();
-  /// Stop overriding the highlight, because the user is choosing for themselves.
-  void releasePreferredSelection() { preferredSelection.clear(); }
+  /// Ranked candidates for the caret, in the order they should be shown. Used by
+  /// the user-list path, which - unlike QScintilla's AcsAPIs path - neither sorts
+  /// the list nor trims entries at their first space.
+  QStringList completionList();
+  /// Accept an entry chosen from that list. A user list does not replace the typed
+  /// word, so that is done here before the usual structure is applied.
+  void acceptUserListSelection(const QString& text);
+  static int wordStartColumn(const QString& lineText, int col);
   QStringList callTips(const QStringList& context, int commas, QsciScintilla::CallTipsStyle style,
                        QList<int>& shifts) override;
 

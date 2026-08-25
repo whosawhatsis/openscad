@@ -67,6 +67,8 @@ public:
   /// GUI tests - do not depend on which of QScintilla's two list mechanisms is in
   /// use behind it.
   void triggerCompletion();
+  void onCharAddedForCompletion(int ch);
+  static const int completionListId = 2;  // 1 is the template list
 
   void beginSnippetSession(int start, const QString& text);
   void endSnippetSession();

@@ -20,6 +20,7 @@ private slots:
   void checkArgumentShapeCompletion();
   void checkSnippetFieldTraversal();
   void checkCaretAndTerminatorFromRealUse();
+  void checkTypingOpensTheCompletionList();
   void checkEditorEnhancementsFlagNotLeaked();
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();

@@ -1,3 +1,4 @@
+#include "Feature.h"
 #include "gui/SnippetFields.h"
 #include "gui/ScintillaEditor.h"
 
@@ -223,10 +224,7 @@ ScintillaEditor::ScintillaEditor(QWidget *parent) : EditorInterface(parent)
   connect(qsci, &QsciScintilla::textChanged, this, &ScintillaEditor::contentsChanged);
   connect(qsci, &QsciScintilla::modificationChanged, this, &ScintillaEditor::fireModificationChanged);
   connect(qsci, &QsciScintilla::userListActivated, this, &ScintillaEditor::onUserListSelected);
-  connect(qsci, &QsciScintilla::SCN_AUTOCSELECTIONCHANGE, this,
-          [this](const char *, int, int) { api->applyPreferredSelection(); });
-  connect(qsci, &QsciScintilla::SCN_AUTOCCANCELLED, this,
-          [this]() { api->releasePreferredSelection(); });
+  connect(qsci, &QsciScintilla::SCN_CHARADDED, this, &ScintillaEditor::onCharAddedForCompletion);
   connect(qsci, &QsciScintilla::SCN_AUTOCCOMPLETED, this, [this](const char *selection, int, int, int) {
     api->completeSelection(QString::fromUtf8(selection));
   });
@@ -356,7 +354,15 @@ void ScintillaEditor::setupAutoComplete(const bool forceOff)
   const bool configValue = GlobalPreferences::inst()->getValue("editor/enableAutocomplete").toBool();
   const bool enable = configValue && !forceOff;
 
-  if (enable) {
+  if (enable && Feature::ExperimentalEditorEnhancements.is_enabled()) {
+    // Drive the popup ourselves: QScintilla's own AcsAPIs trigger would sort the
+    // list and trim entries at their first space. Call tips still come from the
+    // same APIs object and are unaffected.
+    qsci->setAutoCompletionSource(QsciScintilla::AcsNone);
+    qsci->setAutoCompletionFillupsEnabled(false);
+    qsci->setCallTipsVisible(10);
+    qsci->setCallTipsStyle(QsciScintilla::CallTipsContext);
+  } else if (enable) {
     qsci->setAutoCompletionSource(QsciScintilla::AcsAPIs);
     qsci->setAutoCompletionFillupsEnabled(false);
     qsci->setAutoCompletionFillups("(");
@@ -1033,9 +1039,39 @@ QString ScintillaEditor::selectedText()
   return qsci->selectedText();
 }
 
+// QScintilla's automatic trigger belongs to the AcsAPIs path, so when the popup is
+// ours the typing that opens it has to be watched here.
+void ScintillaEditor::onCharAddedForCompletion(int ch)
+{
+  if (!Feature::ExperimentalEditorEnhancements.is_enabled()) return;
+  if (qsci->autoCompletionSource() != QsciScintilla::AcsNone) return;
+
+  const QChar c(static_cast<char>(ch));
+  if (!c.isLetterOrNumber() && c != '_' && c != '$') {
+    if (qsci->isListActive()) qsci->cancelList();
+    return;
+  }
+
+  int line, col;
+  qsci->getCursorPosition(&line, &col);
+  const QString lineText = qsci->text(line);
+  if (col - ScadApi::wordStartColumn(lineText, col) < qsci->autoCompletionThreshold()) return;
+
+  triggerCompletion();
+}
+
 void ScintillaEditor::triggerCompletion()
 {
-  qsci->autoCompleteFromAPIs();
+  if (!Feature::ExperimentalEditorEnhancements.is_enabled()) {
+    qsci->autoCompleteFromAPIs();
+    return;
+  }
+
+  // A user list is shown exactly as given: QScintilla neither sorts it nor trims
+  // its entries at the first space, both of which the AcsAPIs path does.
+  const QStringList list = api->completionList();
+  if (list.isEmpty()) return;
+  qsci->showUserList(completionListId, list);
 }
 
 void ScintillaEditor::beginSnippetSession(int start, const QString& text)
@@ -1184,20 +1220,6 @@ bool ScintillaEditor::eventFilter(QObject *obj, QEvent *e)
         return true;
       } else if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
         endSnippetSession();
-      }
-    }
-    // Once the user moves through the list themselves, stop overriding the
-    // highlight - otherwise the ranked choice would be forced back on every
-    // keypress and the list could not be navigated at all.
-    if (qsci->isListActive()) {
-      switch (keyEvent->key()) {
-      case Qt::Key_Up:
-      case Qt::Key_Down:
-      case Qt::Key_PageUp:
-      case Qt::Key_PageDown:
-      case Qt::Key_Home:
-      case Qt::Key_End:      api->releasePreferredSelection(); break;
-      default:               break;
       }
     }
   }
@@ -1571,8 +1593,13 @@ bool ScintillaEditor::modifyNumber(int key)
   return true;
 }
 
-void ScintillaEditor::onUserListSelected(const int, const QString& text)
+void ScintillaEditor::onUserListSelected(const int id, const QString& text)
 {
+  if (id == completionListId) {
+    api->acceptUserListSelection(text);
+    return;
+  }
+
   if (!templateMap.contains(text)) {
     return;
   }

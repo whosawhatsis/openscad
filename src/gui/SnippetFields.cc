@@ -64,30 +64,3 @@ QList<SnippetField> shapeFieldRanges(const QString& shape)
 
   return fields;
 }
-
-QString spacedAfterCommas(const QString& call)
-{
-  QString out;
-  out.reserve(call.size() + 8);
-
-  bool inString = false;
-  for (int i = 0; i < call.size(); ++i) {
-    const QChar c = call.at(i);
-    out += c;
-
-    if (inString) {
-      if (c == '\\' && i + 1 < call.size()) {
-        out += call.at(++i);
-      } else if (c == '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (c == '"') {
-      inString = true;
-    } else if (c == ',' && (i + 1 >= call.size() || call.at(i + 1) != ' ')) {
-      out += ' ';
-    }
-  }
-  return out;
-}

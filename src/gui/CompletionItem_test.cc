@@ -286,11 +286,11 @@ TEST_CASE("use is not transitive", "[completion]")
 TEST_CASE("argument shapes are complete calls that need no decoration", "[completion]")
 {
   using Kind = CompletionItem::Kind;
-  const CompletionItem shape{"translate", Kind::ArgumentShape, "translate([0,0,0])"};
+  const CompletionItem shape{"translate", Kind::ArgumentShape, "translate([0, 0, 0])"};
 
   // The menu shows the shape; matching still works off the callable's name.
   CHECK(shape.label() == "translate");
-  CHECK(shape.menuText() == "translate([0,0,0])");
+  CHECK(shape.menuText() == "translate([0, 0, 0])");
 
   // Nothing is appended: the inserted text is already a complete call.
   CHECK(shape.insertionFor(QChar()).text.isEmpty());
@@ -302,20 +302,20 @@ TEST_CASE("argument shapes are complete calls that need no decoration", "[comple
 TEST_CASE("curated shapes are seeded with neutral values", "[completion]")
 {
   // Transforms are identities, so accepting a shape changes nothing until edited.
-  CHECK(argumentShapesFor("translate") == std::vector<std::string>{"translate([0,0,0])"});
-  CHECK(argumentShapesFor("scale") == std::vector<std::string>{"scale([1,1,1])"});
+  CHECK(argumentShapesFor("translate") == std::vector<std::string>{"translate([0, 0, 0])"});
+  CHECK(argumentShapesFor("scale") == std::vector<std::string>{"scale([1, 1, 1])"});
 
   // Primitives start at unit size.
-  CHECK(argumentShapesFor("cube").front() == "cube([1,1,1])");
-  CHECK(argumentShapesFor("sphere").front() == "sphere(r=1)");
+  CHECK(argumentShapesFor("cube").front() == "cube([1, 1, 1])");
+  CHECK(argumentShapesFor("sphere").front() == "sphere(r = 1)");
 
   // Ambiguous radius/diameter variants are disambiguated by naming the argument.
   const auto cylinder = argumentShapesFor("cylinder");
-  CHECK(std::find(cylinder.begin(), cylinder.end(), "cylinder(h=1,d=1)") != cylinder.end());
+  CHECK(std::find(cylinder.begin(), cylinder.end(), "cylinder(h = 1, d = 1)") != cylinder.end());
 
   // mirror([0,0,0]) is an explicitly handled no-op - builtin_mirror leaves the
   // identity matrix in place for a zero vector - and one digit from the common case.
-  CHECK(argumentShapesFor("mirror") == std::vector<std::string>{"mirror([0,0,0])"});
+  CHECK(argumentShapesFor("mirror") == std::vector<std::string>{"mirror([0, 0, 0])"});
 
   // No shape where no value is both a no-op and a step towards what is wanted.
   CHECK(argumentShapesFor("color").empty());
