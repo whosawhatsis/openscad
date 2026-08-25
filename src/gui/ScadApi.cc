@@ -334,8 +334,13 @@ void ScadApi::completeSelection(const QString& selection)
   // builtin. Same precedence the ranking uses, so the structure inserted always
   // belongs to the candidate that was actually offered.
   // A shape arrives as its whole text; Scintilla has already inserted it, so there
-  // is nothing to add and nothing to reposition.
-  if (selection.contains('(') && selection.endsWith(')')) return;
+  // is nothing to add. Its seeded values become editable fields instead, stepped
+  // through with Tab.
+  if (selection.contains('(') && selection.endsWith(')')) {
+    const int end = editor->qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
+    editor->beginSnippetSession(end - selection.toUtf8().size(), selection);
+    return;
+  }
 
   for (const auto& item : userCompletions + importedCompletions + completions) {
     if (item.label() != selection) continue;

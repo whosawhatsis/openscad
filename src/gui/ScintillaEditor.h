@@ -61,6 +61,13 @@ public:
   void setFocus() override;
   void setupAutoComplete(const bool forceOff = false);
 
+  /// Mark the editable fields of a just-inserted call shape and select the first,
+  /// so Tab and Shift-Tab step between them until the call is left behind.
+  void beginSnippetSession(int start, const QString& text);
+  void endSnippetSession();
+  bool moveToSnippetField(bool forward);
+  bool snippetSessionActive() const { return snippetEnd > snippetStart; }
+
   void correctUserVarNamesForCompletionFromSourceFile(const SourceFile *sourceFile,
                                                       bool flagAutoCompleteIncludeVariables,
                                                       bool flagAutoCompleteIncludeModules,
@@ -148,6 +155,13 @@ private:
   static const int errorIndicatorNumber = 8;  // first 8 are used by lexers
   static const int findIndicatorNumber = 9;
   static const int hyperlinkIndicatorNumber = 10;
+  static const int snippetFieldIndicatorNumber = 11;
+
+  // Range of the shape currently being filled in, or an empty range when no
+  // session is running. Scintilla maintains the field marks themselves, as
+  // indicators move with the text they cover.
+  int snippetStart{0};
+  int snippetEnd{0};
   static const int hyperlinkIndicatorOffset = 100;
 
   // Note:  Marker numbers 25-31 are reserved for line-folding markers.

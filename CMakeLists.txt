@@ -1334,6 +1334,7 @@ set(GUI_SOURCES
   src/gui/QGLView2.cc
   src/gui/QSettingsCached.cc
   src/gui/QWordSearchField.cc
+  src/gui/SnippetFields.cc
   src/gui/ScadApi.cc
   src/gui/ScadLexer.cc
   src/gui/ScintillaEditor.cc
