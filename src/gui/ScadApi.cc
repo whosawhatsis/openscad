@@ -202,7 +202,7 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
                                      ? userParameters.value(caret.enclosingCall)
                                      : builtinParameters.value(caret.enclosingCall);
     for (const QString& parameter : parameters) {
-      if (!parameter.startsWith(c)) continue;
+      if (!parameter.startsWith(c, Qt::CaseInsensitive)) continue;
       const CompletionItem item{parameter, CompletionItem::Kind::NamedParameter};
       if (!list.contains(item.menuText())) list << item.menuText();
     }
@@ -214,7 +214,10 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
 
   for (const auto& item : completions) {
     const QString& name = item.label();
-    if (name.startsWith(c) && kindFitsContext(item.kind(), where)) {
+    const bool matches = Feature::ExperimentalEditorEnhancements.is_enabled()
+                           ? name.startsWith(c, Qt::CaseInsensitive)
+                           : name.startsWith(c);
+    if (matches && kindFitsContext(item.kind(), where)) {
       if (!list.contains(item.menuText())) {
         list << item.menuText();
       }
@@ -222,8 +225,15 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
   }
 
   if (Feature::ExperimentalEditorEnhancements.is_enabled()) {
+    // Match without regard to case, but keep the case that was actually typed
+    // rather than rewriting it to the candidate's.
+    editor->qsci->SendScintilla(QsciScintilla::SCI_AUTOCSETIGNORECASE, 1UL);
+    editor->qsci->SendScintilla(
+      QsciScintilla::SCI_AUTOCSETCASEINSENSITIVEBEHAVIOUR,
+      static_cast<unsigned long>(QsciScintilla::SC_CASEINSENSITIVEBEHAVIOUR_RESPECTCASE));
+
     for (const auto& item : userCompletions) {
-      if (item.label().startsWith(c) && kindFitsContext(item.kind(), where) &&
+      if (item.label().startsWith(c, Qt::CaseInsensitive) && kindFitsContext(item.kind(), where) &&
           !list.contains(item.menuText())) {
         list << item.menuText();
       }

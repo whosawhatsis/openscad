@@ -251,6 +251,34 @@ void TestMainWindow::checkNamedParameterCompletion()
   QCOMPARE(complete("cube(center = sq"), QString("cube(center = sqrt()"));
 }
 
+void TestMainWindow::checkCompletionIsCaseInsensitive()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  const auto complete = [editor](const QString& text) {
+    editor->setPlainText(text);
+    editor->setCursorPosition(0, text.size());
+    editor->qsci->autoCompleteFromAPIs();
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    return editor->toPlainText();
+  };
+
+  // A differently-cased prefix still finds the candidate, and the candidate's own
+  // spelling is what gets inserted - so completion also corrects the case.
+  QCOMPARE(complete("CUB"), QString("cube();"));
+  QCOMPARE(complete("Trans"), QString("translate()"));
+  QCOMPARE(complete("cub"), QString("cube();"));
+
+  // Case-insensitivity does not reach past the grammar filter: a module is still
+  // not offered where a value belongs.
+  QCOMPARE(complete("x = CUB"), QString("x = CUB\t"));
+}
+
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
 {
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
