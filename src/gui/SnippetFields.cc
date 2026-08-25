@@ -2,8 +2,14 @@
 
 namespace {
 
-bool isDelimiter(QChar c) { return c == '(' || c == '[' || c == ',' || c == '='; }
-bool isNumberChar(QChar c) { return c.isDigit() || c == '.' || c == '-' || c == '+'; }
+bool isDelimiter(QChar c)
+{
+  return c == '(' || c == '[' || c == ',' || c == '=';
+}
+bool isNumberChar(QChar c)
+{
+  return c.isDigit() || c == '.' || c == '-' || c == '+';
+}
 
 }  // namespace
 
@@ -46,8 +52,8 @@ QList<SnippetField> shapeFieldRanges(const QString& shape)
       fields.append({start, 5});
     } else {
       // A name, not a value: skip it whole so its digits cannot be picked up.
-      while (i < shape.size() && (shape.at(i).isLetterOrNumber() || shape.at(i) == '_' ||
-                                  shape.at(i) == '$')) {
+      while (i < shape.size() &&
+             (shape.at(i).isLetterOrNumber() || shape.at(i) == '_' || shape.at(i) == '$')) {
         ++i;
       }
       if (i == start) ++i;  // never stall
