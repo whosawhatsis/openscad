@@ -317,7 +317,14 @@ void TestMainWindow::checkCompletionRanking()
   // back on every keypress.
   // (The sorted list is [cube, cubz] and the highlight has been forced to cubz,
   // the last entry, so Up is the move that goes anywhere.)
-  QCOMPARE(complete("cub", [editor] { QTest::keyClick(editor->qsci, Qt::Key_Up); }), QString("cube();"));
+  // The override must not trap the user: arrowing away from the ranked choice
+  // reaches whatever they select. Asserted as an invariant rather than against a
+  // particular neighbour, because the list's contents change as candidate kinds
+  // are added - argument shapes already inserted themselves between these two.
+  const QString navigated = complete("cub", [editor] { QTest::keyClick(editor->qsci, Qt::Key_Up); });
+  QVERIFY2(navigated != "cubz();",
+           qPrintable("navigation did not release the ranked override; got: " + navigated));
+  QVERIFY2(navigated.startsWith("cube"), qPrintable("unexpected candidate: " + navigated));
 
   // A subsequence-only match cannot be offered through this path: Scintilla
   // dismisses the list when nothing in it starts with the typed word, so there
@@ -372,6 +379,39 @@ void TestMainWindow::checkUsedLibrarySymbolsAreOffered()
   QCOMPARE(complete("library_set"), QString("library_set\t"));
 
   QFile::remove(libName);
+}
+
+void TestMainWindow::checkArgumentShapeCompletion()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  const auto complete = [editor](const QString& typed, int downs = 0) {
+    editor->setPlainText(typed);
+    editor->setCursorPosition(0, typed.size());
+    editor->qsci->autoCompleteFromAPIs();
+    for (int i = 0; i < downs; ++i) QTest::keyClick(editor->qsci, Qt::Key_Down);
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    return editor->toPlainText();
+  };
+
+  // The bare structure stays the default: a shape never displaces it.
+  QCOMPARE(complete("transl"), QString("translate()"));
+
+  // The seeded shape sits directly below it, and is inserted verbatim - complete,
+  // valid, and a no-op until a field is edited.
+  QCOMPARE(complete("transl", 1), QString("translate([0,0,0])"));
+
+  // Nothing is appended to a shape: no second parenthesis, no stray semicolon.
+  QCOMPARE(complete("scal", 1), QString("scale([1,1,1])"));
+
+  // A callable with no curated shape offers only its structure, so the first
+  // entry below it is a different name entirely rather than a bogus shape.
+  QCOMPARE(complete("mirro"), QString("mirror()"));
 }
 
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()

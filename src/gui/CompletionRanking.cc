@@ -39,6 +39,16 @@ QList<CompletionCandidate> rankCandidates(QList<CompletionCandidate> candidates,
 
                      if (a.alreadySupplied != b.alreadySupplied) return b.alreadySupplied;
 
+                     // Shapes sit with the call they belong to, never above it: the
+                     // bare structure stays the default and the seeded variants
+                     // follow it.
+                     const bool shapeA = a.item.kind() == CompletionItem::Kind::ArgumentShape;
+                     const bool shapeB = b.item.kind() == CompletionItem::Kind::ArgumentShape;
+                     if (shapeA != shapeB) return shapeB;
+                     if (shapeA && a.item.shape() != b.item.shape()) {
+                       return a.item.shape() < b.item.shape();
+                     }
+
                      // A total order: case-insensitive first so "Size" and "size" sit
                      // together, then case-sensitive so the result never depends on
                      // the order they happened to arrive in.

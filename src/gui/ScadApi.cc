@@ -13,6 +13,7 @@
 #include "core/Builtins.h"
 #include "core/EvaluationSession.h"
 #include "core/module.h"
+#include "core/ArgumentShapes.h"
 #include "core/SourceFileCache.h"
 #include "core/parsersettings.h"
 #include "Feature.h"
@@ -247,8 +248,14 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
       }
     }
     for (const auto& item : completions) {
-      if (kindFitsContext(item.kind(), where)) {
-        candidates.append({item, CompletionSource::Builtin, false});
+      if (!kindFitsContext(item.kind(), where)) continue;
+      candidates.append({item, CompletionSource::Builtin, false});
+
+      // Seeded call shapes accompany the bare structure, never replace it.
+      for (const auto& shape : argumentShapesFor(item.label().toStdString())) {
+        candidates.append({CompletionItem(item.label(), CompletionItem::Kind::ArgumentShape,
+                                          QString::fromStdString(shape)),
+                           CompletionSource::Builtin, false});
       }
     }
     for (const auto& item : importedCompletions) {
@@ -326,6 +333,10 @@ void ScadApi::completeSelection(const QString& selection)
   // Nearest definition first: this file shadows an imported name, which shadows a
   // builtin. Same precedence the ranking uses, so the structure inserted always
   // belongs to the candidate that was actually offered.
+  // A shape arrives as its whole text; Scintilla has already inserted it, so there
+  // is nothing to add and nothing to reposition.
+  if (selection.contains('(') && selection.endsWith(')')) return;
+
   for (const auto& item : userCompletions + importedCompletions + completions) {
     if (item.label() != selection) continue;
 

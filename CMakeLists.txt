@@ -1001,6 +1001,7 @@ set(CORE_SOURCES
   src/RenderStatistic.cc
   src/core/AST.cc
   src/core/Arguments.cc
+  src/core/ArgumentShapes.cc
   src/core/Assignment.cc
   src/core/BuiltinContext.cc
   src/core/Builtins.cc
