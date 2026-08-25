@@ -10,6 +10,7 @@
 #include "core/ModuleInstantiation.h"
 #include "core/SourceFile.h"
 #include "core/UserModule.h"
+#include "core/function.h"
 
 namespace {
 
@@ -111,4 +112,84 @@ QList<CompletionItem> userCompletionItems(const SourceFile& file)
   }
 
   return items;
+}
+
+QStringList parameterNamesFromCalltips(const QStringList& calltips)
+{
+  QStringList names;
+
+  for (const QString& calltip : calltips) {
+    const int open = calltip.indexOf('(');
+    const int close = calltip.lastIndexOf(')');
+    if (open < 0 || close < open) continue;
+
+    const QString inside = calltip.mid(open + 1, close - open - 1);
+
+    // Split on commas that are not nested inside a bracket or parenthesis.
+    QStringList parts;
+    QString current;
+    int depth = 0;
+    for (const QChar c : inside) {
+      if (c == '[' || c == '(') ++depth;
+      else if (c == ']' || c == ')') --depth;
+
+      if (c == ',' && depth == 0) {
+        parts << current;
+        current.clear();
+      } else {
+        current += c;
+      }
+    }
+    parts << current;
+
+    for (QString part : parts) {
+      part = part.trimmed();
+      if (part.isEmpty()) continue;
+
+      // "[width, depth, height]" documents what goes in a vector, not a name.
+      if (part.startsWith('[')) continue;
+
+      const int equals = part.indexOf('=');
+      const QString name = (equals >= 0 ? part.left(equals) : part).trimmed();
+      if (name.isEmpty()) continue;
+
+      // Anything that is not a plain identifier is prose, not a parameter.
+      bool identifier = true;
+      for (const QChar c : name) {
+        if (!c.isLetterOrNumber() && c != '_' && c != '$') identifier = false;
+      }
+      if (!identifier) continue;
+
+      if (!names.contains(name)) names << name;
+    }
+  }
+
+  return names;
+}
+
+QStringList parameterNamesOf(const SourceFile& file, const QString& callable)
+{
+  QStringList names;
+  if (!file.scope) return names;
+
+  const std::string key = callable.toStdString();
+
+  const auto& modules = file.scope->getUserModules();
+  const auto module = modules.find(key);
+  if (module != modules.end() && module->second) {
+    for (const auto& parameter : module->second->parameters) {
+      if (parameter) names << QString::fromStdString(parameter->getName());
+    }
+    return names;
+  }
+
+  const auto& functions = file.scope->getUserFunctions();
+  const auto function = functions.find(key);
+  if (function != functions.end() && function->second) {
+    for (const auto& parameter : function->second->parameters) {
+      if (parameter) names << QString::fromStdString(parameter->getName());
+    }
+  }
+
+  return names;
 }

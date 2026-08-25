@@ -16,6 +16,7 @@
 #include "core/parsersettings.h"
 #include "Feature.h"
 #include "gui/CompletionContext.h"
+#include "gui/UserSymbols.h"
 #include "gui/ScintillaEditor.h"
 #include "gui/UserSymbols.h"
 
@@ -105,6 +106,11 @@ ScadApi::ScadApi(ScintillaEditor *editor, QsciLexer *lexer) : QsciAbstractAPIs(l
 
     funcs.append(ApiFunc(QString::fromStdString(iter.first), calltipList));
 
+    const QStringList parameters = parameterNamesFromCalltips(calltipList);
+    if (!parameters.isEmpty()) {
+      builtinParameters.insert(QString::fromStdString(iter.first), parameters);
+    }
+
     const auto kind = kinds.find(iter.first);
     completions.append(
       CompletionItem(QString::fromStdString(iter.first),
@@ -184,10 +190,23 @@ QString ScadApi::textBeforeCursor() const
 void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& list)
 {
   const QString& c = context.last();
-  const CompletionContext where = Feature::ExperimentalEditorEnhancements.is_enabled()
-                                    ? classifyCompletionContext(textBeforeCursor())
-                                    : CompletionContext::Unknown;
+  const CaretContext caret = Feature::ExperimentalEditorEnhancements.is_enabled()
+                               ? classifyCaret(textBeforeCursor())
+                               : CaretContext{};
+  const CompletionContext where = caret.kind;
   if (where == CompletionContext::None) return;
+
+  // Named arguments belong to one call and are offered nowhere else.
+  if (where == CompletionContext::ArgumentName && !caret.enclosingCall.isEmpty()) {
+    const QStringList parameters = userParameters.contains(caret.enclosingCall)
+                                     ? userParameters.value(caret.enclosingCall)
+                                     : builtinParameters.value(caret.enclosingCall);
+    for (const QString& parameter : parameters) {
+      if (!parameter.startsWith(c)) continue;
+      const CompletionItem item{parameter, CompletionItem::Kind::NamedParameter};
+      if (!list.contains(item.menuText())) list << item.menuText();
+    }
+  }
   // for now we only auto-complete functions and modules
   if (c.isEmpty()) {
     return;
@@ -196,8 +215,8 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
   for (const auto& item : completions) {
     const QString& name = item.label();
     if (name.startsWith(c) && kindFitsContext(item.kind(), where)) {
-      if (!list.contains(name)) {
-        list << name;
+      if (!list.contains(item.menuText())) {
+        list << item.menuText();
       }
     }
   }
@@ -205,8 +224,8 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
   if (Feature::ExperimentalEditorEnhancements.is_enabled()) {
     for (const auto& item : userCompletions) {
       if (item.label().startsWith(c) && kindFitsContext(item.kind(), where) &&
-          !list.contains(item.label())) {
-        list << item.label();
+          !list.contains(item.menuText())) {
+        list << item.menuText();
       }
     }
     return;
@@ -229,6 +248,18 @@ void ScadApi::autoCompletionSelected(const QString& /*selection*/)
 void ScadApi::completeSelection(const QString& selection)
 {
   if (!Feature::ExperimentalEditorEnhancements.is_enabled()) return;
+
+  // A named argument is accepted as "name = ", leaving the caret where the value
+  // goes; the caret context there is an expression, so the next completion offers
+  // values rather than more argument names.
+  if (selection.endsWith('=')) {
+    const QString name = selection.left(selection.size() - 1);
+    int line, col;
+    editor->qsci->getCursorPosition(&line, &col);
+    editor->qsci->setSelection(line, col - selection.size(), line, col);
+    editor->qsci->replaceSelectedText(name + " = ");
+    return;
+  }
 
   // User symbols first: a user-defined name shadows a builtin of the same name.
   for (const auto& item : userCompletions + completions) {
@@ -289,6 +320,7 @@ void ScadApi::correctUserVarNamesForCompletionFromSourceFile(const SourceFile *s
 
   userVariableNames.clear();
   userCompletions.clear();
+  userParameters.clear();
 
   for (const auto& item : userCompletionItems(*sourceFile)) {
     const bool wanted =
@@ -297,6 +329,11 @@ void ScadApi::correctUserVarNamesForCompletionFromSourceFile(const SourceFile *s
         : (item.kind() == CompletionItem::Kind::Function ? flagAutoCompleteIncludeFunctions
                                                          : flagAutoCompleteIncludeModules);
     if (wanted) userCompletions.append(item);
+
+    if (item.kind() != CompletionItem::Kind::Variable) {
+      const QStringList parameters = parameterNamesOf(*sourceFile, item.label());
+      if (!parameters.isEmpty()) userParameters.insert(item.label(), parameters);
+    }
   }
 
   if (flagAutoCompleteIncludeVariables) {

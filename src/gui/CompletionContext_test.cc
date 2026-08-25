@@ -7,7 +7,11 @@
 namespace {
 CompletionContext ctx(const char *before)
 {
-  return classifyCompletionContext(QString(before));
+  return classifyCaret(QString(before)).kind;
+}
+QString call(const char *before)
+{
+  return classifyCaret(QString(before)).enclosingCall;
 }
 }  // namespace
 
@@ -53,4 +57,28 @@ TEST_CASE("caret context is classified from the text before it", "[completion]")
   CHECK(ctx("cub") == CompletionContext::Statement);
   CHECK(ctx("x = si") == CompletionContext::Expression);
   CHECK(ctx("$f") == CompletionContext::Statement);
+}
+
+TEST_CASE("the enclosing call is identified for named arguments", "[completion]")
+{
+  // Inside a call's argument list, the callable being called is known.
+  CHECK(call("cube(") == "cube");
+  CHECK(call("cube(1, ") == "cube");
+  CHECK(call("cube(size = 1, ") == "cube");
+  CHECK(call("translate([1,2,3]) cylinder(") == "cylinder");
+
+  // Nesting reports the innermost call, which is the one an argument belongs to.
+  CHECK(call("cube(size = max(") == "max");
+  CHECK(call("cube(size = max(1, 2), ") == "cube");
+
+  // A bracket is not a call, and neither is a bare parenthesised expression.
+  CHECK(call("x = [") == QString());
+  CHECK(call("x = (") == QString());
+
+  // Outside any argument list there is no enclosing call.
+  CHECK(call("cube(1);\n") == QString());
+  CHECK(call("") == QString());
+
+  // Whitespace between the name and its parenthesis is still a call.
+  CHECK(call("cube (") == "cube");
 }

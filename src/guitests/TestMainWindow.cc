@@ -215,6 +215,42 @@ void TestMainWindow::checkCompletionFiltersByGrammarContext()
   QCOMPARE(complete("x = \"cub"), QString("x = \"cub\t"));
 }
 
+void TestMainWindow::checkNamedParameterCompletion()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  const auto complete = [editor](const QString& text) {
+    editor->setPlainText(text);
+    editor->setCursorPosition(0, text.size());
+    editor->qsci->autoCompleteFromAPIs();
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    return editor->toPlainText();
+  };
+
+  // Inside a call, a parameter of that call completes to "name = " ready for a value.
+  QCOMPARE(complete("cube(cent"), QString("cube(center = "));
+  QCOMPARE(complete("cylinder(cent"), QString("cylinder(center = "));
+
+  // A parameter of a different call is not offered. "r1" belongs to cylinder; note
+  // that a prefix like "h" would be a poor test here, because the function has_key
+  // legitimately completes in argument position as a value.
+  QCOMPARE(complete("cube(r1"), QString("cube(r1\t"));
+  QCOMPARE(complete("cylinder(r1"), QString("cylinder(r1 = "));
+
+  // Outside any call a parameter name is not a candidate at all.
+  QCOMPARE(complete("cent"), QString("cent\t"));
+
+  // Having given a name, what follows is an ordinary value: "sq" resolves to the
+  // function sqrt rather than the module square, so completion has switched back
+  // to expression candidates.
+  QCOMPARE(complete("cube(center = sq"), QString("cube(center = sqrt()"));
+}
+
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
 {
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());

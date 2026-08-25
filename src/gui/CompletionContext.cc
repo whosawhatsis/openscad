@@ -1,5 +1,8 @@
 #include "gui/CompletionContext.h"
 
+#include <QList>
+#include <QPair>
+
 namespace {
 
 bool isIdentifierChar(QChar c)
@@ -9,7 +12,7 @@ bool isIdentifierChar(QChar c)
 
 }  // namespace
 
-CompletionContext classifyCompletionContext(const QString& before)
+CaretContext classifyCaret(const QString& before)
 {
   // Drop the partial word under the caret: "x = si" classifies exactly as "x = ".
   int end = before.size();
@@ -18,6 +21,10 @@ CompletionContext classifyCompletionContext(const QString& before)
   // Forward scan. Comments and strings cannot be recognised by looking backwards -
   // a '"' or a '/' means nothing without knowing what came before it.
   QChar last;  // last significant character, null while none has been seen
+  // Open brackets, and for '(' the identifier that preceded it - empty when the
+  // parenthesis was grouping rather than calling.
+  QList<QPair<QChar, QString>> open;
+  QString pendingWord;  // identifier most recently completed, candidate callee
   bool inLineComment = false;
   bool inBlockComment = false;
   bool inString = false;
@@ -59,24 +66,63 @@ CompletionContext classifyCompletionContext(const QString& before)
     }
     if (c.isSpace()) continue;
 
+    if (isIdentifierChar(c)) {
+      // Build up the identifier so a following '(' knows what is being called.
+      if (!isIdentifierChar(last) || last.isNull()) pendingWord.clear();
+      pendingWord += c;
+    } else {
+      if (c == '(' || c == '[' || c == '{') {
+        open.append({c, c == '(' ? pendingWord : QString()});
+      } else if (c == ')' || c == ']' || c == '}') {
+        if (!open.isEmpty()) open.removeLast();
+      }
+      pendingWord.clear();
+    }
+
     last = c;
   }
 
-  // An unterminated comment or string swallows the caret.
-  if (inLineComment || inBlockComment || inString) return CompletionContext::None;
+  CaretContext result;
 
-  if (last.isNull()) return CompletionContext::Statement;
+  // An unterminated comment or string swallows the caret.
+  if (inLineComment || inBlockComment || inString) {
+    result.kind = CompletionContext::None;
+    return result;
+  }
+
+  // The innermost still-open '(' that followed a name is the call being written.
+  for (int i = open.size() - 1; i >= 0; --i) {
+    if (open.at(i).first == '(') {
+      result.enclosingCall = open.at(i).second;
+      break;
+    }
+  }
+
+  if (last.isNull()) {
+    result.kind = CompletionContext::Statement;
+    return result;
+  }
 
   // A name may be introduced wherever a statement may start, and as the child of a
   // transform - which is what a ')' at this position introduces.
-  if (last == ';' || last == '{' || last == '}' || last == ')') return CompletionContext::Statement;
+  if (last == ';' || last == '{' || last == '}' || last == ')') {
+    result.kind = CompletionContext::Statement;
+    return result;
+  }
 
   // Right after an opening parenthesis or a separator, a named argument is as valid
   // as a value, so both sets of candidates apply.
-  if (last == '(' || last == ',') return CompletionContext::ArgumentName;
+  if (last == '(' || last == ',') {
+    result.kind = CompletionContext::ArgumentName;
+    return result;
+  }
 
   // Anything that can only be followed by a value.
-  if (QString("=+-*/%<>!&|?:[").contains(last)) return CompletionContext::Expression;
+  if (QString("=+-*/%<>!&|?:[").contains(last)) {
+    result.kind = CompletionContext::Expression;
+    return result;
+  }
 
-  return CompletionContext::Unknown;
+  result.kind = CompletionContext::Unknown;
+  return result;
 }

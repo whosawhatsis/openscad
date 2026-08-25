@@ -29,6 +29,15 @@ public:
   QString insertionSuffix() const { return insertionText().mid(label_.size()); }
 
   /**
+   * @brief How the entry reads in the popup.
+   *
+   * A named parameter shows its '=' so that "size=" stays distinct from an
+   * in-scope variable or function "size", which may legally be passed
+   * positionally in the same place. Both meanings stay available.
+   */
+  QString menuText() const { return kind_ == Kind::NamedParameter ? label_ + "=" : label_; }
+
+  /**
    * @brief What still has to be typed, given what already follows the caret.
    *
    * Completion runs over existing text as often as it runs at the end of a line.

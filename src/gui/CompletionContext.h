@@ -22,9 +22,19 @@ enum class CompletionContext {
 };
 
 /**
+ * @brief What the caret sits in.
+ */
+struct CaretContext {
+  CompletionContext kind = CompletionContext::Unknown;
+  /// Callable whose argument list encloses the caret, empty when none does.
+  /// Reports the innermost call, which is the one an argument belongs to.
+  QString enclosingCall;
+};
+
+/**
  * @brief Classify the caret position from the text preceding it.
  *
  * @param before Buffer text up to the caret. Any partial identifier at its end is
  *               ignored - the word being typed is not its own context.
  */
-CompletionContext classifyCompletionContext(const QString& before);
+CaretContext classifyCaret(const QString& before);

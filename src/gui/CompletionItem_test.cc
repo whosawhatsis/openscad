@@ -177,3 +177,41 @@ TEST_CASE("user functions and variables carry their own kinds", "[completion]")
   CHECK(kindOfSymbol("function f(x) = x * 2;", "f") == Kind::Function);
   CHECK(kindOfSymbol("size = 12;", "size") == Kind::Variable);
 }
+
+TEST_CASE("parameter names are read from calltips conservatively", "[completion]")
+{
+  // A bare identifier at argument level is a parameter name.
+  CHECK(parameterNamesFromCalltips({"cube(size)"}) == QStringList{"size"});
+  CHECK(parameterNamesFromCalltips({"cylinder(h, r1, r2)"}) == QStringList{"h", "r1", "r2"});
+
+  // "name = value" documents a parameter; the name is the half before the '='.
+  CHECK(parameterNamesFromCalltips({"cylinder(h = height, r = radius, center = true)"}) ==
+        QStringList{"h", "r", "center"});
+
+  // A bracketed argument describes the contents of a vector, not parameter names.
+  // Harvesting width/depth/height from it would offer arguments that do not exist.
+  CHECK(parameterNamesFromCalltips({"cube([width, depth, height])"}).isEmpty());
+  CHECK(parameterNamesFromCalltips({"translate([x, y, z])"}).isEmpty());
+  CHECK(parameterNamesFromCalltips({"cube([width, depth, height], center = true)"}) ==
+        QStringList{"center"});
+
+  // Overloads contribute their union, in first-seen order and without duplicates.
+  CHECK(parameterNamesFromCalltips({"cylinder(h, r1, r2)", "cylinder(h = height, r = radius)",
+                                    "cylinder(h = height, d = diameter, center = true)"}) ==
+        QStringList{"h", "r1", "r2", "r", "d", "center"});
+
+  // Nothing sensible to take.
+  CHECK(parameterNamesFromCalltips({"children()"}).isEmpty());
+  CHECK(parameterNamesFromCalltips({}).isEmpty());
+  CHECK(parameterNamesFromCalltips({"malformed("}).isEmpty());
+}
+
+TEST_CASE("user callables expose their own parameter names", "[completion]")
+{
+  const SourceFile& file = parseSnippet(
+    "module widget(size, center = false) { cube(); }\n"
+    "function scale2(v, factor = 2) = v * factor;");
+  CHECK(parameterNamesOf(file, "widget") == QStringList{"size", "center"});
+  CHECK(parameterNamesOf(file, "scale2") == QStringList{"v", "factor"});
+  CHECK(parameterNamesOf(file, "nosuch").isEmpty());
+}

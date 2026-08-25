@@ -9,6 +9,9 @@
 #include <unordered_set>
 #include <utility>
 
+#include <QHash>
+#include <QStringList>
+
 #include "core/SourceFile.h"
 #include "gui/CompletionItem.h"
 
@@ -73,6 +76,8 @@ private:
   QList<ApiFunc> funcs;
   QList<CompletionItem> completions;
   QList<CompletionItem> userCompletions;
+  QHash<QString, QStringList> builtinParameters;
+  QHash<QString, QStringList> userParameters;
 
 protected:
   void autoCompleteFolder(const QStringList& context, const QString& text, const int col,
