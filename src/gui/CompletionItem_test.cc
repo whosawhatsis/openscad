@@ -8,6 +8,9 @@
 #include "core/UserModule.h"
 #include "gui/CompletionItem.h"
 #include "gui/UserSymbols.h"
+
+#include <QMap>
+#include <functional>
 #include "openscad.h"
 
 #include <string>
@@ -214,4 +217,65 @@ TEST_CASE("user callables expose their own parameter names", "[completion]")
   CHECK(parameterNamesOf(file, "widget") == QStringList{"size", "center"});
   CHECK(parameterNamesOf(file, "scale2") == QStringList{"v", "factor"});
   CHECK(parameterNamesOf(file, "nosuch").isEmpty());
+}
+
+TEST_CASE("use imports callables but never variables", "[completion]")
+{
+  // `use <lib>` makes a library's modules and functions available, and deliberately
+  // not its variables - mirroring FileContext::lookup_local_module/function, which
+  // only ever consults a used file's modules and functions.
+  const SourceFile& library = parseSnippet(
+    "module wrapper() { children(); }\n"
+    "module widget() { cube(); }\n"
+    "function twice(x) = x * 2;\n"
+    "library_setting = 3;\n");
+
+  SourceFile main("/tmp", "main.scad");
+  main.usedlibs.push_back("lib.scad");
+
+  const auto lookup = [&library](const std::string& path) -> const SourceFile * {
+    return path == "lib.scad" ? &library : nullptr;
+  };
+
+  QMap<QString, CompletionItem::Kind> kinds;
+  for (const auto& item : importedCompletionItems(main, lookup)) kinds.insert(item.label(), item.kind());
+
+  CHECK(kinds.value("wrapper") == CompletionItem::Kind::ChildModule);
+  CHECK(kinds.value("widget") == CompletionItem::Kind::LeafModule);
+  CHECK(kinds.value("twice") == CompletionItem::Kind::Function);
+  CHECK_FALSE(kinds.contains("library_setting"));
+}
+
+TEST_CASE("a used library that failed to parse yields nothing", "[completion]")
+{
+  // SourceFileCache::lookup returns nullptr when the library was missing or did not
+  // compile. Completion must degrade to offering less, never crash.
+  SourceFile main("/tmp", "main.scad");
+  main.usedlibs.push_back("missing.scad");
+
+  const auto lookup = [](const std::string&) -> const SourceFile * { return nullptr; };
+  CHECK(importedCompletionItems(main, lookup).isEmpty());
+}
+
+TEST_CASE("use is not transitive", "[completion]")
+{
+  // a uses b, b uses c. OpenSCAD resolves names against a's own usedlibs only, so
+  // c's modules are not visible in a - see FileContext::lookup_local_module.
+  const SourceFile& c = parseSnippet("module from_c() { cube(); }");
+
+  SourceFile b("/tmp", "b.scad");
+  b.usedlibs.push_back("c.scad");
+
+  SourceFile a("/tmp", "a.scad");
+  a.usedlibs.push_back("b.scad");
+
+  const auto lookup = [&b, &c](const std::string& path) -> const SourceFile * {
+    if (path == "b.scad") return &b;
+    if (path == "c.scad") return &c;
+    return nullptr;
+  };
+
+  QStringList names;
+  for (const auto& item : importedCompletionItems(a, lookup)) names << item.label();
+  CHECK_FALSE(names.contains("from_c"));
 }

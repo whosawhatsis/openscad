@@ -13,6 +13,7 @@
 #include "core/Builtins.h"
 #include "core/EvaluationSession.h"
 #include "core/module.h"
+#include "core/SourceFileCache.h"
 #include "core/parsersettings.h"
 #include "Feature.h"
 #include "gui/CompletionContext.h"
@@ -250,6 +251,11 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
         candidates.append({item, CompletionSource::Builtin, false});
       }
     }
+    for (const auto& item : importedCompletions) {
+      if (kindFitsContext(item.kind(), where)) {
+        candidates.append({item, CompletionSource::Imported, false});
+      }
+    }
     for (const auto& item : userCompletions) {
       if (kindFitsContext(item.kind(), where)) {
         candidates.append({item, CompletionSource::CurrentFile, false});
@@ -317,8 +323,10 @@ void ScadApi::completeSelection(const QString& selection)
     return;
   }
 
-  // User symbols first: a user-defined name shadows a builtin of the same name.
-  for (const auto& item : userCompletions + completions) {
+  // Nearest definition first: this file shadows an imported name, which shadows a
+  // builtin. Same precedence the ranking uses, so the structure inserted always
+  // belongs to the candidate that was actually offered.
+  for (const auto& item : userCompletions + importedCompletions + completions) {
     if (item.label() != selection) continue;
 
     int line, col;
@@ -377,6 +385,30 @@ void ScadApi::correctUserVarNamesForCompletionFromSourceFile(const SourceFile *s
   userVariableNames.clear();
   userCompletions.clear();
   userParameters.clear();
+  importedCompletions.clear();
+
+  // Symbols reaching this file through `use`. `include` needs nothing here: it is
+  // textual, so an included file's symbols are already in sourceFile->scope above.
+  const auto lookupLibrary = [](const std::string& path) -> const SourceFile * {
+    return SourceFileCache::instance()->lookup(path);
+  };
+  if (flagAutoCompleteIncludeModules || flagAutoCompleteIncludeFunctions) {
+    for (const auto& item : importedCompletionItems(*sourceFile, lookupLibrary)) {
+      const bool wanted = item.kind() == CompletionItem::Kind::Function
+                            ? flagAutoCompleteIncludeFunctions
+                            : flagAutoCompleteIncludeModules;
+      if (wanted) importedCompletions.append(item);
+    }
+  }
+  for (const auto& used : sourceFile->usedlibs) {
+    const SourceFile *library = lookupLibrary(used);
+    if (!library) continue;
+    for (const auto& item : importedCompletions) {
+      if (userParameters.contains(item.label())) continue;  // the current file wins
+      const QStringList parameters = parameterNamesOf(*library, item.label());
+      if (!parameters.isEmpty()) userParameters.insert(item.label(), parameters);
+    }
+  }
 
   for (const auto& item : userCompletionItems(*sourceFile)) {
     const bool wanted =

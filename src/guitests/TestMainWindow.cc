@@ -3,12 +3,14 @@
 #include <QScopeGuard>
 #include <QString>
 #include <QStringList>
+#include <QFile>
 #include <QTest>
 
 #include <functional>
 
 #include "Feature.h"
 #include "core/SourceFile.h"
+#include "core/SourceFileCache.h"
 #include "openscad.h"
 #include "gui/ScintillaEditor.h"
 #include "platform/PlatformUtils.h"
@@ -321,6 +323,55 @@ void TestMainWindow::checkCompletionRanking()
   // dismisses the list when nothing in it starts with the typed word, so there
   // is nothing left to select. Candidates are prefix-filtered for that reason.
   QCOMPARE(complete("lex"), QString("lex\t"));
+}
+
+void TestMainWindow::checkUsedLibrarySymbolsAreOffered()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  // A real library on disk: the editor resolves `use` through SourceFileCache,
+  // which only holds files that were actually parsed.
+  const QString libName = "completion-lib-tmp.scad";
+  {
+    QFile lib(libName);
+    QVERIFY(lib.open(QIODevice::WriteOnly | QIODevice::Text));
+    lib.write("module libwidget() { cube(); }\nlibrary_setting = 7;\n");
+  }
+
+  const QString declarations = QString("use <%1>\n").arg(libName);
+  SourceFile *parsed = nullptr;
+  QVERIFY(parse(parsed, declarations.toStdString(), "main.scad", "main.scad", 0));
+  QVERIFY(parsed != nullptr);
+  parsed->handleDependencies();  // parses the used library into SourceFileCache
+
+  // Prove the fixture before testing behaviour: a failure here is the test's
+  // setup, not the completion code.
+  QVERIFY2(!parsed->usedlibs.empty(), "the `use` was not registered");
+  QVERIFY2(SourceFileCache::instance()->lookup(parsed->usedlibs[0]) != nullptr,
+           "the used library was not parsed into SourceFileCache");
+  editor->correctUserVarNamesForCompletionFromSourceFile(parsed, true, true, true);
+
+  const auto complete = [editor, &declarations](const QString& typed) {
+    editor->setPlainText(declarations + typed);
+    const QStringList lines = (declarations + typed).split('\n');
+    editor->setCursorPosition(lines.size() - 1, lines.last().size());
+    editor->qsci->autoCompleteFromAPIs();
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    return editor->toPlainText().mid(declarations.size());
+  };
+
+  // A module from the used library completes, with its structure.
+  QCOMPARE(complete("libwid"), QString("libwidget();"));
+
+  // A variable does not cross a `use`, so it is not a candidate.
+  QCOMPARE(complete("library_set"), QString("library_set\t"));
+
+  QFile::remove(libName);
 }
 
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()

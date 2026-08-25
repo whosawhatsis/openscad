@@ -76,6 +76,7 @@ private:
   QList<ApiFunc> funcs;
   QList<CompletionItem> completions;
   QList<CompletionItem> userCompletions;
+  QList<CompletionItem> importedCompletions;
   QHash<QString, QStringList> builtinParameters;
   QHash<QString, QStringList> userParameters;
   QString preferredSelection;

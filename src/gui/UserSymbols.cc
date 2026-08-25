@@ -193,3 +193,28 @@ QStringList parameterNamesOf(const SourceFile& file, const QString& callable)
 
   return names;
 }
+
+QList<CompletionItem> importedCompletionItems(
+  const SourceFile& file, const std::function<const SourceFile *(const std::string&)>& lookup)
+{
+  QList<CompletionItem> items;
+
+  for (const auto& used : file.usedlibs) {
+    const SourceFile *library = lookup(used);
+    if (!library || !library->scope) continue;
+
+    for (const auto& [name, module] : library->scope->getUserModules()) {
+      if (!module) continue;
+      items.append(CompletionItem(QString::fromStdString(name), moduleAcceptsChildren(*module)
+                                                                  ? CompletionItem::Kind::ChildModule
+                                                                  : CompletionItem::Kind::LeafModule));
+    }
+    for (const auto& [name, function] : library->scope->getUserFunctions()) {
+      items.append(CompletionItem(QString::fromStdString(name), CompletionItem::Kind::Function));
+    }
+    // Deliberately not library->scope->assignments: a variable does not cross a
+    // `use`. And deliberately not library->usedlibs: `use` is not transitive.
+  }
+
+  return items;
+}

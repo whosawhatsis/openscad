@@ -4,6 +4,9 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+#include <string>
+
 #include "gui/CompletionItem.h"
 
 class SourceFile;
@@ -39,3 +42,22 @@ QStringList parameterNamesFromCalltips(const QStringList& calltips);
  * @brief Parameter names of a module or function declared in this file.
  */
 QStringList parameterNamesOf(const SourceFile& file, const QString& callable);
+
+/**
+ * @brief Typed completion items for the callables a file's `use` statements import.
+ *
+ * Mirrors FileContext::lookup_local_module / lookup_local_function:
+ *
+ *  - only modules and functions cross a `use`, never variables;
+ *  - only the file's own `usedlibs` are consulted, so `use` is not transitive -
+ *    a library's own imports are visible inside it, not to its user;
+ *  - a library that is missing or failed to parse contributes nothing.
+ *
+ * `include` needs no traversal: it is textual, so an included file's symbols are
+ * already part of the including file's own scope.
+ *
+ * @param lookup Resolves a used path to its parsed file, or nullptr. In the editor
+ *               this wraps SourceFileCache; tests supply their own.
+ */
+QList<CompletionItem> importedCompletionItems(
+  const SourceFile& file, const std::function<const SourceFile *(const std::string&)>& lookup);
