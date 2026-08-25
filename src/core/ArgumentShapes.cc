@@ -12,10 +12,15 @@ namespace {
 // "translate([0, 0, 0])" would insert as "translate([0,". The text here is exactly
 // what lands in the document.
 //
-// Notable omissions and why:
-//   mirror   - has no identity normal; [0,0,0] is degenerate and [1,0,0] is a
-//              real transformation, so neither is a safe default.
-//   color    - every value is a choice, none is neutral.
+// The bar is not merely "valid": a shape earns its place when its seeded value is
+// a no-op AND a single digit away from what is almost always wanted. mirror is the
+// clearest case - mirror([0,0,0]) is an explicitly handled no-op (see the guard in
+// builtin_mirror, which leaves the identity matrix in place for a zero vector), and
+// changing one 0 to a 1 gives the mirror the user actually came for.
+//
+// Notable omission:
+//   color - every value is a choice and none is neutral, so there is no seed that
+//           is both a no-op and a step towards the common case.
 //   cylinder - the historical defaults (r=1, h=1 but r1/r2 asymmetry) are odd
 //              enough that curated named forms disambiguate better than one shape.
 const std::unordered_map<std::string, std::vector<std::string>> shapes = {
@@ -24,6 +29,7 @@ const std::unordered_map<std::string, std::vector<std::string>> shapes = {
   {"rotate", {"rotate([0,0,0])", "rotate(0,[0,0,1])"}},
   {"scale", {"scale([1,1,1])"}},
   {"resize", {"resize([0,0,0])"}},
+  {"mirror", {"mirror([0,0,0])"}},
 
   // Primitives: unit dimensions, the practical starting point.
   {"cube", {"cube([1,1,1])", "cube([1,1,1],center=true)"}},

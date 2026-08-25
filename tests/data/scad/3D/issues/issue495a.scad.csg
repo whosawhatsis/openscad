@@ -1,0 +1,5 @@
+difference() {
+	cube(size = [20, 20, 20], center = true);
+	cube(size = [10, 10, 10], center = true);
+}
+

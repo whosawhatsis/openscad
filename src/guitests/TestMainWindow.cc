@@ -409,9 +409,10 @@ void TestMainWindow::checkArgumentShapeCompletion()
   // Nothing is appended to a shape: no second parenthesis, no stray semicolon.
   QCOMPARE(complete("scal", 1), QString("scale([1,1,1])"));
 
-  // A callable with no curated shape offers only its structure, so the first
-  // entry below it is a different name entirely rather than a bogus shape.
+  // mirror is seeded too: a zero vector is a no-op, and one digit gives the
+  // mirror that was actually wanted.
   QCOMPARE(complete("mirro"), QString("mirror()"));
+  QCOMPARE(complete("mirro", 1), QString("mirror([0,0,0])"));
 }
 
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()

@@ -313,8 +313,11 @@ TEST_CASE("curated shapes are seeded with neutral values", "[completion]")
   const auto cylinder = argumentShapesFor("cylinder");
   CHECK(std::find(cylinder.begin(), cylinder.end(), "cylinder(h=1,d=1)") != cylinder.end());
 
-  // No shape is curated where no value is neutral - see the comments in the table.
-  CHECK(argumentShapesFor("mirror").empty());
+  // mirror([0,0,0]) is an explicitly handled no-op - builtin_mirror leaves the
+  // identity matrix in place for a zero vector - and one digit from the common case.
+  CHECK(argumentShapesFor("mirror") == std::vector<std::string>{"mirror([0,0,0])"});
+
+  // No shape where no value is both a no-op and a step towards what is wanted.
   CHECK(argumentShapesFor("color").empty());
   CHECK(argumentShapesFor("no_such_module").empty());
 }
