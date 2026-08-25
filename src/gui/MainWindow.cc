@@ -30,7 +30,6 @@
 
 #include <QApplication>
 #include <QClipboard>
-#include <QCheckBox>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDockWidget>
@@ -41,7 +40,6 @@
 #include <QFileInfo>
 #include <QFont>
 #include <QFontMetrics>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QInputDialog>
@@ -2965,22 +2963,27 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
 
   auto title = QString(_("Export %1 File")).arg(type_name);
   auto filter = QString(_("%1 Files (*%2)")).arg(type_name, suffix);
-  const bool isStl =
+  // Offering one file per body is only meaningful for an STL of a model that
+  // actually has several bodies. It is offered as a second name filter rather
+  // than an extra widget so the platform's own save panel can present it: on
+  // every platform Qt maps the name filters onto the native format popup, and
+  // a dialog carrying a custom widget would have to fall back to Qt's own.
+  const bool offerMultiStl =
     (exportInfo.format == FileFormat::ASCII_STL || exportInfo.format == FileFormat::BINARY_STL) &&
-    Feature::ExperimentalMultiMaterial.is_enabled();
+    Feature::ExperimentalMultiMaterial.is_enabled() && multi_stl_available(rootGeom);
+  const auto multiStlFilter = QString(_("%1 Files, one per body (*%2)")).arg(type_name, suffix);
   QFileDialog dialog(this, title, exportPath(suffix), filter);
   dialog.setAcceptMode(QFileDialog::AcceptSave);
   dialog.setDefaultSuffix(suffix);
-  QCheckBox *multiStl = nullptr;
-  if (isStl) {
-    dialog.setOption(QFileDialog::DontUseNativeDialog);
+  if (offerMultiStl) {
+    dialog.setNameFilters({filter, multiStlFilter});
+    // In one-file-per-body mode the typed name is never written as-is, so the
+    // panel's own confirmation would name the wrong file. Both modes confirm
+    // against the real output set below instead.
     dialog.setOption(QFileDialog::DontConfirmOverwrite);
-    multiStl = new QCheckBox(_("Export bodies as separate files (common origin)"), &dialog);
-    if (auto layout = qobject_cast<QGridLayout *>(dialog.layout())) {
-      layout->addWidget(multiStl, layout->rowCount(), 0, 1, layout->columnCount());
-    }
   }
   if (dialog.exec() != QDialog::Accepted) return;
+  const bool multiStl = offerMultiStl && dialog.selectedNameFilter() == multiStlFilter;
   const auto selectedFiles = dialog.selectedFiles();
   auto exportFilename = selectedFiles.isEmpty() ? QString() : selectedFiles.front();
   auto guard2 = scopedSetCurrentOutput();
@@ -2990,7 +2993,7 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
   this->exportPaths[suffix] = exportFilename;
 
   bool exportResult;
-  if (multiStl && multiStl->isChecked()) {
+  if (multiStl) {
     const auto filenames = multi_stl_filenames(rootGeom, exportFilename.toStdString());
     const bool anyExists = std::any_of(filenames.begin(), filenames.end(), [](const auto& filename) {
       return std::filesystem::exists(std::filesystem::u8path(filename));
@@ -3003,7 +3006,8 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
     }
     exportResult = export_stl_files(rootGeom, exportFilename.toStdString(), exportInfo, anyExists);
   } else {
-    if (isStl && std::filesystem::exists(std::filesystem::u8path(exportFilename.toStdString())) &&
+    if (offerMultiStl &&
+        std::filesystem::exists(std::filesystem::u8path(exportFilename.toStdString())) &&
         QMessageBox::warning(
           this, _("Overwrite file?"), _("The selected STL file already exists. Overwrite it?"),
           QMessageBox::Yes | QMessageBox::Abort, QMessageBox::Abort) != QMessageBox::Yes) {

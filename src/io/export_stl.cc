@@ -336,6 +336,11 @@ std::vector<std::string> export_body_names(const Geometry::Geometries& bodies)
   return names;
 }
 
+bool multi_stl_available(const std::shared_ptr<const Geometry>& geom)
+{
+  return export_bodies(geom).size() > 1;
+}
+
 std::vector<std::string> multi_stl_filenames(const std::shared_ptr<const Geometry>& geom,
                                              const std::string& filename)
 {
