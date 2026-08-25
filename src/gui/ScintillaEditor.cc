@@ -1,3 +1,4 @@
+#include "gui/SnippetFields.h"
 #include "gui/ScintillaEditor.h"
 
 #include <QColor>
@@ -24,6 +25,7 @@
 #include <algorithm>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -221,6 +223,13 @@ ScintillaEditor::ScintillaEditor(QWidget *parent) : EditorInterface(parent)
   connect(qsci, &QsciScintilla::textChanged, this, &ScintillaEditor::contentsChanged);
   connect(qsci, &QsciScintilla::modificationChanged, this, &ScintillaEditor::fireModificationChanged);
   connect(qsci, &QsciScintilla::userListActivated, this, &ScintillaEditor::onUserListSelected);
+  connect(qsci, &QsciScintilla::SCN_AUTOCSELECTIONCHANGE, this,
+          [this](const char *, int, int) { api->applyPreferredSelection(); });
+  connect(qsci, &QsciScintilla::SCN_AUTOCCANCELLED, this,
+          [this]() { api->releasePreferredSelection(); });
+  connect(qsci, &QsciScintilla::SCN_AUTOCCOMPLETED, this, [this](const char *selection, int, int, int) {
+    api->completeSelection(QString::fromUtf8(selection));
+  });
   qsci->installEventFilter(this);
   qsci->viewport()->installEventFilter(this);
 
@@ -1024,12 +1033,164 @@ QString ScintillaEditor::selectedText()
   return qsci->selectedText();
 }
 
+void ScintillaEditor::beginSnippetSession(int start, const QString& text)
+{
+  endSnippetSession();
+  if (shapeFieldRanges(text).isEmpty()) return;
+
+  snippetStart = start;
+  snippetActive = true;
+
+  int fieldStart = 0, fieldLength = 0;
+  if (nextSnippetField(start, true, fieldStart, fieldLength)) {
+    // Select the first field so typing replaces its seeded value outright.
+    qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(fieldStart),
+                        static_cast<long>(fieldStart + fieldLength));
+  }
+}
+
+void ScintillaEditor::endSnippetSession()
+{
+  snippetActive = false;
+  snippetStart = 0;
+}
+
+// Current extent of the call being filled in: from its start to the parenthesis
+// that closes it. Recomputed rather than remembered, because everything between
+// moves as fields are edited.
+bool ScintillaEditor::snippetCallText(QString& text) const
+{
+  if (!snippetActive) return false;
+
+  const QString all = qsci->text();
+  if (snippetStart < 0 || snippetStart >= all.size()) return false;
+
+  int depth = 0;
+  for (int i = snippetStart; i < all.size(); ++i) {
+    const QChar c = all.at(i);
+    if (c == '(') {
+      ++depth;
+    } else if (c == ')') {
+      if (--depth == 0) {
+        text = all.mid(snippetStart, i - snippetStart + 1);
+        return true;
+      }
+    } else if (c == '\n') {
+      return false;  // the call was broken up; the session no longer means anything
+    }
+  }
+  return false;
+}
+
+// Find the field before or after `from`, in document coordinates.
+bool ScintillaEditor::nextSnippetField(int from, bool forward, int& fieldStart, int& fieldLength) const
+{
+  QString call;
+  if (!snippetCallText(call)) return false;
+
+  const auto fields = shapeFieldRanges(call);
+  if (forward) {
+    for (const auto& field : fields) {
+      const int absolute = snippetStart + field.first;
+      if (absolute >= from) {
+        fieldStart = absolute;
+        fieldLength = field.second;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (int i = fields.size() - 1; i >= 0; --i) {
+    const int absolute = snippetStart + fields.at(i).first;
+    // Strictly before: a field whose end coincides with the caret is the one being
+    // left, and Shift-Tab means the previous stop, not this one again.
+    if (absolute + fields.at(i).second < from) {
+      fieldStart = absolute;
+      fieldLength = fields.at(i).second;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Step to the next or previous field. Going forward past the last one finishes the
+// call and leaves the caret after it; going back before the first one stays put.
+bool ScintillaEditor::moveToSnippetField(bool forward)
+{
+  if (!snippetActive) return false;
+
+  const int caret = qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
+  const int anchor = qsci->SendScintilla(QsciScintilla::SCI_GETANCHOR);
+  const int from = forward ? std::max(caret, anchor) : std::min(caret, anchor);
+
+  int fieldStart = 0, fieldLength = 0;
+  if (nextSnippetField(from, forward, fieldStart, fieldLength)) {
+    qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(fieldStart),
+                        static_cast<long>(fieldStart + fieldLength));
+    return true;
+  }
+
+  if (!forward) return true;  // already at the first field
+
+  QString call;
+  const int end = snippetCallText(call) ? snippetStart + call.size() : from;
+  endSnippetSession();
+  qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(end),
+                      static_cast<long>(end));
+  return true;
+}
+
 bool ScintillaEditor::eventFilter(QObject *obj, QEvent *e)
 {
   if (e->type() == QEvent::KeyPress) {
     auto keyEvent = static_cast<QKeyEvent *>(e);
     if (keyEvent->key() == Qt::Key_Escape) {
       emit escapePressed();
+    }
+
+    // Tab means three things in this editor. Precedence, highest first:
+    //   1. accept the completion, when its list is open;
+    //   2. step to the next field of a call shape just inserted;
+    //   3. indent.
+    // Only the middle one is new, and it only applies while a session is running.
+    // A session only means anything while the caret is still inside the call it
+    // belongs to. Clicking or typing elsewhere abandons it, and Tab must go back to
+    // indenting rather than jumping into a call the user has left.
+    if (snippetSessionActive()) {
+      const int caret = qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
+      QString call;
+      if (!snippetCallText(call) || caret < snippetStart || caret > snippetStart + call.size()) {
+        endSnippetSession();
+      }
+    }
+
+    if (snippetSessionActive() && !qsci->isListActive()) {
+      if (keyEvent->key() == Qt::Key_Escape) {
+        endSnippetSession();
+      } else if (keyEvent->key() == Qt::Key_Tab) {
+        moveToSnippetField(true);
+        return true;
+      } else if (keyEvent->key() == Qt::Key_Backtab) {
+        moveToSnippetField(false);
+        return true;
+      } else if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+        endSnippetSession();
+      }
+    }
+    // Once the user moves through the list themselves, stop overriding the
+    // highlight - otherwise the ranked choice would be forced back on every
+    // keypress and the list could not be navigated at all.
+    if (qsci->isListActive()) {
+      switch (keyEvent->key()) {
+      case Qt::Key_Up:
+      case Qt::Key_Down:
+      case Qt::Key_PageUp:
+      case Qt::Key_PageDown:
+      case Qt::Key_Home:
+      case Qt::Key_End:      api->releasePreferredSelection(); break;
+      default:               break;
+      }
     }
   }
   if (QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier) ||

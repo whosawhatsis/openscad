@@ -1009,6 +1009,7 @@ set(CORE_SOURCES
   src/RenderStatistic.cc
   src/core/AST.cc
   src/core/Arguments.cc
+  src/core/ArgumentShapes.cc
   src/core/Assignment.cc
   src/core/BuiltinContext.cc
   src/core/Builtins.cc
@@ -1359,11 +1360,15 @@ set(GUI_SOURCES
   src/gui/QGLView2.cc
   src/gui/QSettingsCached.cc
   src/gui/QWordSearchField.cc
+  src/gui/SnippetFields.cc
   src/gui/ScadApi.cc
   src/gui/ScadLexer.cc
   src/gui/ScintillaEditor.cc
   src/gui/SettingsWriter.cc
   src/gui/TabManager.cc
+  src/gui/CompletionContext.cc
+  src/gui/CompletionRanking.cc
+  src/gui/UserSymbols.cc
   src/gui/UIUtils.cc
   src/gui/WindowManager.cc
   src/gui/IgnoreWheelWhenNotFocused.cc

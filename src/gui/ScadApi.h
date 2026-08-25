@@ -9,7 +9,11 @@
 #include <unordered_set>
 #include <utility>
 
+#include <QHash>
+#include <QStringList>
+
 #include "core/SourceFile.h"
+#include "gui/CompletionItem.h"
 
 class ApiFunc
 {
@@ -70,17 +74,31 @@ class ScadApi : public QsciAbstractAPIs
 private:
   ScintillaEditor *editor;
   QList<ApiFunc> funcs;
+  QList<CompletionItem> completions;
+  QList<CompletionItem> userCompletions;
+  QList<CompletionItem> importedCompletions;
+  QHash<QString, QStringList> builtinParameters;
+  QHash<QString, QStringList> userParameters;
+  QString preferredSelection;
 
 protected:
   void autoCompleteFolder(const QStringList& context, const QString& text, const int col,
                           QStringList& list);
   void autoCompleteFunctions(const QStringList& context, QStringList& list);
+  QString textBeforeCursor() const;
 
 public:
   ScadApi(ScintillaEditor *editor, QsciLexer *lexer);
 
   void updateAutoCompletionList(const QStringList& context, QStringList& list) override;
   void autoCompletionSelected(const QString& selection) override;
+  void completeSelection(const QString& selection);
+  /// Move the popup's highlight to the best-ranked candidate. QScintilla sorts the
+  /// list alphabetically before showing it, so this is the only way our order has
+  /// any effect; see the comment where preferredSelection is set.
+  void applyPreferredSelection();
+  /// Stop overriding the highlight, because the user is choosing for themselves.
+  void releasePreferredSelection() { preferredSelection.clear(); }
   QStringList callTips(const QStringList& context, int commas, QsciScintilla::CallTipsStyle style,
                        QList<int>& shifts) override;
 

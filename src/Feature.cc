@@ -70,6 +70,8 @@ const Feature Feature::ExperimentalTransparencyOrdering(
 const Feature Feature::ExperimentalStructuredDiagnostics(
   "structured-diagnostics",
   "Stream, collapse, and retain unabridged diagnostics from isolated compute workers.");
+const Feature Feature::ExperimentalEditorEnhancements("editor-enhancements",
+                                                      "Enable experimental editor enhancements.");
 
 #ifdef ENABLE_PYTHON
 const Feature Feature::ExperimentalPythonEngine(
