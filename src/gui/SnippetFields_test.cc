@@ -46,3 +46,24 @@ TEST_CASE("a shape's editable fields are its argument values", "[completion]")
   CHECK(fieldsOf("cube()").isEmpty());
   CHECK(fieldsOf("").isEmpty());
 }
+
+TEST_CASE("inserted calls put a space after every comma", "[completion]")
+{
+  // Menu entries must be space-free, because Scintilla treats a space in a list
+  // entry as the end of the inserted word. The spacing is restored on insertion.
+  CHECK(spacedAfterCommas("cube([1,1,1])") == "cube([1, 1, 1])");
+  CHECK(spacedAfterCommas("cube([1,1,1],center=true);") == "cube([1, 1, 1], center=true);");
+  CHECK(spacedAfterCommas("rotate(0,[0,0,1])") == "rotate(0, [0, 0, 1])");
+
+  // Idempotent: a comma already followed by a space is left alone.
+  CHECK(spacedAfterCommas("cube([1, 1, 1])") == "cube([1, 1, 1])");
+
+  // Nothing to do.
+  CHECK(spacedAfterCommas("translate([0,0,0])") == "translate([0, 0, 0])");
+  CHECK(spacedAfterCommas("sphere(r=1)") == "sphere(r=1)");
+  CHECK(spacedAfterCommas("") == "");
+
+  // A comma inside a string literal is the author's, not ours to reformat.
+  CHECK(spacedAfterCommas("color(\"a,b\")") == "color(\"a,b\")");
+  CHECK(spacedAfterCommas("f(\"a,b\",1,2)") == "f(\"a,b\", 1, 2)");
+}

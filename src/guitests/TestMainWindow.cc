@@ -40,7 +40,19 @@ void TestMainWindow::checkOpenTabPropagateToWindow()
 void TestMainWindow::checkEditorEnhancementsFeatureFlag()
 {
   QCOMPARE(Feature::ExperimentalEditorEnhancements.get_name(), std::string("editor-enhancements"));
+
+  // Whether the feature is on right now is ambient: experimental features persist
+  // in QSettings, which this binary shares with the application, so a developer who
+  // has enabled it to dogfood would otherwise fail this test. Drive it explicitly
+  // and restore what was there.
+  const bool wasEnabled = Feature::ExperimentalEditorEnhancements.is_enabled();
+  const auto restore =
+    qScopeGuard([wasEnabled] { Feature::enable_feature("editor-enhancements", wasEnabled); });
+
+  Feature::enable_feature("editor-enhancements", false);
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
+  Feature::enable_feature("editor-enhancements", true);
+  QVERIFY(Feature::ExperimentalEditorEnhancements.is_enabled());
 }
 
 void TestMainWindow::checkKeywordCompletionRemainsAvailable()
@@ -48,7 +60,14 @@ void TestMainWindow::checkKeywordCompletionRemainsAvailable()
   restoreWindowInitialState();
   auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
   QVERIFY(editor);
-  QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
+
+  // This covers behaviour with the feature off, so turn it off rather than assume:
+  // it persists in QSettings and may be on from dogfooding.
+  const bool wasEnabled = Feature::ExperimentalEditorEnhancements.is_enabled();
+  const auto restore =
+    qScopeGuard([wasEnabled] { Feature::enable_feature("editor-enhancements", wasEnabled); });
+  Feature::enable_feature("editor-enhancements", false);
+
   editor->setupAutoComplete();
 
   // Language keywords come from Builtins::keywordList, not from the module/function
@@ -404,15 +423,15 @@ void TestMainWindow::checkArgumentShapeCompletion()
 
   // The seeded shape sits directly below it, and is inserted verbatim - complete,
   // valid, and a no-op until a field is edited.
-  QCOMPARE(complete("transl", 1), QString("translate([0,0,0])"));
+  QCOMPARE(complete("transl", 1), QString("translate([0, 0, 0])"));
 
   // Nothing is appended to a shape: no second parenthesis, no stray semicolon.
-  QCOMPARE(complete("scal", 1), QString("scale([1,1,1])"));
+  QCOMPARE(complete("scal", 1), QString("scale([1, 1, 1])"));
 
   // mirror is seeded too: a zero vector is a no-op, and one digit gives the
   // mirror that was actually wanted.
   QCOMPARE(complete("mirro"), QString("mirror()"));
-  QCOMPARE(complete("mirro", 1), QString("mirror([0,0,0])"));
+  QCOMPARE(complete("mirro", 1), QString("mirror([0, 0, 0])"));
 }
 
 void TestMainWindow::checkSnippetFieldTraversal()
@@ -430,20 +449,20 @@ void TestMainWindow::checkSnippetFieldTraversal()
   editor->qsci->autoCompleteFromAPIs();
   QTest::keyClick(editor->qsci, Qt::Key_Down);
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
-  QCOMPARE(editor->toPlainText(), QString("translate([0,0,0])"));
+  QCOMPARE(editor->toPlainText(), QString("translate([0, 0, 0])"));
 
   // The first field is selected, so typing replaces its seeded value outright.
   QVERIFY(editor->snippetSessionActive());
   QCOMPARE(editor->qsci->selectedText(), QString("0"));
   QTest::keyClicks(editor->qsci, "5");
-  QCOMPARE(editor->toPlainText(), QString("translate([5,0,0])"));
+  QCOMPARE(editor->toPlainText(), QString("translate([5, 0, 0])"));
 
   // Tab steps to the next field - and the marks must have survived the edit,
   // which is why they are Scintilla indicators rather than stored offsets.
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->qsci->selectedText(), QString("0"));
   QTest::keyClicks(editor->qsci, "12");
-  QCOMPARE(editor->toPlainText(), QString("translate([5,12,0])"));
+  QCOMPARE(editor->toPlainText(), QString("translate([5, 12, 0])"));
 
   // Shift-Tab goes back to the field just edited.
   QTest::keyClick(editor->qsci, Qt::Key_Backtab);
@@ -462,6 +481,47 @@ void TestMainWindow::checkSnippetFieldTraversal()
   const QString before = editor->toPlainText();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QVERIFY2(editor->toPlainText() != before, "Tab no longer indents once the session has ended");
+}
+
+void TestMainWindow::checkCaretAndTerminatorFromRealUse()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  const auto completeWord = [editor](const QString& typed, int downs = 0) {
+    editor->setPlainText(typed);
+    editor->setCursorPosition(0, typed.size());
+    editor->qsci->autoCompleteFromAPIs();
+    for (int i = 0; i < downs; ++i) QTest::keyClick(editor->qsci, Qt::Key_Down);
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    int line = -1, col = -1;
+    editor->qsci->getCursorPosition(&line, &col);
+    return QPair<QString, int>(editor->toPlainText(), col);
+  };
+
+  // Typing the whole word and accepting must leave the caret between the
+  // parentheses, ready for arguments - not after them.
+  const auto whole = completeWord("translate");
+  QCOMPARE(whole.first, QString("translate()"));
+  QCOMPARE(whole.second, 10);  // translate(|)
+
+  // Same for a partially typed word.
+  const auto partial = completeWord("transl");
+  QCOMPARE(partial.first, QString("translate()"));
+  QCOMPARE(partial.second, 10);
+
+  // A leaf module's seeded shape terminates the statement, exactly as its bare
+  // structure does. cube() completes as cube(); so cube([1,1,1]) must too.
+  const auto shape = completeWord("cub", 1);
+  QCOMPARE(shape.first, QString("cube([1, 1, 1]);"));
+
+  // A child module's shape must not be terminated: something follows it.
+  const auto childShape = completeWord("transl", 1);
+  QCOMPARE(childShape.first, QString("translate([0, 0, 0])"));
 }
 
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()

@@ -19,3 +19,13 @@ using SnippetField = QPair<int, int>;
  * asked about - it is not a general OpenSCAD expression scanner.
  */
 QList<SnippetField> shapeFieldRanges(const QString& shape);
+
+/**
+ * @brief The same call with a space after every comma.
+ *
+ * Autocompletion menu entries cannot contain spaces - Scintilla treats the first
+ * one as the end of the inserted word - so shapes are stored and displayed
+ * space-free and spaced out again when they land in the document. Commas inside
+ * string literals are left alone.
+ */
+QString spacedAfterCommas(const QString& call);

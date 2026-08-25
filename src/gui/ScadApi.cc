@@ -19,6 +19,7 @@
 #include "Feature.h"
 #include "gui/CompletionContext.h"
 #include "gui/CompletionRanking.h"
+#include "gui/SnippetFields.h"
 #include "gui/UserSymbols.h"
 #include "gui/ScintillaEditor.h"
 #include "gui/UserSymbols.h"
@@ -253,8 +254,13 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
 
       // Seeded call shapes accompany the bare structure, never replace it.
       for (const auto& shape : argumentShapesFor(item.label().toStdString())) {
-        candidates.append({CompletionItem(item.label(), CompletionItem::Kind::ArgumentShape,
-                                          QString::fromStdString(shape)),
+        // A shape is a whole statement for a leaf module, exactly as its bare
+        // structure is: cube() completes to cube();, so cube([1,1,1]) must too.
+        // The table describes arguments; whether the call terminates is the
+        // callable's kind, which is known here and not there.
+        const QString text =
+          QString::fromStdString(shape) + (item.kind() == CompletionItem::Kind::LeafModule ? ";" : "");
+        candidates.append({CompletionItem(item.label(), CompletionItem::Kind::ArgumentShape, text),
                            CompletionSource::Builtin, false});
       }
     }
@@ -336,9 +342,20 @@ void ScadApi::completeSelection(const QString& selection)
   // A shape arrives as its whole text; Scintilla has already inserted it, so there
   // is nothing to add. Its seeded values become editable fields instead, stepped
   // through with Tab.
-  if (selection.contains('(') && selection.endsWith(')')) {
+  if (selection.contains('(') && (selection.endsWith(')') || selection.endsWith(");"))) {
     const int end = editor->qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
-    editor->beginSnippetSession(end - selection.toUtf8().size(), selection);
+    const int start = end - selection.toUtf8().size();
+
+    // The menu entry has to be space-free for Scintilla to insert it whole, so the
+    // conventional spacing goes on here, once the text is in the document.
+    const QString spaced = spacedAfterCommas(selection);
+    if (spaced != selection) {
+      editor->qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(start),
+                                  static_cast<long>(end));
+      editor->qsci->SendScintilla(QsciScintilla::SCI_REPLACESEL, 0UL, spaced.toUtf8().constData());
+    }
+
+    editor->beginSnippetSession(start, spaced);
     return;
   }
 
@@ -356,10 +373,10 @@ void ScadApi::completeSelection(const QString& selection)
     const auto insertion = item.insertionFor(next);
     if (!insertion.text.isEmpty()) {
       editor->insert(insertion.text);
-      if (insertion.cursorBack != 0) {
-        editor->qsci->getCursorPosition(&line, &col);
-        editor->qsci->setCursorPosition(line, col - insertion.cursorBack);
-      }
+      // QsciScintilla::insert() puts the text at the caret and leaves the caret
+      // where it was, so the destination has to be computed from the position
+      // before the insertion rather than read back afterwards.
+      editor->qsci->setCursorPosition(line, col + insertion.text.size() - insertion.cursorBack);
       return;
     }
 

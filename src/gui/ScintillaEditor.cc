@@ -1134,7 +1134,10 @@ bool ScintillaEditor::moveToSnippetField(bool forward)
   if (!forward) return true;  // already at the first field
 
   QString call;
-  const int end = snippetCallText(call) ? snippetStart + call.size() : from;
+  int end = snippetCallText(call) ? snippetStart + call.size() : from;
+  // Step over a terminator too, so finishing a leaf module's shape leaves the
+  // caret after the whole statement rather than between ')' and ';'.
+  if (qsci->text().mid(end, 1) == ";") ++end;
   endSnippetSession();
   qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(end),
                       static_cast<long>(end));
