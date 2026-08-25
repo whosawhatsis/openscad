@@ -253,8 +253,13 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
 
       // Seeded call shapes accompany the bare structure, never replace it.
       for (const auto& shape : argumentShapesFor(item.label().toStdString())) {
-        candidates.append({CompletionItem(item.label(), CompletionItem::Kind::ArgumentShape,
-                                          QString::fromStdString(shape)),
+        // A shape is a whole statement for a leaf module, exactly as its bare
+        // structure is: cube() completes to cube();, so cube([1,1,1]) must too.
+        // The table describes arguments; whether the call terminates is the
+        // callable's kind, which is known here and not there.
+        const QString text =
+          QString::fromStdString(shape) + (item.kind() == CompletionItem::Kind::LeafModule ? ";" : "");
+        candidates.append({CompletionItem(item.label(), CompletionItem::Kind::ArgumentShape, text),
                            CompletionSource::Builtin, false});
       }
     }
@@ -275,13 +280,6 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
       if (!list.contains(text)) list << text;
     }
 
-    // QScintilla sorts this list alphabetically before handing it to Scintilla
-    // (qsciscintilla.cpp, "wlist.sort()" just before SCI_AUTOCSHOW), so the order
-    // above does not survive and SCI_AUTOCSETORDER cannot help - the sort happens
-    // above that setting. Remember the best candidate instead and move the
-    // highlight onto it once the popup exists; ScintillaEditor drives that from
-    // SCN_AUTOCSELECTIONCHANGE.
-    preferredSelection = list.value(0);
     return;
   }
 
@@ -299,19 +297,43 @@ void ScadApi::autoCompletionSelected(const QString& /*selection*/)
 {
 }
 
-void ScadApi::applyPreferredSelection()
+int ScadApi::wordStartColumn(const QString& lineText, int col)
 {
-  if (preferredSelection.isEmpty()) return;
+  int start = col;
+  while (start > 0) {
+    const QChar c = lineText.at(start - 1);
+    if (!c.isLetterOrNumber() && c != '_' && c != '$') break;
+    --start;
+  }
+  return start;
+}
 
-  // Scintilla re-syncs the highlight to the typed word whenever the list changes,
-  // so this has to hold its ground rather than fire once. The guard stops the
-  // notification our own call provokes from recursing.
-  static bool applying = false;
-  if (applying) return;
-  applying = true;
-  editor->qsci->SendScintilla(QsciScintilla::SCI_AUTOCSELECT, 0UL,
-                              preferredSelection.toUtf8().constData());
-  applying = false;
+QStringList ScadApi::completionList()
+{
+  int line, col;
+  editor->qsci->getCursorPosition(&line, &col);
+  const QString lineText = editor->qsci->text(line);
+  const int start = wordStartColumn(lineText, col);
+
+  QStringList list;
+  updateAutoCompletionList(QStringList{lineText.mid(start, col - start)}, list);
+
+  return list;
+}
+
+void ScadApi::acceptUserListSelection(const QString& text)
+{
+  int line, col;
+  editor->qsci->getCursorPosition(&line, &col);
+  const QString lineText = editor->qsci->text(line);
+  const int start = wordStartColumn(lineText, col);
+
+  editor->qsci->setSelection(line, start, line, col);
+  editor->qsci->replaceSelectedText(text);
+
+  // The caret now sits directly after the inserted entry, which is the state the
+  // AcsAPIs path leaves behind too, so the same completion logic applies.
+  completeSelection(text);
 }
 
 void ScadApi::completeSelection(const QString& selection)
@@ -336,9 +358,11 @@ void ScadApi::completeSelection(const QString& selection)
   // A shape arrives as its whole text; Scintilla has already inserted it, so there
   // is nothing to add. Its seeded values become editable fields instead, stepped
   // through with Tab.
-  if (selection.contains('(') && selection.endsWith(')')) {
+  if (selection.contains('(') && (selection.endsWith(')') || selection.endsWith(");"))) {
     const int end = editor->qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
-    editor->beginSnippetSession(end - selection.toUtf8().size(), selection);
+    const int start = end - selection.toUtf8().size();
+
+    editor->beginSnippetSession(start, selection);
     return;
   }
 
@@ -356,10 +380,10 @@ void ScadApi::completeSelection(const QString& selection)
     const auto insertion = item.insertionFor(next);
     if (!insertion.text.isEmpty()) {
       editor->insert(insertion.text);
-      if (insertion.cursorBack != 0) {
-        editor->qsci->getCursorPosition(&line, &col);
-        editor->qsci->setCursorPosition(line, col - insertion.cursorBack);
-      }
+      // QsciScintilla::insert() puts the text at the caret and leaves the caret
+      // where it was, so the destination has to be computed from the position
+      // before the insertion rather than read back afterwards.
+      editor->qsci->setCursorPosition(line, col + insertion.text.size() - insertion.cursorBack);
       return;
     }
 

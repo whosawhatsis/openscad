@@ -31,9 +31,8 @@ TEST_CASE("match quality orders candidates before anything else", "[completion]"
   // Case matters only as a tie-break: both match, the exact case first.
   CHECK(order({cand("Size"), cand("size")}, "size") == QStringList{"size", "Size"});
 
-  // Only prefixes match at all, so a candidate that merely contains the letters
-  // is dropped rather than ranked below.
-  CHECK(order({cand("linear_extrude"), cand("len")}, "le") == QStringList{"len"});
+  // A prefix outranks a subsequence, which is still offered below it.
+  CHECK(order({cand("linear_extrude"), cand("len")}, "le") == QStringList{"len", "linear_extrude"});
 
   // Non-matches are dropped entirely.
   CHECK(order({cand("cube"), cand("sphere")}, "zz").isEmpty());
@@ -41,10 +40,11 @@ TEST_CASE("match quality orders candidates before anything else", "[completion]"
   // Prefix matching is case-insensitive.
   CHECK(order({cand("linear_extrude")}, "LIN") == QStringList{"linear_extrude"});
 
-  // Subsequence matching is deferred, not merely unranked - see the TODO in
-  // CompletionRanking.cc. "lex" is a subsequence of linear_extrude and must not
-  // match, because a candidate the popup cannot select is worse than none.
-  CHECK(order({cand("linear_extrude")}, "lex").isEmpty());
+  // Non-contiguous subsequences match: the popup is a user list, so we choose the
+  // entries and Scintilla never has to match the typed word against them.
+  CHECK(order({cand("linear_extrude")}, "lex") == QStringList{"linear_extrude"});
+  CHECK(order({cand("linear_extrude")}, "LEX") == QStringList{"linear_extrude"});
+  CHECK(order({cand("linear_extrude")}, "xel").isEmpty());  // order matters
 }
 
 TEST_CASE("equal matches fall back to source, then supplied, then alphabet", "[completion]")

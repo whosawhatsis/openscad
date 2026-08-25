@@ -96,7 +96,19 @@ void TestMainWindow::checkOpeningLargeFileDoesNotParseInGui()
 void TestMainWindow::checkEditorEnhancementsFeatureFlag()
 {
   QCOMPARE(Feature::ExperimentalEditorEnhancements.get_name(), std::string("editor-enhancements"));
+
+  // Whether the feature is on right now is ambient: experimental features persist
+  // in QSettings, which this binary shares with the application, so a developer who
+  // has enabled it to dogfood would otherwise fail this test. Drive it explicitly
+  // and restore what was there.
+  const bool wasEnabled = Feature::ExperimentalEditorEnhancements.is_enabled();
+  const auto restore =
+    qScopeGuard([wasEnabled] { Feature::enable_feature("editor-enhancements", wasEnabled); });
+
+  Feature::enable_feature("editor-enhancements", false);
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
+  Feature::enable_feature("editor-enhancements", true);
+  QVERIFY(Feature::ExperimentalEditorEnhancements.is_enabled());
 }
 
 void TestMainWindow::checkKeywordCompletionRemainsAvailable()
@@ -104,14 +116,21 @@ void TestMainWindow::checkKeywordCompletionRemainsAvailable()
   restoreWindowInitialState();
   auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
   QVERIFY(editor);
-  QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());
+
+  // This covers behaviour with the feature off, so turn it off rather than assume:
+  // it persists in QSettings and may be on from dogfooding.
+  const bool wasEnabled = Feature::ExperimentalEditorEnhancements.is_enabled();
+  const auto restore =
+    qScopeGuard([wasEnabled] { Feature::enable_feature("editor-enhancements", wasEnabled); });
+  Feature::enable_feature("editor-enhancements", false);
+
   editor->setupAutoComplete();
 
   // Language keywords come from Builtins::keywordList, not from the module/function
   // registries, and must keep completing with the experimental feature disabled.
   editor->setPlainText("els");
   editor->setCursorPosition(0, 3);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->toPlainText(), QString("else"));
 }
@@ -128,13 +147,13 @@ void TestMainWindow::checkCallableCompletionAddsStructure()
 
   editor->setPlainText("cub");
   editor->setCursorPosition(0, 3);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->toPlainText(), QString("cube();"));
 
   editor->setPlainText("translat");
   editor->setCursorPosition(0, 8);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->toPlainText(), QString("translate()"));
 }
@@ -168,7 +187,7 @@ void TestMainWindow::checkUserModuleCompletionAddsStructure()
   editor->correctUserVarNamesForCompletionFromSourceFile(parsed, true, true, true);
 
   editor->setCursorPosition(2, 4);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QVERIFY2(editor->toPlainText().endsWith("wrapper()"),
            qPrintable("got: " + QString(editor->toPlainText()).replace("\n", "\\n")));
@@ -179,7 +198,7 @@ void TestMainWindow::checkUserModuleCompletionAddsStructure()
   editor->correctUserVarNamesForCompletionFromSourceFile(nullptr, true, true, true);
   editor->setPlainText(declarations + "wrap");
   editor->setCursorPosition(2, 4);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QVERIFY2(
     editor->toPlainText().endsWith("wrapper()"),
@@ -198,7 +217,7 @@ void TestMainWindow::checkCompletionReusesExistingPunctuation()
   const auto complete = [editor](const QString& text, int col) {
     editor->setPlainText(text);
     editor->setCursorPosition(0, col);
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
   };
@@ -246,7 +265,7 @@ void TestMainWindow::checkCompletionFiltersByGrammarContext()
     editor->setPlainText(text);
     const QStringList lines = text.split('\n');
     editor->setCursorPosition(lines.size() - 1, lines.last().size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
   };
@@ -264,8 +283,11 @@ void TestMainWindow::checkCompletionFiltersByGrammarContext()
   QCOMPARE(complete("x = sq"), QString("x = sqrt()"));
   QCOMPARE(complete("sq"), QString("square();"));
 
-  // A function is not offered where a child module is required.
-  QCOMPARE(complete("translate([1,0,0]) sqr"), QString("translate([1,0,0]) sqr\t"));
+  // A function is not offered where a child module is required. "sqr" reaches the
+  // module square as a subsequence, which is legitimate here; what must not happen
+  // is the function sqrt being offered in child position.
+  const QString inChildPosition = complete("translate([1,0,0]) sqr");
+  QVERIFY2(!inChildPosition.contains("sqrt"), qPrintable("offered a function: " + inChildPosition));
 
   // A transform's child position does offer modules.
   QCOMPARE(complete("translate([1,0,0]) cub"), QString("translate([1,0,0]) cube();"));
@@ -287,7 +309,7 @@ void TestMainWindow::checkNamedParameterCompletion()
   const auto complete = [editor](const QString& text) {
     editor->setPlainText(text);
     editor->setCursorPosition(0, text.size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
   };
@@ -323,7 +345,7 @@ void TestMainWindow::checkCompletionIsCaseInsensitive()
   const auto complete = [editor](const QString& text) {
     editor->setPlainText(text);
     editor->setCursorPosition(0, text.size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
   };
@@ -358,7 +380,7 @@ void TestMainWindow::checkCompletionRanking()
     editor->setPlainText(declarations + typed);
     const QStringList lines = (declarations + typed).split('\n');
     editor->setCursorPosition(lines.size() - 1, lines.last().size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     if (navigate) navigate();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText().mid(declarations.size());
@@ -371,21 +393,20 @@ void TestMainWindow::checkCompletionRanking()
   // The override must not trap the user: arrowing down still reaches the other
   // candidate. Without releasing on navigation the ranked choice would be forced
   // back on every keypress.
-  // (The sorted list is [cube, cubz] and the highlight has been forced to cubz,
-  // the last entry, so Up is the move that goes anywhere.)
+  // The list is shown in our order now, so the ranked choice is the first entry and
+  // Down is the move that goes anywhere.
   // The override must not trap the user: arrowing away from the ranked choice
   // reaches whatever they select. Asserted as an invariant rather than against a
   // particular neighbour, because the list's contents change as candidate kinds
   // are added - argument shapes already inserted themselves between these two.
-  const QString navigated = complete("cub", [editor] { QTest::keyClick(editor->qsci, Qt::Key_Up); });
+  const QString navigated = complete("cub", [editor] { QTest::keyClick(editor->qsci, Qt::Key_Down); });
   QVERIFY2(navigated != "cubz();",
            qPrintable("navigation did not release the ranked override; got: " + navigated));
   QVERIFY2(navigated.startsWith("cube"), qPrintable("unexpected candidate: " + navigated));
 
-  // A subsequence-only match cannot be offered through this path: Scintilla
-  // dismisses the list when nothing in it starts with the typed word, so there
-  // is nothing left to select. Candidates are prefix-filtered for that reason.
-  QCOMPARE(complete("lex"), QString("lex\t"));
+  // A subsequence-only match is reachable now that the popup is a user list: we
+  // choose the entries, so Scintilla never has to match the typed word.
+  QCOMPARE(complete("lex"), QString("linear_extrude()"));
 }
 
 void TestMainWindow::checkUsedLibrarySymbolsAreOffered()
@@ -423,7 +444,7 @@ void TestMainWindow::checkUsedLibrarySymbolsAreOffered()
     editor->setPlainText(declarations + typed);
     const QStringList lines = (declarations + typed).split('\n');
     editor->setCursorPosition(lines.size() - 1, lines.last().size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText().mid(declarations.size());
   };
@@ -449,7 +470,7 @@ void TestMainWindow::checkArgumentShapeCompletion()
   const auto complete = [editor](const QString& typed, int downs = 0) {
     editor->setPlainText(typed);
     editor->setCursorPosition(0, typed.size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     for (int i = 0; i < downs; ++i) QTest::keyClick(editor->qsci, Qt::Key_Down);
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
@@ -460,15 +481,15 @@ void TestMainWindow::checkArgumentShapeCompletion()
 
   // The seeded shape sits directly below it, and is inserted verbatim - complete,
   // valid, and a no-op until a field is edited.
-  QCOMPARE(complete("transl", 1), QString("translate([0,0,0])"));
+  QCOMPARE(complete("transl", 1), QString("translate([0, 0, 0])"));
 
   // Nothing is appended to a shape: no second parenthesis, no stray semicolon.
-  QCOMPARE(complete("scal", 1), QString("scale([1,1,1])"));
+  QCOMPARE(complete("scal", 1), QString("scale([1, 1, 1])"));
 
   // mirror is seeded too: a zero vector is a no-op, and one digit gives the
   // mirror that was actually wanted.
   QCOMPARE(complete("mirro"), QString("mirror()"));
-  QCOMPARE(complete("mirro", 1), QString("mirror([0,0,0])"));
+  QCOMPARE(complete("mirro", 1), QString("mirror([0, 0, 0])"));
 }
 
 void TestMainWindow::checkSnippetFieldTraversal()
@@ -483,23 +504,23 @@ void TestMainWindow::checkSnippetFieldTraversal()
   // Accept the seeded shape, one entry below the bare structure.
   editor->setPlainText("transl");
   editor->setCursorPosition(0, 6);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Down);
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
-  QCOMPARE(editor->toPlainText(), QString("translate([0,0,0])"));
+  QCOMPARE(editor->toPlainText(), QString("translate([0, 0, 0])"));
 
   // The first field is selected, so typing replaces its seeded value outright.
   QVERIFY(editor->snippetSessionActive());
   QCOMPARE(editor->qsci->selectedText(), QString("0"));
   QTest::keyClicks(editor->qsci, "5");
-  QCOMPARE(editor->toPlainText(), QString("translate([5,0,0])"));
+  QCOMPARE(editor->toPlainText(), QString("translate([5, 0, 0])"));
 
   // Tab steps to the next field - and the marks must have survived the edit,
   // which is why they are Scintilla indicators rather than stored offsets.
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->qsci->selectedText(), QString("0"));
   QTest::keyClicks(editor->qsci, "12");
-  QCOMPARE(editor->toPlainText(), QString("translate([5,12,0])"));
+  QCOMPARE(editor->toPlainText(), QString("translate([5, 12, 0])"));
 
   // Shift-Tab goes back to the field just edited.
   QTest::keyClick(editor->qsci, Qt::Key_Backtab);
@@ -518,6 +539,78 @@ void TestMainWindow::checkSnippetFieldTraversal()
   const QString before = editor->toPlainText();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QVERIFY2(editor->toPlainText() != before, "Tab no longer indents once the session has ended");
+}
+
+void TestMainWindow::checkCaretAndTerminatorFromRealUse()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  const auto completeWord = [editor](const QString& typed, int downs = 0) {
+    editor->setPlainText(typed);
+    editor->setCursorPosition(0, typed.size());
+    editor->triggerCompletion();
+    for (int i = 0; i < downs; ++i) QTest::keyClick(editor->qsci, Qt::Key_Down);
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    int line = -1, col = -1;
+    editor->qsci->getCursorPosition(&line, &col);
+    return QPair<QString, int>(editor->toPlainText(), col);
+  };
+
+  // Typing the whole word and accepting must leave the caret between the
+  // parentheses, ready for arguments - not after them.
+  const auto whole = completeWord("translate");
+  QCOMPARE(whole.first, QString("translate()"));
+  QCOMPARE(whole.second, 10);  // translate(|)
+
+  // Same for a partially typed word.
+  const auto partial = completeWord("transl");
+  QCOMPARE(partial.first, QString("translate()"));
+  QCOMPARE(partial.second, 10);
+
+  // A leaf module's seeded shape terminates the statement, exactly as its bare
+  // structure does. cube() completes as cube(); so cube([1,1,1]) must too.
+  const auto shape = completeWord("cub", 1);
+  QCOMPARE(shape.first, QString("cube([1, 1, 1]);"));
+
+  // A child module's shape must not be terminated: something follows it.
+  const auto childShape = completeWord("transl", 1);
+  QCOMPARE(childShape.first, QString("translate([0, 0, 0])"));
+}
+
+void TestMainWindow::checkTypingOpensTheCompletionList()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  // Everything else drives the popup through triggerCompletion(). This is the path
+  // a person actually takes: QScintilla's own trigger is switched off while the
+  // popup is ours, so typing has to open it via SCN_CHARADDED.
+  editor->setPlainText("");
+  editor->setCursorPosition(0, 0);
+  editor->qsci->setFocus();
+  QTest::keyClicks(editor->qsci, "transl");
+  QVERIFY2(editor->qsci->isListActive(), "typing did not open the completion list");
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->toPlainText(), QString("translate()"));
+
+  // And the spacing of a seeded shape survives insertion, which is the whole point
+  // of driving a user list: QScintilla trims autocompletion entries at their first
+  // space, but not user-list entries.
+  editor->setPlainText("");
+  editor->setCursorPosition(0, 0);
+  QTest::keyClicks(editor->qsci, "transl");
+  QTest::keyClick(editor->qsci, Qt::Key_Down);
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->toPlainText(), QString("translate([0, 0, 0])"));
 }
 
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
