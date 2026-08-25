@@ -42,8 +42,7 @@ void TestMainWindow::checkOpenTabPropagateToWindow()
 {
   restoreWindowInitialState();
 
-  QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+  QString filename = fixturePath("basic-ux/empty.scad");
 
   // When we open a new file,
   window->tabManager->open(filename);
@@ -51,7 +50,7 @@ void TestMainWindow::checkOpenTabPropagateToWindow()
   // The window title must also have the name of open file
   QCOMPARE(window->windowTitle(), QFileInfo(filename).fileName());
 
-  filename = QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty2.scad";
+  filename = fixturePath("basic-ux/empty2.scad");
 
   // When we open a new file,
   window->tabManager->open(filename);
@@ -549,8 +548,7 @@ void TestMainWindow::checkSaveToShouldUpdateWindowTitle()
 {
   restoreWindowInitialState();
 
-  QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+  QString filename = fixturePath("basic-ux/empty.scad");
 
   // When we open a new file,
   window->tabManager->open(filename);
