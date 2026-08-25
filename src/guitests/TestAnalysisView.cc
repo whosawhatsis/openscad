@@ -99,8 +99,7 @@ void TestAnalysisView::checkModesChangeTheRender()
 {
   restoreWindowInitialState();
 
-  const QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+  const QString filename = fixturePath("basic-ux/empty.scad");
   window->tabManager->open(filename);
 
   window->viewActionAnalysisViewDefault->trigger();
@@ -168,8 +167,7 @@ void TestAnalysisView::checkPhongComposesWithEdges()
 {
   restoreWindowInitialState();
 
-  const QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+  const QString filename = fixturePath("basic-ux/empty.scad");
   window->tabManager->open(filename);
   window->viewActionAnalysisViewPhong->trigger();
   window->viewActionShowEdges->setChecked(false);
@@ -177,8 +175,7 @@ void TestAnalysisView::checkPhongComposesWithEdges()
   const QImage phong = grabViewport(window);
 
   window->viewActionShowEdges->setChecked(true);
-  QVERIFY2(!sameRender(grabViewport(window), phong),
-           "Show Edges does not composite over Phong shading");
+  QVERIFY2(!sameRender(grabViewport(window), phong), "Show Edges does not composite over Phong shading");
 
   window->viewActionShowEdges->setChecked(false);
   QVERIFY2(sameRender(grabViewport(window), phong),
