@@ -226,7 +226,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         }
 
         Color4f color;
-        if (getShaderColor(colormode, c, color)) {
+        if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
           last_color = color;
         }
 
@@ -299,7 +299,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         }
 
         Color4f color;
-        if (getShaderColor(colormode, c, color)) {
+        if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
           last_color = color;
         }
 

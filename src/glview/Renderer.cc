@@ -1,4 +1,6 @@
 #include "glview/Renderer.h"
+#include "core/ColorUtil.h"
+#include "core/Settings.h"
 #include "geometry/linalg.h"
 #include "glview/ShaderUtils.h"
 #include "core/Selection.h"
@@ -136,11 +138,32 @@ bool Renderer::getColorSchemeColor(Renderer::ColorMode colormode, Color4f& outco
 bool Renderer::getShaderColor(Renderer::ColorMode colormode, const Color4f& object_color,
                               Color4f& outcolor) const
 {
+  return getShaderColor(colormode, object_color, "", outcolor);
+}
+
+bool Renderer::getShaderColor(Renderer::ColorMode colormode, const Color4f& object_color,
+                              const std::string& materialName, Color4f& outcolor) const
+{
   // If an object was colored, use any set components from that color, except in pure highlight mode
   if ((colormode == ColorMode::BACKGROUND || colormode != ColorMode::HIGHLIGHT)) {
     if (object_color.hasRgb()) outcolor.setRgb(object_color.r(), object_color.g(), object_color.b());
     if (object_color.hasAlpha()) outcolor.setAlpha(object_color.a());
     if (outcolor.isValid()) return true;
+  }
+
+  // A named material the model gave no colour takes its default from Preferences.
+  // This sits between the object's own colour and the colour scheme because that
+  // is exactly what it is: an extension of the colour scheme, for display only.
+  // It is deliberately unreachable from any exporter - see State::materialName().
+  if (!materialName.empty() && colormode == ColorMode::MATERIAL) {
+    const auto preference = Settings::SettingsMaterials::defaultColor(materialName);
+    if (!preference.empty()) {
+      if (const auto parsed = OpenSCAD::parse_color(preference)) {
+        if (!outcolor.hasRgb()) outcolor.setRgb(parsed->r(), parsed->g(), parsed->b());
+        if (!outcolor.hasAlpha()) outcolor.setAlpha(parsed->a());
+        if (outcolor.isValid()) return true;
+      }
+    }
   }
 
   // Fill in missing components with the color from the colorscheme
@@ -186,6 +209,12 @@ bool Renderer::getColorSchemeColor(Renderer::ColorMode colormode, Color4f& outco
 }
 bool Renderer::getShaderColor(Renderer::ColorMode colormode, const Color4f& object_color,
                               Color4f& outcolor) const
+{
+  return false;
+}
+
+bool Renderer::getShaderColor(Renderer::ColorMode colormode, const Color4f& object_color,
+                              const std::string& materialName, Color4f& outcolor) const
 {
   return false;
 }

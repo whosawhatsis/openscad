@@ -181,7 +181,7 @@ void ThrownTogetherRenderer::createChainObject(VertexStateContainer& container, 
     highlight_mode || background_mode || type == OpenSCADOperator::DIFFERENCE || leaf_color.isValid();
   if (highlight_mode || background_mode) {
     const ColorMode colormode = getColorMode(csgobj.flags, highlight_mode, background_mode, false, type);
-    getShaderColor(colormode, leaf_color, color);
+    getShaderColor(colormode, leaf_color, csgobj.leaf->materialName, color);
 
     add_shader_pointers(vbo_builder, shaderinfo);
 
@@ -192,7 +192,7 @@ void ThrownTogetherRenderer::createChainObject(VertexStateContainer& container, 
     }
   } else {  // root mode
     ColorMode colormode = getColorMode(csgobj.flags, highlight_mode, background_mode, false, type);
-    getShaderColor(colormode, leaf_color, color);
+    getShaderColor(colormode, leaf_color, csgobj.leaf->materialName, color);
 
     add_shader_pointers(vbo_builder, shaderinfo);
 
@@ -218,7 +218,7 @@ void ThrownTogetherRenderer::createChainObject(VertexStateContainer& container, 
     color.setRgb(1.0f, 0.0f, 1.0f);  // override leaf color on front/back error
 
     colormode = getColorMode(csgobj.flags, highlight_mode, background_mode, true, type);
-    getShaderColor(colormode, leaf_color, color);
+    getShaderColor(colormode, leaf_color, csgobj.leaf->materialName, color);
 
     add_shader_pointers(vbo_builder, shaderinfo);
 
