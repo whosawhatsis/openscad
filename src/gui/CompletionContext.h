@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 
 /**
  * @brief What the grammar allows at the caret.
@@ -29,6 +30,8 @@ struct CaretContext {
   /// Callable whose argument list encloses the caret, empty when none does.
   /// Reports the innermost call, which is the one an argument belongs to.
   QString enclosingCall;
+  /// Names already given as "name =" in that same argument list.
+  QStringList suppliedArguments;
 };
 
 /**

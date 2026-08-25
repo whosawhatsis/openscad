@@ -1339,6 +1339,7 @@ set(GUI_SOURCES
   src/gui/SettingsWriter.cc
   src/gui/TabManager.cc
   src/gui/CompletionContext.cc
+  src/gui/CompletionRanking.cc
   src/gui/UserSymbols.cc
   src/gui/UIUtils.cc
   src/gui/WindowManager.cc

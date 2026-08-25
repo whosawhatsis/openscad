@@ -23,7 +23,12 @@ CaretContext classifyCaret(const QString& before)
   QChar last;  // last significant character, null while none has been seen
   // Open brackets, and for '(' the identifier that preceded it - empty when the
   // parenthesis was grouping rather than calling.
-  QList<QPair<QChar, QString>> open;
+  struct Bracket {
+    QChar opener;
+    QString callee;
+    QStringList supplied;
+  };
+  QList<Bracket> open;
   QString pendingWord;  // identifier most recently completed, candidate callee
   bool inLineComment = false;
   bool inBlockComment = false;
@@ -72,9 +77,14 @@ CaretContext classifyCaret(const QString& before)
       pendingWord += c;
     } else {
       if (c == '(' || c == '[' || c == '{') {
-        open.append({c, c == '(' ? pendingWord : QString()});
+        open.append({c, c == '(' ? pendingWord : QString(), {}});
       } else if (c == ')' || c == ']' || c == '}') {
         if (!open.isEmpty()) open.removeLast();
+      } else if (c == '=' && next != '=' && isIdentifierChar(last) && !pendingWord.isEmpty() &&
+                 !open.isEmpty() && open.last().opener == '(') {
+        // "name =" supplies that argument. Requiring the previous significant
+        // character to be part of an identifier rules out ==, !=, <= and >=.
+        open.last().supplied << pendingWord;
       }
       pendingWord.clear();
     }
@@ -92,8 +102,9 @@ CaretContext classifyCaret(const QString& before)
 
   // The innermost still-open '(' that followed a name is the call being written.
   for (int i = open.size() - 1; i >= 0; --i) {
-    if (open.at(i).first == '(') {
-      result.enclosingCall = open.at(i).second;
+    if (open.at(i).opener == '(') {
+      result.enclosingCall = open.at(i).callee;
+      result.suppliedArguments = open.at(i).supplied;
       break;
     }
   }

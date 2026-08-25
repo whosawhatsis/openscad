@@ -82,3 +82,26 @@ TEST_CASE("the enclosing call is identified for named arguments", "[completion]"
   // Whitespace between the name and its parenthesis is still a call.
   CHECK(call("cube (") == "cube");
 }
+
+TEST_CASE("arguments already given at the call site are known", "[completion]")
+{
+  const auto supplied = [](const char *before) {
+    return classifyCaret(QString(before)).suppliedArguments;
+  };
+
+  CHECK(supplied("cube(") == QStringList{});
+  CHECK(supplied("cube(size = 1, ") == QStringList{"size"});
+  CHECK(supplied("cylinder(h = 1, r = 2, ") == QStringList{"h", "r"});
+
+  // Only the innermost call's own arguments count.
+  CHECK(supplied("cube(size = max(a = 1, ") == QStringList{"a"});
+  CHECK(supplied("cube(size = max(1, 2), ") == QStringList{"size"});
+
+  // Comparisons are not assignments.
+  CHECK(supplied("f(x == 1, ") == QStringList{});
+  CHECK(supplied("f(x >= 1, ") == QStringList{});
+  CHECK(supplied("f(x != 1, ") == QStringList{});
+
+  // Positional arguments supply no names.
+  CHECK(supplied("cube(1, ") == QStringList{});
+}
