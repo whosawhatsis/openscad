@@ -25,7 +25,8 @@ struct CompletionCandidate {
  * @brief How well a candidate answers a query. Higher is better; negative is no match.
  *
  * Case-insensitive throughout, with exact case preferred as a tie-break. An exact
- * name beats a prefix, which beats a non-contiguous subsequence.
+ * name beats a prefix; anything that is not a prefix does not match at all. See
+ * the TODO in the implementation for why subsequence matching is deferred.
  */
 int completionMatchScore(const QString& candidate, const QString& query);
 

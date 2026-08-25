@@ -16,6 +16,7 @@
 #include "core/parsersettings.h"
 #include "Feature.h"
 #include "gui/CompletionContext.h"
+#include "gui/CompletionRanking.h"
 #include "gui/UserSymbols.h"
 #include "gui/ScintillaEditor.h"
 #include "gui/UserSymbols.h"
@@ -232,12 +233,42 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
       QsciScintilla::SCI_AUTOCSETCASEINSENSITIVEBEHAVIOUR,
       static_cast<unsigned long>(QsciScintilla::SC_CASEINSENSITIVEBEHAVIOUR_RESPECTCASE));
 
-    for (const auto& item : userCompletions) {
-      if (item.label().startsWith(c, Qt::CaseInsensitive) && kindFitsContext(item.kind(), where) &&
-          !list.contains(item.menuText())) {
-        list << item.menuText();
+    QList<CompletionCandidate> candidates;
+
+    if (where == CompletionContext::ArgumentName && !caret.enclosingCall.isEmpty()) {
+      const bool userDefined = userParameters.contains(caret.enclosingCall);
+      const QStringList parameters = userDefined ? userParameters.value(caret.enclosingCall)
+                                                 : builtinParameters.value(caret.enclosingCall);
+      for (const QString& parameter : parameters) {
+        candidates.append({CompletionItem(parameter, CompletionItem::Kind::NamedParameter),
+                           userDefined ? CompletionSource::CurrentFile : CompletionSource::Builtin,
+                           caret.suppliedArguments.contains(parameter)});
       }
     }
+    for (const auto& item : completions) {
+      if (kindFitsContext(item.kind(), where)) {
+        candidates.append({item, CompletionSource::Builtin, false});
+      }
+    }
+    for (const auto& item : userCompletions) {
+      if (kindFitsContext(item.kind(), where)) {
+        candidates.append({item, CompletionSource::CurrentFile, false});
+      }
+    }
+
+    list.clear();
+    for (const auto& candidate : rankCandidates(candidates, c)) {
+      const QString text = candidate.item.menuText();
+      if (!list.contains(text)) list << text;
+    }
+
+    // QScintilla sorts this list alphabetically before handing it to Scintilla
+    // (qsciscintilla.cpp, "wlist.sort()" just before SCI_AUTOCSHOW), so the order
+    // above does not survive and SCI_AUTOCSETORDER cannot help - the sort happens
+    // above that setting. Remember the best candidate instead and move the
+    // highlight onto it once the popup exists; ScintillaEditor drives that from
+    // SCN_AUTOCSELECTIONCHANGE.
+    preferredSelection = list.value(0);
     return;
   }
 
@@ -253,6 +284,21 @@ void ScadApi::autoCompleteFunctions(const QStringList& context, QStringList& lis
 
 void ScadApi::autoCompletionSelected(const QString& /*selection*/)
 {
+}
+
+void ScadApi::applyPreferredSelection()
+{
+  if (preferredSelection.isEmpty()) return;
+
+  // Scintilla re-syncs the highlight to the typed word whenever the list changes,
+  // so this has to hold its ground rather than fire once. The guard stops the
+  // notification our own call provokes from recursing.
+  static bool applying = false;
+  if (applying) return;
+  applying = true;
+  editor->qsci->SendScintilla(QsciScintilla::SCI_AUTOCSELECT, 0UL,
+                              preferredSelection.toUtf8().constData());
+  applying = false;
 }
 
 void ScadApi::completeSelection(const QString& selection)

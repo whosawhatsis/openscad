@@ -2,22 +2,6 @@
 
 #include <algorithm>
 
-namespace {
-
-// Every character of the query appears in the candidate, in order.
-bool isSubsequence(const QString& candidate, const QString& query)
-{
-  int c = 0;
-  for (const QChar q : query) {
-    while (c < candidate.size() && candidate.at(c).toLower() != q.toLower()) ++c;
-    if (c == candidate.size()) return false;
-    ++c;
-  }
-  return true;
-}
-
-}  // namespace
-
 int completionMatchScore(const QString& candidate, const QString& query)
 {
   if (query.isEmpty()) return 0;
@@ -26,7 +10,15 @@ int completionMatchScore(const QString& candidate, const QString& query)
   if (candidate.compare(query, Qt::CaseInsensitive) == 0) return 90;
   if (candidate.startsWith(query, Qt::CaseSensitive)) return 80;
   if (candidate.startsWith(query, Qt::CaseInsensitive)) return 70;
-  if (isSubsequence(candidate, query)) return 40;
+
+  // TODO: non-contiguous subsequence matching ("lex" -> linear_extrude) is
+  // deliberately not implemented. It cannot be delivered through QScintilla's
+  // AcsAPIs path: Scintilla dismisses the popup outright when nothing in the list
+  // starts with the typed word, so a subsequence candidate removes the popup
+  // rather than adding to it. Reaching it needs the list driven by
+  // QsciScintilla::showUserList(), which does not sort and does not prefix-match -
+  // a rework of triggering, prefix replacement and call tips. Scoring it here in
+  // the meantime would only produce candidates the caller has to throw away.
   return -1;
 }
 

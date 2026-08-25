@@ -24,24 +24,27 @@ QStringList order(QList<CompletionCandidate> candidates, const QString& query)
 
 TEST_CASE("match quality orders candidates before anything else", "[completion]")
 {
-  // An exact match beats a prefix match, which beats a mere subsequence.
-  // ("string_split" matches s...i non-contiguously; "sphere" has no 'i' at all.)
-  CHECK(order({cand("string_split"), cand("sin"), cand("si")}, "si") ==
-        QStringList{"si", "sin", "string_split"});
+  // An exact match beats a prefix match.
+  CHECK(order({cand("sin"), cand("si")}, "si") == QStringList{"si", "sin"});
   CHECK(order({cand("sphere")}, "si").isEmpty());
 
   // Case matters only as a tie-break: both match, the exact case first.
   CHECK(order({cand("Size"), cand("size")}, "size") == QStringList{"size", "Size"});
 
-  // A prefix beats a subsequence even when the subsequence is shorter.
-  CHECK(order({cand("linear_extrude"), cand("len")}, "le") == QStringList{"len", "linear_extrude"});
+  // Only prefixes match at all, so a candidate that merely contains the letters
+  // is dropped rather than ranked below.
+  CHECK(order({cand("linear_extrude"), cand("len")}, "le") == QStringList{"len"});
 
   // Non-matches are dropped entirely.
   CHECK(order({cand("cube"), cand("sphere")}, "zz").isEmpty());
 
-  // Subsequence matching is case-insensitive and need not be contiguous.
-  CHECK(order({cand("linear_extrude")}, "lex") == QStringList{"linear_extrude"});
-  CHECK(order({cand("linear_extrude")}, "LEX") == QStringList{"linear_extrude"});
+  // Prefix matching is case-insensitive.
+  CHECK(order({cand("linear_extrude")}, "LIN") == QStringList{"linear_extrude"});
+
+  // Subsequence matching is deferred, not merely unranked - see the TODO in
+  // CompletionRanking.cc. "lex" is a subsequence of linear_extrude and must not
+  // match, because a candidate the popup cannot select is worse than none.
+  CHECK(order({cand("linear_extrude")}, "lex").isEmpty());
 }
 
 TEST_CASE("equal matches fall back to source, then supplied, then alphabet", "[completion]")

@@ -15,6 +15,7 @@ private slots:
   void checkCompletionFiltersByGrammarContext();
   void checkNamedParameterCompletion();
   void checkCompletionIsCaseInsensitive();
+  void checkCompletionRanking();
   void checkEditorEnhancementsFlagNotLeaked();
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();

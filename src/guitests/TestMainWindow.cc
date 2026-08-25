@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <QTest>
 
+#include <functional>
+
 #include "Feature.h"
 #include "core/SourceFile.h"
 #include "openscad.h"
@@ -277,6 +279,48 @@ void TestMainWindow::checkCompletionIsCaseInsensitive()
   // Case-insensitivity does not reach past the grammar filter: a module is still
   // not offered where a value belongs.
   QCOMPARE(complete("x = CUB"), QString("x = CUB\t"));
+}
+
+void TestMainWindow::checkCompletionRanking()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  const QString declarations = "module cubz() { cube(); }\n";
+  SourceFile *parsed = nullptr;
+  QVERIFY(parse(parsed, declarations.toStdString(), "<test>", "<test>", 0));
+  editor->correctUserVarNamesForCompletionFromSourceFile(parsed, true, true, true);
+
+  const auto complete = [editor, &declarations](const QString& typed,
+                                                std::function<void()> navigate = {}) {
+    editor->setPlainText(declarations + typed);
+    const QStringList lines = (declarations + typed).split('\n');
+    editor->setCursorPosition(lines.size() - 1, lines.last().size());
+    editor->qsci->autoCompleteFromAPIs();
+    if (navigate) navigate();
+    QTest::keyClick(editor->qsci, Qt::Key_Tab);
+    return editor->toPlainText().mid(declarations.size());
+  };
+
+  // Equal match quality, so the current file's declaration outranks the builtin -
+  // even though "cube" sorts before "cubz" and QScintilla sorts the list.
+  QCOMPARE(complete("cub"), QString("cubz();"));
+
+  // The override must not trap the user: arrowing down still reaches the other
+  // candidate. Without releasing on navigation the ranked choice would be forced
+  // back on every keypress.
+  // (The sorted list is [cube, cubz] and the highlight has been forced to cubz,
+  // the last entry, so Up is the move that goes anywhere.)
+  QCOMPARE(complete("cub", [editor] { QTest::keyClick(editor->qsci, Qt::Key_Up); }), QString("cube();"));
+
+  // A subsequence-only match cannot be offered through this path: Scintilla
+  // dismisses the list when nothing in it starts with the typed word, so there
+  // is nothing left to select. Candidates are prefix-filtered for that reason.
+  QCOMPARE(complete("lex"), QString("lex\t"));
 }
 
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()

@@ -221,6 +221,10 @@ ScintillaEditor::ScintillaEditor(QWidget *parent) : EditorInterface(parent)
   connect(qsci, &QsciScintilla::textChanged, this, &ScintillaEditor::contentsChanged);
   connect(qsci, &QsciScintilla::modificationChanged, this, &ScintillaEditor::fireModificationChanged);
   connect(qsci, &QsciScintilla::userListActivated, this, &ScintillaEditor::onUserListSelected);
+  connect(qsci, &QsciScintilla::SCN_AUTOCSELECTIONCHANGE, this,
+          [this](const char *, int, int) { api->applyPreferredSelection(); });
+  connect(qsci, &QsciScintilla::SCN_AUTOCCANCELLED, this,
+          [this]() { api->releasePreferredSelection(); });
   connect(qsci, &QsciScintilla::SCN_AUTOCCOMPLETED, this, [this](const char *selection, int, int, int) {
     api->completeSelection(QString::fromUtf8(selection));
   });
@@ -1033,6 +1037,20 @@ bool ScintillaEditor::eventFilter(QObject *obj, QEvent *e)
     auto keyEvent = static_cast<QKeyEvent *>(e);
     if (keyEvent->key() == Qt::Key_Escape) {
       emit escapePressed();
+    }
+    // Once the user moves through the list themselves, stop overriding the
+    // highlight - otherwise the ranked choice would be forced back on every
+    // keypress and the list could not be navigated at all.
+    if (qsci->isListActive()) {
+      switch (keyEvent->key()) {
+      case Qt::Key_Up:
+      case Qt::Key_Down:
+      case Qt::Key_PageUp:
+      case Qt::Key_PageDown:
+      case Qt::Key_Home:
+      case Qt::Key_End:      api->releasePreferredSelection(); break;
+      default:               break;
+      }
     }
   }
   if (QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier) ||
