@@ -105,3 +105,21 @@ TEST_CASE("arguments already given at the call site are known", "[completion]")
   // Positional arguments supply no names.
   CHECK(supplied("cube(1, ") == QStringList{});
 }
+
+TEST_CASE("a use or include path is not a comparison", "[completion]")
+{
+  // "use <lib.scad>" ends in '>', which must not be read as greater-than - doing so
+  // classifies the whole rest of the file as expression position and hides every
+  // module from completion.
+  CHECK(ctx("use <lib.scad>\n") == CompletionContext::Statement);
+  CHECK(ctx("include <lib.scad>\n") == CompletionContext::Statement);
+  CHECK(ctx("use <dir/lib.scad>\ncub") == CompletionContext::Statement);
+  CHECK(ctx("use <a.scad>\ninclude <b.scad>\n") == CompletionContext::Statement);
+
+  // A path is not an argument list either.
+  CHECK(call("use <lib.scad>\n") == QString());
+
+  // A genuine comparison still reads as one.
+  CHECK(ctx("x = a > ") == CompletionContext::Expression);
+  CHECK(ctx("x = use > ") == CompletionContext::Expression);
+}

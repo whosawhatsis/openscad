@@ -71,6 +71,16 @@ CaretContext classifyCaret(const QString& before)
     }
     if (c.isSpace()) continue;
 
+    // "use <path>" and "include <path>" are statements, not comparisons. Without
+    // this the trailing '>' reads as greater-than and everything after an import
+    // is classified as expression position, hiding every module from completion.
+    if (c == '<' && (pendingWord == "use" || pendingWord == "include")) {
+      while (i < end && before.at(i) != '>') ++i;
+      last = ';';
+      pendingWord.clear();
+      continue;
+    }
+
     if (isIdentifierChar(c)) {
       // Build up the identifier so a following '(' knows what is being called.
       if (!isIdentifierChar(last) || last.isNull()) pendingWord.clear();
