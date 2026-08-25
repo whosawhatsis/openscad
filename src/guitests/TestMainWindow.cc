@@ -415,6 +415,55 @@ void TestMainWindow::checkArgumentShapeCompletion()
   QCOMPARE(complete("mirro", 1), QString("mirror([0,0,0])"));
 }
 
+void TestMainWindow::checkSnippetFieldTraversal()
+{
+  restoreWindowInitialState();
+  auto *editor = dynamic_cast<ScintillaEditor *>(window->activeEditor);
+  QVERIFY(editor);
+  Feature::enable_feature("editor-enhancements");
+  const auto featureGuard = qScopeGuard([] { Feature::enable_feature("editor-enhancements", false); });
+  editor->setupAutoComplete();
+
+  // Accept the seeded shape, one entry below the bare structure.
+  editor->setPlainText("transl");
+  editor->setCursorPosition(0, 6);
+  editor->qsci->autoCompleteFromAPIs();
+  QTest::keyClick(editor->qsci, Qt::Key_Down);
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->toPlainText(), QString("translate([0,0,0])"));
+
+  // The first field is selected, so typing replaces its seeded value outright.
+  QVERIFY(editor->snippetSessionActive());
+  QCOMPARE(editor->qsci->selectedText(), QString("0"));
+  QTest::keyClicks(editor->qsci, "5");
+  QCOMPARE(editor->toPlainText(), QString("translate([5,0,0])"));
+
+  // Tab steps to the next field - and the marks must have survived the edit,
+  // which is why they are Scintilla indicators rather than stored offsets.
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QCOMPARE(editor->qsci->selectedText(), QString("0"));
+  QTest::keyClicks(editor->qsci, "12");
+  QCOMPARE(editor->toPlainText(), QString("translate([5,12,0])"));
+
+  // Shift-Tab goes back to the field just edited.
+  QTest::keyClick(editor->qsci, Qt::Key_Backtab);
+  QCOMPARE(editor->qsci->selectedText(), QString("5"));
+
+  // Tab past the last field finishes the call and leaves it behind.
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QVERIFY(!editor->snippetSessionActive());
+  int line = -1, col = -1;
+  editor->qsci->getCursorPosition(&line, &col);
+  QCOMPARE(col, editor->toPlainText().size());
+
+  // With no session running, Tab is an ordinary indent again.
+  const QString before = editor->toPlainText();
+  QTest::keyClick(editor->qsci, Qt::Key_Tab);
+  QVERIFY2(editor->toPlainText() != before, "Tab no longer indents once the session has ended");
+}
+
 void TestMainWindow::checkEditorEnhancementsFlagNotLeaked()
 {
   QVERIFY(!Feature::ExperimentalEditorEnhancements.is_enabled());

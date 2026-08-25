@@ -66,7 +66,9 @@ public:
   void beginSnippetSession(int start, const QString& text);
   void endSnippetSession();
   bool moveToSnippetField(bool forward);
-  bool snippetSessionActive() const { return snippetEnd > snippetStart; }
+  bool snippetCallText(QString& text) const;
+  bool nextSnippetField(int from, bool forward, int& fieldStart, int& fieldLength) const;
+  bool snippetSessionActive() const { return snippetActive; }
 
   void correctUserVarNamesForCompletionFromSourceFile(const SourceFile *sourceFile,
                                                       bool flagAutoCompleteIncludeVariables,
@@ -157,11 +159,11 @@ private:
   static const int hyperlinkIndicatorNumber = 10;
   static const int snippetFieldIndicatorNumber = 11;
 
-  // Range of the shape currently being filled in, or an empty range when no
-  // session is running. Scintilla maintains the field marks themselves, as
-  // indicators move with the text they cover.
+  // Where the shape being filled in starts. Its extent and its fields are
+  // recomputed from the text on demand: indicators were tried first and did not
+  // survive an edit here, and re-scanning is both simpler and self-correcting.
   int snippetStart{0};
-  int snippetEnd{0};
+  bool snippetActive{false};
   static const int hyperlinkIndicatorOffset = 100;
 
   // Note:  Marker numbers 25-31 are reserved for line-folding markers.

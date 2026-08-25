@@ -1036,81 +1036,109 @@ QString ScintillaEditor::selectedText()
 void ScintillaEditor::beginSnippetSession(int start, const QString& text)
 {
   endSnippetSession();
-
-  const auto fields = shapeFieldRanges(text);
-  if (fields.isEmpty()) return;
+  if (shapeFieldRanges(text).isEmpty()) return;
 
   snippetStart = start;
-  snippetEnd = start + text.toUtf8().size();
+  snippetActive = true;
 
-  qsci->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, snippetFieldIndicatorNumber);
-  for (const auto& field : fields) {
-    qsci->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
-                        static_cast<unsigned long>(start + field.first),
-                        static_cast<long>(field.second));
+  int fieldStart = 0, fieldLength = 0;
+  if (nextSnippetField(start, true, fieldStart, fieldLength)) {
+    // Select the first field so typing replaces its seeded value outright.
+    qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(fieldStart),
+                        static_cast<long>(fieldStart + fieldLength));
   }
-
-  // Select the first field so typing replaces its seeded value outright.
-  qsci->SendScintilla(QsciScintilla::SCI_SETSEL,
-                      static_cast<unsigned long>(start + fields.first().first),
-                      static_cast<long>(start + fields.first().first + fields.first().second));
 }
 
 void ScintillaEditor::endSnippetSession()
 {
-  if (!snippetSessionActive()) return;
-
-  qsci->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, snippetFieldIndicatorNumber);
-  qsci->SendScintilla(QsciScintilla::SCI_INDICATORCLEARRANGE,
-                      static_cast<unsigned long>(snippetStart),
-                      static_cast<long>(snippetEnd - snippetStart));
-  snippetStart = snippetEnd = 0;
+  snippetActive = false;
+  snippetStart = 0;
 }
 
-// Step to the next or previous marked field. Returns false when there is none in
-// that direction, which ends the session and leaves the caret after the call.
+// Current extent of the call being filled in: from its start to the parenthesis
+// that closes it. Recomputed rather than remembered, because everything between
+// moves as fields are edited.
+bool ScintillaEditor::snippetCallText(QString& text) const
+{
+  if (!snippetActive) return false;
+
+  const QString all = qsci->text();
+  if (snippetStart < 0 || snippetStart >= all.size()) return false;
+
+  int depth = 0;
+  for (int i = snippetStart; i < all.size(); ++i) {
+    const QChar c = all.at(i);
+    if (c == '(') {
+      ++depth;
+    } else if (c == ')') {
+      if (--depth == 0) {
+        text = all.mid(snippetStart, i - snippetStart + 1);
+        return true;
+      }
+    } else if (c == '\n') {
+      return false;  // the call was broken up; the session no longer means anything
+    }
+  }
+  return false;
+}
+
+// Find the field before or after `from`, in document coordinates.
+bool ScintillaEditor::nextSnippetField(int from, bool forward, int& fieldStart, int& fieldLength) const
+{
+  QString call;
+  if (!snippetCallText(call)) return false;
+
+  const auto fields = shapeFieldRanges(call);
+  if (forward) {
+    for (const auto& field : fields) {
+      const int absolute = snippetStart + field.first;
+      if (absolute >= from) {
+        fieldStart = absolute;
+        fieldLength = field.second;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (int i = fields.size() - 1; i >= 0; --i) {
+    const int absolute = snippetStart + fields.at(i).first;
+    // Strictly before: a field whose end coincides with the caret is the one being
+    // left, and Shift-Tab means the previous stop, not this one again.
+    if (absolute + fields.at(i).second < from) {
+      fieldStart = absolute;
+      fieldLength = fields.at(i).second;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Step to the next or previous field. Going forward past the last one finishes the
+// call and leaves the caret after it; going back before the first one stays put.
 bool ScintillaEditor::moveToSnippetField(bool forward)
 {
-  if (!snippetSessionActive()) return false;
+  if (!snippetActive) return false;
 
   const int caret = qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
   const int anchor = qsci->SendScintilla(QsciScintilla::SCI_GETANCHOR);
-  const int from = std::max(caret, anchor);
-  const int to = std::min(caret, anchor);
+  const int from = forward ? std::max(caret, anchor) : std::min(caret, anchor);
 
-  const auto marked = [this](int pos) {
-    return qsci->SendScintilla(QsciScintilla::SCI_INDICATORVALUEAT, snippetFieldIndicatorNumber,
-                               static_cast<long>(pos)) != 0;
-  };
-
-  if (forward) {
-    for (int pos = from; pos < snippetEnd; ++pos) {
-      if (!marked(pos)) continue;
-      const int end = qsci->SendScintilla(QsciScintilla::SCI_INDICATOREND,
-                                          snippetFieldIndicatorNumber, static_cast<long>(pos));
-      qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(pos),
-                          static_cast<long>(end));
-      return true;
-    }
-    // Past the last field: the call is finished, so leave it behind.
-    const int end = snippetEnd;
-    endSnippetSession();
-    qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(end),
-                        static_cast<long>(end));
+  int fieldStart = 0, fieldLength = 0;
+  if (nextSnippetField(from, forward, fieldStart, fieldLength)) {
+    qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(fieldStart),
+                        static_cast<long>(fieldStart + fieldLength));
     return true;
   }
 
-  for (int pos = to - 1; pos >= snippetStart; --pos) {
-    if (!marked(pos)) continue;
-    const int start = qsci->SendScintilla(QsciScintilla::SCI_INDICATORSTART,
-                                          snippetFieldIndicatorNumber, static_cast<long>(pos));
-    const int end = qsci->SendScintilla(QsciScintilla::SCI_INDICATOREND,
-                                        snippetFieldIndicatorNumber, static_cast<long>(pos));
-    qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(start),
-                        static_cast<long>(end));
-    return true;
-  }
-  return true;  // already at the first field: stay put rather than escape backwards
+  if (!forward) return true;  // already at the first field
+
+  QString call;
+  const int end = snippetCallText(call) ? snippetStart + call.size() : from;
+  endSnippetSession();
+  qsci->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(end),
+                      static_cast<long>(end));
+  return true;
 }
 
 bool ScintillaEditor::eventFilter(QObject *obj, QEvent *e)
@@ -1126,6 +1154,17 @@ bool ScintillaEditor::eventFilter(QObject *obj, QEvent *e)
     //   2. step to the next field of a call shape just inserted;
     //   3. indent.
     // Only the middle one is new, and it only applies while a session is running.
+    // A session only means anything while the caret is still inside the call it
+    // belongs to. Clicking or typing elsewhere abandons it, and Tab must go back to
+    // indenting rather than jumping into a call the user has left.
+    if (snippetSessionActive()) {
+      const int caret = qsci->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
+      QString call;
+      if (!snippetCallText(call) || caret < snippetStart || caret > snippetStart + call.size()) {
+        endSnippetSession();
+      }
+    }
+
     if (snippetSessionActive() && !qsci->isListActive()) {
       if (keyEvent->key() == Qt::Key_Escape) {
         endSnippetSession();
