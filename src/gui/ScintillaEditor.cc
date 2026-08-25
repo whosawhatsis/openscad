@@ -1033,6 +1033,11 @@ QString ScintillaEditor::selectedText()
   return qsci->selectedText();
 }
 
+void ScintillaEditor::triggerCompletion()
+{
+  qsci->autoCompleteFromAPIs();
+}
+
 void ScintillaEditor::beginSnippetSession(int start, const QString& text)
 {
   endSnippetSession();

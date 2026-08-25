@@ -74,7 +74,7 @@ void TestMainWindow::checkKeywordCompletionRemainsAvailable()
   // registries, and must keep completing with the experimental feature disabled.
   editor->setPlainText("els");
   editor->setCursorPosition(0, 3);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->toPlainText(), QString("else"));
 }
@@ -91,13 +91,13 @@ void TestMainWindow::checkCallableCompletionAddsStructure()
 
   editor->setPlainText("cub");
   editor->setCursorPosition(0, 3);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->toPlainText(), QString("cube();"));
 
   editor->setPlainText("translat");
   editor->setCursorPosition(0, 8);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->toPlainText(), QString("translate()"));
 }
@@ -131,7 +131,7 @@ void TestMainWindow::checkUserModuleCompletionAddsStructure()
   editor->correctUserVarNamesForCompletionFromSourceFile(parsed, true, true, true);
 
   editor->setCursorPosition(2, 4);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QVERIFY2(editor->toPlainText().endsWith("wrapper()"),
            qPrintable("got: " + QString(editor->toPlainText()).replace("\n", "\\n")));
@@ -142,7 +142,7 @@ void TestMainWindow::checkUserModuleCompletionAddsStructure()
   editor->correctUserVarNamesForCompletionFromSourceFile(nullptr, true, true, true);
   editor->setPlainText(declarations + "wrap");
   editor->setCursorPosition(2, 4);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QVERIFY2(
     editor->toPlainText().endsWith("wrapper()"),
@@ -161,7 +161,7 @@ void TestMainWindow::checkCompletionReusesExistingPunctuation()
   const auto complete = [editor](const QString& text, int col) {
     editor->setPlainText(text);
     editor->setCursorPosition(0, col);
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
   };
@@ -209,7 +209,7 @@ void TestMainWindow::checkCompletionFiltersByGrammarContext()
     editor->setPlainText(text);
     const QStringList lines = text.split('\n');
     editor->setCursorPosition(lines.size() - 1, lines.last().size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
   };
@@ -250,7 +250,7 @@ void TestMainWindow::checkNamedParameterCompletion()
   const auto complete = [editor](const QString& text) {
     editor->setPlainText(text);
     editor->setCursorPosition(0, text.size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
   };
@@ -286,7 +286,7 @@ void TestMainWindow::checkCompletionIsCaseInsensitive()
   const auto complete = [editor](const QString& text) {
     editor->setPlainText(text);
     editor->setCursorPosition(0, text.size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
   };
@@ -321,7 +321,7 @@ void TestMainWindow::checkCompletionRanking()
     editor->setPlainText(declarations + typed);
     const QStringList lines = (declarations + typed).split('\n');
     editor->setCursorPosition(lines.size() - 1, lines.last().size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     if (navigate) navigate();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText().mid(declarations.size());
@@ -386,7 +386,7 @@ void TestMainWindow::checkUsedLibrarySymbolsAreOffered()
     editor->setPlainText(declarations + typed);
     const QStringList lines = (declarations + typed).split('\n');
     editor->setCursorPosition(lines.size() - 1, lines.last().size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText().mid(declarations.size());
   };
@@ -412,7 +412,7 @@ void TestMainWindow::checkArgumentShapeCompletion()
   const auto complete = [editor](const QString& typed, int downs = 0) {
     editor->setPlainText(typed);
     editor->setCursorPosition(0, typed.size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     for (int i = 0; i < downs; ++i) QTest::keyClick(editor->qsci, Qt::Key_Down);
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     return editor->toPlainText();
@@ -446,7 +446,7 @@ void TestMainWindow::checkSnippetFieldTraversal()
   // Accept the seeded shape, one entry below the bare structure.
   editor->setPlainText("transl");
   editor->setCursorPosition(0, 6);
-  editor->qsci->autoCompleteFromAPIs();
+  editor->triggerCompletion();
   QTest::keyClick(editor->qsci, Qt::Key_Down);
   QTest::keyClick(editor->qsci, Qt::Key_Tab);
   QCOMPARE(editor->toPlainText(), QString("translate([0, 0, 0])"));
@@ -495,7 +495,7 @@ void TestMainWindow::checkCaretAndTerminatorFromRealUse()
   const auto completeWord = [editor](const QString& typed, int downs = 0) {
     editor->setPlainText(typed);
     editor->setCursorPosition(0, typed.size());
-    editor->qsci->autoCompleteFromAPIs();
+    editor->triggerCompletion();
     for (int i = 0; i < downs; ++i) QTest::keyClick(editor->qsci, Qt::Key_Down);
     QTest::keyClick(editor->qsci, Qt::Key_Tab);
     int line = -1, col = -1;

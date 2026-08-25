@@ -63,6 +63,11 @@ public:
 
   /// Mark the editable fields of a just-inserted call shape and select the first,
   /// so Tab and Shift-Tab step between them until the call is left behind.
+  /// Open the completion popup. The one entry point, so callers - including the
+  /// GUI tests - do not depend on which of QScintilla's two list mechanisms is in
+  /// use behind it.
+  void triggerCompletion();
+
   void beginSnippetSession(int start, const QString& text);
   void endSnippetSession();
   bool moveToSnippetField(bool forward);
