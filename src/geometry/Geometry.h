@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <list>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -41,9 +42,27 @@ public:
   [[nodiscard]] virtual size_t numFacets() const = 0;
   [[nodiscard]] unsigned int getConvexity() const { return convexity; }
   void setConvexity(int c) { this->convexity = c; }
+
+  // Free-form annotations that ride along with the geometry, including across the compute
+  // worker transport. The transport copies them verbatim and never interprets them, so a
+  // feature can carry per-body data to the GUI without the IPC layer knowing it exists.
+  [[nodiscard]] const std::map<std::string, std::string>& getMetadata() const { return this->metadata; }
+  void setMetadata(const std::string& key, std::string value) { this->metadata[key] = std::move(value); }
+  [[nodiscard]] std::string getMetadata(const std::string& key) const
+  {
+    const auto it = this->metadata.find(key);
+    return it == this->metadata.end() ? std::string{} : it->second;
+  }
   virtual void setColor(const Color4f& c) {}
-  void setMaterialName(std::string name) { materialName_ = std::move(name); }
-  [[nodiscard]] const std::string& materialName() const { return materialName_; }
+  // Stored in the metadata channel rather than as a member of its own, so it survives the
+  // compute worker transport without the transport knowing that materials exist.
+  void setMaterialName(std::string name) { setMetadata("material", std::move(name)); }
+  [[nodiscard]] const std::string& materialName() const
+  {
+    static const std::string none;
+    const auto it = this->metadata.find("material");
+    return it == this->metadata.end() ? none : it->second;
+  }
   void setBodyBoundary(bool boundary = true) { bodyBoundary_ = boundary; }
   [[nodiscard]] bool isBodyBoundary() const { return bodyBoundary_; }
   void setBodyColor(const Color4f& color)
@@ -60,7 +79,7 @@ public:
   // exists to prevent. color() itself paints, in the ColorNode visitor.
   void copyBodyAttributes(const Geometry& other)
   {
-    materialName_ = other.materialName_;
+    setMaterialName(other.materialName());
     bodyBoundary_ = other.bodyBoundary_;
     bodyColor_ = other.bodyColor_;
     hasBodyColor_ = other.hasBodyColor_;
@@ -83,10 +102,10 @@ public:
 
 protected:
   int convexity{1};
-  std::string materialName_;
   bool bodyBoundary_{false};
   Color4f bodyColor_;
   bool hasBodyColor_{false};
+  std::map<std::string, std::string> metadata;
 };
 
 /**
