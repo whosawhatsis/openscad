@@ -13,7 +13,7 @@ private slots:
   //! The mode has to change what is actually drawn, not just a member.
   void checkModesChangeTheRender();
   //! Show Edges remains an independent overlay on ordinary appearance modes.
-  void checkPhongComposesWithEdges();
+  void checkShadedComposesWithEdges();
   //! Depth shading is one of these modes, not an independent toggle layered on
   //! top of them. While it was a separate bool, selecting it alongside another
   //! mode left the menu item checked and the renderer ignoring it.

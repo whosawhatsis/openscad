@@ -45,7 +45,7 @@
  */
 enum class AnalysisMode {
   Default,
-  Phong,
+  Shaded,
   Depth,
   DepthMetric,
   DepthMetricFine,

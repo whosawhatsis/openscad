@@ -163,7 +163,7 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
   // --view=depth a no-op for an ordinary PNG.
   AnalysisMode mode = agentMode;
   if (mode == AnalysisMode::Default) {
-    if (options["phong"]) mode = AnalysisMode::Phong;
+    if (options["shaded"]) mode = AnalysisMode::Shaded;
     else if (options["depth-metric"]) mode = AnalysisMode::DepthMetric;
     else if (options["depth-metric10um"]) mode = AnalysisMode::DepthMetricFine;
     else if (options["depth"]) mode = AnalysisMode::Depth;

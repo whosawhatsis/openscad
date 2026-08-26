@@ -2744,9 +2744,9 @@ void MainWindow::on_viewActionAnalysisViewDefault_triggered()
   setAnalysisMode(AnalysisMode::Default);
 }
 
-void MainWindow::on_viewActionAnalysisViewPhong_triggered()
+void MainWindow::on_viewActionAnalysisViewShaded_triggered()
 {
-  setAnalysisMode(AnalysisMode::Phong);
+  setAnalysisMode(AnalysisMode::Shaded);
 }
 
 void MainWindow::on_viewActionAnalysisViewNormal_triggered()
@@ -3981,7 +3981,7 @@ void MainWindow::setupMenusAndActions()
   analysisViewGroup = new QActionGroup(this);
   analysisViewGroup->setExclusive(true);
   analysisViewGroup->addAction(this->viewActionAnalysisViewDefault);
-  analysisViewGroup->addAction(this->viewActionAnalysisViewPhong);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewShaded);
   analysisViewGroup->addAction(this->viewActionAnalysisViewDepth);
   analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetric);
   analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetricFine);
