@@ -61,7 +61,10 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
   Parameters parameters =
     Parameters::parse(std::move(arguments), inst->location(),
                       isMaterial ? std::vector<std::string>{"name", "c", "alpha", "roughness"}
-                                 : std::vector<std::string>{"c", "alpha", "roughness"});
+                                 : std::vector<std::string>{"c", "alpha", "roughness"},
+                      // Named-only. Without declaring them, every bump= or metallic= warns
+                      // "variable not specified as parameter" while still taking effect.
+                      {"bump", "metallic"});
   if (isMaterial && parameters["name"].type() == Value::Type::STRING) {
     const auto& name = parameters["name"].toString();
     if (Material::isValidName(name)) {
