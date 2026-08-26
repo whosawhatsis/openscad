@@ -138,6 +138,7 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
     getShaderColor(ColorMode::MATERIAL, color, polyset->materialName(), color);
+    vbo_builder.setMaterialParams(polyset->shininess(), polyset->metallic());
     add_shader_pointers(vbo_builder, shaderinfo);
 
     vbo_builder.writeSurface();

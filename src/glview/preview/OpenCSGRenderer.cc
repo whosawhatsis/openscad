@@ -230,6 +230,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
           last_color = color;
         }
+        vbo_builder.setMaterialParams(csgobj.leaf->shininess, csgobj.leaf->metallic);
 
         add_shader_pointers(vbo_builder, shaderinfo);
 
@@ -303,6 +304,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
           last_color = color;
         }
+        vbo_builder.setMaterialParams(csgobj.leaf->shininess, csgobj.leaf->metallic);
 
         add_shader_pointers(vbo_builder, shaderinfo);
 

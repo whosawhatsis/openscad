@@ -75,6 +75,7 @@ void GLView::setupShader()
     .attributes =
       {
         {"barycentric", glGetAttribLocation(phong_resource.shader_program, "barycentric")},
+        {"material", glGetAttribLocation(phong_resource.shader_program, "material")},
       },
   });
 

@@ -5,6 +5,10 @@ varying vec3 vEyePosition;
 varying vec4 vColor;
 attribute vec3 barycentric;
 varying vec3 vBC;
+// x = Blinn-Phong specular exponent, y = metalness. Defaults (64, 0) reproduce
+// the fixed values this shader used before material attributes existed.
+attribute vec2 material;
+varying vec2 vMaterial;
 
 void main(void)
 {
@@ -14,5 +18,6 @@ void main(void)
   vEyePosition = vec3(gl_ModelViewMatrix * gl_Vertex);
   vColor = gl_Color;
   vBC = barycentric;
+  vMaterial = material;
   gl_Position = ftransform();
 }

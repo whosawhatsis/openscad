@@ -140,6 +140,7 @@ set(TEST_PYTHON_DIR     "${CCSD}/data/python")
 # Test runner Python scripts
 set(STLEXPORTSANITYTEST_PY   "${CCSD}/stlexportsanitytest.py")
 set(MULTISTLEXPORTTEST_PY    "${CCSD}/multistlexporttest.py")
+set(MATERIALRENDERTEST_PY    "${CCSD}/materialrendertest.py")
 set(EXPORT_IMPORT_PNGTEST_PY "${CCSD}/export_import_pngtest.py")
 set(EXPORT_PNGTEST_PY        "${CCSD}/export_pngtest.py")
 set(SHOULDFAIL_PY            "${CCSD}/shouldfail.py")

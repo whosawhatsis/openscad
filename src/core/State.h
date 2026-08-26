@@ -26,6 +26,8 @@ public:
   void setMatrix(const Transform3d& m) { this->matrix_ = m; }
   void setColor(const Color4f& c) { this->color_ = c; }
   void setMaterialName(std::string name) { this->materialName_ = std::move(name); }
+  void setShininess(float s) { this->shininess_ = s; }
+  void setMetallic(float m) { this->metallic_ = m; }
   void setPreferNef(bool on) { FLAG(this->flags, PREFERNEF, on); }
   [[nodiscard]] bool preferNef() const { return this->flags & PREFERNEF; }
 
@@ -38,6 +40,8 @@ public:
   [[nodiscard]] const Transform3d& matrix() const { return this->matrix_; }
   [[nodiscard]] const Color4f& color() const { return this->color_; }
   [[nodiscard]] const std::string& materialName() const { return this->materialName_; }
+  [[nodiscard]] float shininess() const { return this->shininess_; }
+  [[nodiscard]] float metallic() const { return this->metallic_; }
 
 private:
   enum StateFlags : unsigned int {
@@ -68,4 +72,6 @@ private:
   // Only ever read by the renderers, to look up a display-time default colour.
   // It must not reach any exporter: a Preferences colour is colour scheme, not model.
   std::string materialName_;
+  float shininess_{64.0f};
+  float metallic_{0.0f};
 };
