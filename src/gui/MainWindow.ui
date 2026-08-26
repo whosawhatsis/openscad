@@ -337,8 +337,24 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
+    <widget class="QMenu" name="menuAnalysisView">
+     <property name="title">
+      <string>&amp;Shading</string>
+     </property>
+     <addaction name="viewActionAnalysisViewDefault"/>
+     <addaction name="viewActionAnalysisViewShaded"/>
+     <addaction name="separator"/>
+     <addaction name="viewActionAnalysisViewDepth"/>
+     <addaction name="viewActionAnalysisViewDepthMetric"/>
+     <addaction name="viewActionAnalysisViewDepthMetricFine"/>
+     <addaction name="viewActionAnalysisViewNormal"/>
+     <addaction name="viewActionAnalysisViewCoordinate"/>
+     <addaction name="viewActionAnalysisViewFlat"/>
+     <addaction name="viewActionAnalysisViewChromatic"/>
+    </widget>
     <addaction name="viewActionPreview"/>
     <addaction name="viewActionThrownTogether"/>
+    <addaction name="menuAnalysisView"/>
     <addaction name="separator"/>
     <addaction name="viewActionShowEdges"/>
     <addaction name="viewActionShowAxes"/>
@@ -1128,6 +1144,90 @@
    </property>
    <property name="shortcut">
     <string>F12</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewDepth">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>De&amp;pth</string>
+   </property>
+   <property name="toolTip">
+    <string>Shade the model by distance from the camera, previewing a depth map export</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewDepthMetric">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Depth (metric, &amp;1mm)</string>
+   </property>
+   <property name="toolTip">
+    <string>Preview the metric depth map export: absolute millimetres from the camera, near dark</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewDepthMetricFine">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Depth (metric, 10&amp;um)</string>
+   </property>
+   <property name="toolTip">
+    <string>Preview the 10um metric depth map export, which tops out at 655mm from the camera</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewDefault">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Default (shaded)</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewShaded">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Shaded</string>
+   </property>
+   <property name="toolTip">
+    <string>GPU-accelerated per-pixel diffuse and specular shading</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewNormal">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Normal Map</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewCoordinate">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Coordinate Map</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewFlat">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Flat / Unshaded</string>
+   </property>
+  </action>
+  <action name="viewActionAnalysisViewChromatic">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>C&amp;hromatic 3-Point</string>
    </property>
   </action>
   <action name="viewActionShowEdges">

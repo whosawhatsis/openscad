@@ -246,7 +246,8 @@ void PolySetRenderer::drawPolySets(bool showedges, const ShaderUtils::ShaderInfo
   // Only use shader if select rendering or showedges
   const bool enable_shader =
     shaderinfo && ((shaderinfo->type == ShaderUtils::ShaderType::EDGE_RENDERING && showedges) ||
-                   shaderinfo->type == ShaderUtils::ShaderType::SELECT_RENDERING);
+                   shaderinfo->type == ShaderUtils::ShaderType::SELECT_RENDERING ||
+                   shaderinfo->type == ShaderUtils::ShaderType::AGENT_RENDERING);
   if (enable_shader) {
     GL_TRACE("glUseProgram(%d)", shaderinfo->resource.shader_program);
     GL_CHECKD(glUseProgram(shaderinfo->resource.shader_program));

@@ -23,12 +23,37 @@
 #include <string>
 #include <vector>
 #include "glview/Camera.h"
+#include "io/depthmap.h"
 #include "glview/ShaderUtils.h"
 #include "geometry/linalg.h"
 #include "glview/ColorMap.h"
 #include "glview/system-gl.h"
 #include "core/Selection.h"
 #include "glview/Renderer.h"
+#include "io/chromatic.h"
+#include "io/coordinatemap.h"
+
+/*!
+   How the viewport (and the matching image exports) draw the model: ordinary
+   shading, or one of the analysis views that encode data instead of appearance.
+
+   One enum rather than a set of toggles because these are alternatives, not
+   layers. Depth shading used to be a separate `bool showdepth`, which let the
+   GUI show "Shade by Depth" checked while an agent lighting mode was active and
+   the renderer silently ignored the fog - a state the UI could express and the
+   renderer could not.
+ */
+enum class AnalysisMode {
+  Default,
+  Shaded,
+  Depth,
+  DepthMetric,
+  DepthMetricFine,
+  Normal,
+  Coordinate,
+  Flat,
+  Chromatic
+};
 
 class GLView
 {
@@ -48,6 +73,8 @@ public:
 
   void setCamera(const Camera& cam);
   void setupCamera();
+  void setupDepthShading();
+  void teardownDepthShading();
 
   void setColorScheme(const ColorScheme& cs);
   void setColorScheme(const std::string& cs);
@@ -61,21 +88,76 @@ public:
   void setShowEdges(bool enabled) { this->showedges = enabled; }
   [[nodiscard]] bool showCrosshairs() const { return this->showcrosshairs; }
   void setShowCrosshairs(bool enabled) { this->showcrosshairs = enabled; }
+  //! True for any of the depth modes; the draw path asks in three places.
+  [[nodiscard]] bool showDepth() const
+  {
+    return this->analysis_mode == AnalysisMode::Depth ||
+           this->analysis_mode == AnalysisMode::DepthMetric ||
+           this->analysis_mode == AnalysisMode::DepthMetricFine;
+  }
+  /*!
+     The absolute scale the viewport is previewing, or 0 for the normalized
+     depth view. A metric preview shows what the exported file contains rather
+     than what is easiest to look at: near dark, far bright, background at the
+     maximum, and the same fixed millimetre mapping the file uses. At 1mm units
+     that is a nearly black screen for any desktop-scale model - which is the
+     honest picture of what 8 bits of a 65.5m range looks like.
+   */
+  [[nodiscard]] double analysisDepthUnits() const
+  {
+    switch (this->analysis_mode) {
+    case AnalysisMode::DepthMetric:     return DEPTHMAP_METRIC_SCALE;
+    case AnalysisMode::DepthMetricFine: return DEPTHMAP_FINE_SCALE;
+    default:                            return 0.0;
+    }
+  }
+  //! Pin the depth shading to an explicit range instead of the bounding box, so
+  //! the viewport matches an export made with the same range.
+  void setDepthOptions(const DepthmapOptions& options) { this->depthoptions = options; }
+
+  [[nodiscard]] AnalysisMode analysisMode() const { return this->analysis_mode; }
+  void setAnalysisMode(AnalysisMode mode) { this->analysis_mode = mode; }
+  //! The box the coordinate map normalizes against, for the sidecar.
+  [[nodiscard]] CoordinateBounds coordinateBounds() const;
+
+  void applyCoordinateBounds(ShaderUtils::ShaderInfo *shader) const;
+  void applyChromaticLights(ShaderUtils::ShaderInfo *shader) const;
+  //! Blit the analytic calibration sphere into the corner, after the model is drawn.
+  void drawChromaticGauge();
+
+public:
+  //! Whether the chromatic mode draws its calibration sphere. On by default: the
+  //! gauge is what makes the image interpretable, so suppressing it is the
+  //! deliberate choice, taken when the overlay would occlude the geometry.
+  void setChromaticGauge(bool enabled) { this->chromatic_gauge = enabled; }
+  [[nodiscard]] bool chromaticGauge() const { return this->chromatic_gauge; }
 
   virtual bool save(const char *filename) const = 0;
   [[nodiscard]] virtual std::string getRendererInfo() const = 0;
   virtual float getDPI() { return 1.0f; }
 
   std::unique_ptr<ShaderUtils::ShaderInfo> edge_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> phong_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> agent_normal_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> agent_coord_shader;
+  std::unique_ptr<ShaderUtils::ShaderInfo> agent_chromatic_shader;
   std::shared_ptr<Renderer> renderer;
   const ColorScheme *colorscheme;
   Camera cam;
   double far_far_away;
   double aspectratio;
+  //! The clip planes setupCamera() last handed to the projection matrix. Kept
+  //! so depth-buffer readback can linearize without re-deriving the formula -
+  //! two copies of it would drift apart the first time the projection changes.
+  double clipNear{0.0};
+  double clipFar{0.0};
   bool showaxes;
   bool showedges;
   bool showcrosshairs;
   bool showscale;
+  DepthmapOptions depthoptions{};
+  AnalysisMode analysis_mode;
+  bool chromatic_gauge = true;
   GLdouble modelview[16];
   GLdouble projection[16];
   std::vector<SelectedObject> selected_obj;

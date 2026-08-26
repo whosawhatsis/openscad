@@ -105,6 +105,8 @@
 #include "glview/OffscreenView.h"
 #include "glview/RenderSettings.h"
 #include "handle_dep.h"
+#include "io/chromatic.h"
+#include "io/coordinatemap.h"
 #include "io/export.h"
 #include "openscad_gui.h"
 #include "openscad_mimalloc.h"
@@ -389,6 +391,78 @@ Camera get_camera(const po::variables_map& vm)
   return camera;
 }
 
+//! The lighting mode an export format asks the preview shader for, or Default
+//! for every format that is not one of the AgentSCAD image outputs.
+static AnalysisMode analysis_mode_for(FileFormat format)
+{
+  switch (format) {
+  case FileFormat::NORMALMAP_PNG:     return AnalysisMode::Normal;
+  case FileFormat::COORDINATEMAP_PNG: return AnalysisMode::Coordinate;
+  case FileFormat::FLATMAP_PNG:       return AnalysisMode::Flat;
+  case FileFormat::CHROMATIC_PNG:     return AnalysisMode::Chromatic;
+  default:                            return AnalysisMode::Default;
+  }
+}
+
+//! Read a boolean -O option, defaulting when it is absent or unparseable.
+static bool export_option_flag(const CmdLineExportOptions& exportOptions, const std::string& section,
+                               const std::string& name, bool fallback)
+{
+  const auto s = exportOptions.find(section);
+  if (s == exportOptions.end()) return fallback;
+  const auto entry = s->second.find(name);
+  if (entry == s->second.end()) return fallback;
+  const std::string& v = entry->second;
+  if (v == "0" || v == "false" || v == "no" || v == "off") return false;
+  if (v == "1" || v == "true" || v == "yes" || v == "on") return true;
+  LOG(message_group::Warning, "Unrecognized value \"%1$s\" for %2$s/%3$s; using the default.", v,
+      section, name);
+  return fallback;
+}
+
+/*!
+   Write the light directions a chromatic image was lit by, if asked for with
+   -O chromatic/lights=<path>. A consumer that does not know which direction lit
+   which channel cannot interpret the image, so a failed write fails the export.
+ */
+static bool write_chromatic_lights_sidecar(const CmdLineExportOptions& exportOptions)
+{
+  const auto section = exportOptions.find("chromatic");
+  if (section == exportOptions.end()) return true;
+  const auto entry = section->second.find("lights");
+  if (entry == section->second.end() || entry->second.empty()) return true;
+
+  std::ofstream sidecar(entry->second);
+  if (!sidecar.is_open()) {
+    LOG(message_group::Error, "Unable to open chromatic lights file \"%1$s\"", entry->second);
+    return false;
+  }
+  sidecar << serialize_lights_json(chromatic_lights());
+  return sidecar.good();
+}
+
+/*!
+   Write the bounding box a coordinate map decodes against, if asked for with
+   -O coordinatemap/bounds=<path>. Without it the image is a picture rather than
+   data, so a failure to write it fails the export instead of being warned about.
+ */
+static bool write_coordinate_bounds_sidecar(const OffscreenView& glview,
+                                            const CmdLineExportOptions& exportOptions)
+{
+  const auto section = exportOptions.find("coordinatemap");
+  if (section == exportOptions.end()) return true;
+  const auto entry = section->second.find("bounds");
+  if (entry == section->second.end() || entry->second.empty()) return true;
+
+  std::ofstream sidecar(entry->second);
+  if (!sidecar.is_open()) {
+    LOG(message_group::Error, "Unable to open coordinate bounds file \"%1$s\"", entry->second);
+    return false;
+  }
+  sidecar << serialize_bounds_json(glview.coordinateBounds());
+  return sidecar.good();
+}
+
 int do_export(const CommandLine& cmd, const RenderVariables& render_variables, FileFormat export_format,
               SourceFile *root_file)
 {
@@ -481,11 +555,30 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     GeometryEvaluator geomevaluator(tree, preserveBodies);
     std::unique_ptr<OffscreenView> glview;
     std::shared_ptr<const Geometry> root_geom;
-    if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG) &&
+    // Parsed before anything renders: --view=depth shades with the same range the
+    // depthmap export encodes with, so the preview and the file agree.
+    DepthmapOptions depthmapOptions;
+    if (const auto section = cmd.exportOptions.find("depthmap"); section != cmd.exportOptions.end()) {
+      if (const auto r = section->second.find("range"); r != section->second.end()) {
+        std::string error;
+        if (!parse_depth_range(r->second, depthmapOptions.explicit_near, depthmapOptions.explicit_far,
+                               error)) {
+          LOG("Invalid depthmap range '%1$s': %2$s.", r->second, error);
+          return 1;
+        }
+        depthmapOptions.has_explicit_range = true;
+      }
+    }
+
+    if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG ||
+         export_format == FileFormat::DEPTHMAP || export_format == FileFormat::PFM ||
+         analysis_mode_for(export_format) != AnalysisMode::Default) &&
         (cmd.viewOptions.renderer == RenderType::OPENCSG ||
          cmd.viewOptions.renderer == RenderType::THROWNTOGETHER)) {
       // OpenCSG or throwntogether png -> just render a preview
-      glview = prepare_preview(tree, cmd.viewOptions, camera);
+      glview =
+        prepare_preview(tree, cmd.viewOptions, camera, depthmapOptions, analysis_mode_for(export_format),
+                        export_option_flag(cmd.exportOptions, "chromatic", "gauge", true));
       if (!glview) return 1;
     } else {
       // Force creation of concrete geometry (mostly for testing)
@@ -538,14 +631,95 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       return 1;
     }
 
-    if (export_format == FileFormat::PNG) {
+    if (export_format == FileFormat::DEPTHMAP) {
+      DepthmapOptions opts = depthmapOptions;
+      const auto section = cmd.exportOptions.find("depthmap");
+      if (section != cmd.exportOptions.end()) {
+        const auto p_entry = section->second.find("profile");
+        if (p_entry != section->second.end()) {
+          if (p_entry->second == "visual") {
+            opts.profile = DepthProfile::visual;
+          } else if (p_entry->second == "metric10um") {
+            opts.profile = DepthProfile::metricFine;
+          } else if (p_entry->second != "metric") {
+            LOG("Unknown depthmap profile '%1$s'. Expected 'metric', 'metric10um' or 'visual'.",
+                p_entry->second);
+            return 1;
+          }
+        }
+        const auto c_entry = section->second.find("camera");
+        if (c_entry != section->second.end()) {
+          opts.camera_sidecar_path = c_entry->second;
+        }
+      }
+
+      bool success = true;
+      bool const wrote = with_output(
+        cmd.is_stdout, filename_str,
+        [&success, &root_geom, &cmd, &camera, &glview, opts](std::ostream& stream) {
+          if (cmd.viewOptions.renderer == RenderType::BACKEND_SPECIFIC ||
+              cmd.viewOptions.renderer == RenderType::GEOMETRY) {
+            success = export_depthmap(root_geom, cmd.viewOptions, camera, opts, stream);
+          } else {
+            success = export_depthmap(*glview, opts, stream);
+          }
+        },
+        std::ios::out | std::ios::binary);
+      if (!success || !wrote) {
+        return 1;
+      }
+    }
+
+    if (export_format == FileFormat::PFM) {
       bool success = true;
       bool const wrote = with_output(
         cmd.is_stdout, filename_str,
         [&success, &root_geom, &cmd, &camera, &glview](std::ostream& stream) {
           if (cmd.viewOptions.renderer == RenderType::BACKEND_SPECIFIC ||
               cmd.viewOptions.renderer == RenderType::GEOMETRY) {
-            success = export_png(root_geom, cmd.viewOptions, camera, stream);
+            success = export_pfm(root_geom, cmd.viewOptions, camera, stream);
+          } else {
+            success = export_pfm(*glview, stream);
+          }
+        },
+        std::ios::out | std::ios::binary);
+      if (!success || !wrote) {
+        return 1;
+      }
+    }
+
+    const AnalysisMode agent_mode = analysis_mode_for(export_format);
+    if (export_format == FileFormat::PNG || agent_mode != AnalysisMode::Default) {
+      if (agent_mode != AnalysisMode::Default) {
+        if (!glview) {
+          // These formats are produced by a shader on the preview path. --render
+          // routes to export_png(root_geom, ...), which builds its own view and
+          // would silently write an ordinary shaded image instead - a wrong
+          // answer is worse here than a refusal, since the output looks
+          // plausible and decodes to nonsense.
+          LOG(message_group::Error,
+              "%1$s export requires the preview renderer; drop --render or use "
+              "--preview=throwntogether.",
+              fileformat::info(export_format).identifier);
+          return 1;
+        }
+        // The mode was already applied by prepare_preview, before it painted.
+        if (agent_mode == AnalysisMode::Coordinate &&
+            !write_coordinate_bounds_sidecar(*glview, cmd.exportOptions)) {
+          return 1;
+        }
+        if (agent_mode == AnalysisMode::Chromatic &&
+            !write_chromatic_lights_sidecar(cmd.exportOptions)) {
+          return 1;
+        }
+      }
+      bool success = true;
+      bool const wrote = with_output(
+        cmd.is_stdout, filename_str,
+        [&success, &root_geom, &cmd, &camera, &glview, &depthmapOptions](std::ostream& stream) {
+          if (cmd.viewOptions.renderer == RenderType::BACKEND_SPECIFIC ||
+              cmd.viewOptions.renderer == RenderType::GEOMETRY) {
+            success = export_png(root_geom, cmd.viewOptions, camera, depthmapOptions, stream);
           } else {
             success = export_png(*glview, stream);
           }

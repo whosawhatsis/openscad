@@ -509,6 +509,9 @@ void MainWindow::loadViewSettings()
   if (settings.value("view/showEdges").toBool()) {
     viewActionShowEdges->setChecked(true);
   }
+  if (settings.value("view/showDepth").toBool()) {
+    viewActionAnalysisViewDepth->trigger();
+  }
   if (settings.value("view/showAxes", true).toBool()) {
     viewActionShowAxes->setChecked(true);
   }
@@ -2766,6 +2769,50 @@ void MainWindow::viewModePreview()
 
 #endif /* ENABLE_OPENCSG */
 
+void MainWindow::setAnalysisMode(AnalysisMode mode)
+{
+  if (mode != AnalysisMode::Depth) {
+    // Otherwise the persisted preference outlives the choice that replaced it
+    // and the next launch reopens in Depth.
+    QSettingsCached().setValue("view/showDepth", false);
+  }
+  this->qglview->setAnalysisMode(mode);
+  // The viewport paints on its own schedule, so unlike the CLI export path the
+  // mode only has to be set before the next paint rather than before a
+  // particular one - but it still has to force that paint.
+  this->qglview->update();
+}
+
+void MainWindow::on_viewActionAnalysisViewDefault_triggered()
+{
+  setAnalysisMode(AnalysisMode::Default);
+}
+
+void MainWindow::on_viewActionAnalysisViewShaded_triggered()
+{
+  setAnalysisMode(AnalysisMode::Shaded);
+}
+
+void MainWindow::on_viewActionAnalysisViewNormal_triggered()
+{
+  setAnalysisMode(AnalysisMode::Normal);
+}
+
+void MainWindow::on_viewActionAnalysisViewCoordinate_triggered()
+{
+  setAnalysisMode(AnalysisMode::Coordinate);
+}
+
+void MainWindow::on_viewActionAnalysisViewFlat_triggered()
+{
+  setAnalysisMode(AnalysisMode::Flat);
+}
+
+void MainWindow::on_viewActionAnalysisViewChromatic_triggered()
+{
+  setAnalysisMode(AnalysisMode::Chromatic);
+}
+
 void MainWindow::updateViewModeAfterGLInit()
 {
 #ifdef ENABLE_OPENCSG
@@ -2796,6 +2843,23 @@ void MainWindow::on_viewActionShowEdges_toggled(bool checked)
   settings.setValue("view/showEdges", checked);
   this->qglview->setShowEdges(checked);
   this->qglview->update();
+}
+
+void MainWindow::on_viewActionAnalysisViewDepth_triggered()
+{
+  QSettingsCached settings;
+  settings.setValue("view/showDepth", true);
+  setAnalysisMode(AnalysisMode::Depth);
+}
+
+void MainWindow::on_viewActionAnalysisViewDepthMetric_triggered()
+{
+  setAnalysisMode(AnalysisMode::DepthMetric);
+}
+
+void MainWindow::on_viewActionAnalysisViewDepthMetricFine_triggered()
+{
+  setAnalysisMode(AnalysisMode::DepthMetricFine);
 }
 
 void MainWindow::on_viewActionShowAxes_toggled(bool checked)
@@ -3955,6 +4019,21 @@ void MainWindow::setupMenusAndActions()
   previewModeGroup->setExclusive(true);
   previewModeGroup->addAction(this->viewActionPreview);
   previewModeGroup->addAction(this->viewActionThrownTogether);
+
+  // Exclusive: the modes are alternative ways of drawing the same view, not
+  // toggles that compose.
+  analysisViewGroup = new QActionGroup(this);
+  analysisViewGroup->setExclusive(true);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDefault);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewShaded);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepth);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetric);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetricFine);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewNormal);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewCoordinate);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewFlat);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewChromatic);
+  this->viewActionAnalysisViewDefault->setChecked(true);
   if (this->qglview->hasOpenCSGSupport()) {
     this->viewActionPreview->setChecked(true);
   } else {

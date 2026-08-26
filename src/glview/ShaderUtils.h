@@ -10,6 +10,7 @@ enum class ShaderType {
   NONE,
   EDGE_RENDERING,
   SELECT_RENDERING,
+  AGENT_RENDERING,
 };
 
 struct ShaderResource {
