@@ -419,7 +419,7 @@ void GLView::paintGL()
   glDisable(GL_LIGHTING);
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
-  if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Phong) {
+  if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Shaded) {
     // An analysis image is data, so its background must not depend on which colour
     // scheme the user happens to have selected, and must not be a gradient - both
     // would decode as varying "surface" values where there is no surface. Flat,
@@ -508,7 +508,7 @@ void GLView::paintGL()
     OpenCSG::setContext(this->opencsg_id);
 #endif
     ShaderUtils::ShaderInfo *active_shader = edge_shader.get();
-    if (analysis_mode == AnalysisMode::Phong && phong_shader) {
+    if (analysis_mode == AnalysisMode::Shaded && phong_shader) {
       active_shader = phong_shader.get();
       glUseProgram(active_shader->resource.shader_program);
       glUniform1i(active_shader->uniforms.at("showEdges"), showedges ? GL_TRUE : GL_FALSE);
@@ -523,10 +523,10 @@ void GLView::paintGL()
       applyChromaticLights(active_shader);
     }
 
-    // Phong always needs the barycentric attribute bound; its uniform decides
+    // The shaded mode always needs the barycentric attribute bound; its uniform decides
     // whether those coordinates affect the final colour.
-    bool active_showedges = showedges || analysis_mode == AnalysisMode::Phong;
-    if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Phong) {
+    bool active_showedges = showedges || analysis_mode == AnalysisMode::Shaded;
+    if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Shaded) {
       active_showedges = false;
     }
     // Set both ways every paint rather than only disabling. A one-way disable
@@ -543,9 +543,9 @@ void GLView::paintGL()
     this->renderer->prepare(active_shader);
     // Phong emits premultiplied material RGB plus an unattenuated reflected
     // highlight, so its RGB must not be multiplied by alpha a second time.
-    if (analysis_mode == AnalysisMode::Phong) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     this->renderer->draw(active_showedges, active_shader);
-    if (analysis_mode == AnalysisMode::Phong) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (depth_preview_polarity(analysisDepthUnits()).invert) {
       // OpenCSG relies on black fog while constructing its internal CSG mask.
       // Invert only the finished image to get metric near-dark polarity without

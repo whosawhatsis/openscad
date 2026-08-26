@@ -72,8 +72,8 @@ void TestAnalysisView::checkMenuActionsSetTheMode()
   window->viewActionAnalysisViewFlat->trigger();
   QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Flat);
 
-  window->viewActionAnalysisViewPhong->trigger();
-  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Phong);
+  window->viewActionAnalysisViewShaded->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Shaded);
 
   window->viewActionAnalysisViewChromatic->trigger();
   QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Chromatic);
@@ -121,7 +121,7 @@ void TestAnalysisView::checkModesChangeTheRender()
     const char *name;
   };
   const ModeCase cases[] = {
-    {window->viewActionAnalysisViewPhong, "Phong"},
+    {window->viewActionAnalysisViewShaded, "Shaded"},
     {window->viewActionAnalysisViewNormal, "Normal"},
     {window->viewActionAnalysisViewCoordinate, "Coordinate"},
     {window->viewActionAnalysisViewFlat, "Flat"},
@@ -163,21 +163,22 @@ void TestAnalysisView::checkDepthIsOneOfTheModes()
   QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Default);
 }
 
-void TestAnalysisView::checkPhongComposesWithEdges()
+void TestAnalysisView::checkShadedComposesWithEdges()
 {
   restoreWindowInitialState();
 
   const QString filename = fixturePath("basic-ux/empty.scad");
   window->tabManager->open(filename);
-  window->viewActionAnalysisViewPhong->trigger();
+  window->viewActionAnalysisViewShaded->trigger();
   window->viewActionShowEdges->setChecked(false);
   grabViewport(window);
-  const QImage phong = grabViewport(window);
+  const QImage shaded = grabViewport(window);
 
   window->viewActionShowEdges->setChecked(true);
-  QVERIFY2(!sameRender(grabViewport(window), phong), "Show Edges does not composite over Phong shading");
+  QVERIFY2(!sameRender(grabViewport(window), shaded),
+           "Show Edges does not composite over shaded rendering");
 
   window->viewActionShowEdges->setChecked(false);
-  QVERIFY2(sameRender(grabViewport(window), phong),
-           "disabling Show Edges does not restore plain Phong shading");
+  QVERIFY2(sameRender(grabViewport(window), shaded),
+           "disabling Show Edges does not restore plain shaded rendering");
 }

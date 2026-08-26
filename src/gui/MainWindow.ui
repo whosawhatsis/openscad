@@ -348,7 +348,7 @@
       <string>&amp;Shading</string>
      </property>
      <addaction name="viewActionAnalysisViewDefault"/>
-     <addaction name="viewActionAnalysisViewPhong"/>
+     <addaction name="viewActionAnalysisViewShaded"/>
      <addaction name="separator"/>
      <addaction name="viewActionAnalysisViewDepth"/>
      <addaction name="viewActionAnalysisViewDepthMetric"/>
@@ -1219,12 +1219,12 @@
     <string>&amp;Default (shaded)</string>
    </property>
   </action>
-  <action name="viewActionAnalysisViewPhong">
+  <action name="viewActionAnalysisViewShaded">
    <property name="checkable">
     <bool>true</bool>
    </property>
    <property name="text">
-    <string>&amp;Phong</string>
+    <string>&amp;Shaded</string>
    </property>
    <property name="toolTip">
     <string>GPU-accelerated per-pixel diffuse and specular shading</string>
