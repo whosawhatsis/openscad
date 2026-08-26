@@ -238,8 +238,8 @@ std::shared_ptr<CSGNode> CSGTreeEvaluator::evaluateCSGNodeFromGeometry(
   // earliest point a consumer could begin work on it -- which is the whole point of the hook.
   if (this->leafCallback && ps) this->leafCallback(ps);
 
-  std::shared_ptr<CSGNode> t(
-    new CSGLeaf(ps, state.matrix(), state.color(), STR(node.name(), node.index()), node.index()));
+  std::shared_ptr<CSGNode> t(new CSGLeaf(ps, state.matrix(), state.color(), state.materialName(),
+                                         STR(node.name(), node.index()), node.index()));
   if (modinst->isHighlight() || state.isHighlight()) t->setHighlight(true);
   if (modinst->isBackground() || state.isBackground()) t->setBackground(true);
   return t;
@@ -294,6 +294,7 @@ Response CSGTreeEvaluator::visit(State& state, const ColorNode& node)
 {
   if (state.isPrefix()) {
     if (!state.color().isValid()) state.setColor(node.color);
+    if (node.isMaterial && state.materialName().empty()) state.setMaterialName(node.materialName);
   }
   if (state.isPostfix()) {
     applyToChildren(state, node, OpenSCADOperator::UNION);

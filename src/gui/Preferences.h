@@ -1,5 +1,7 @@
 #pragma once
 
+class QTableWidgetItem;
+
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
@@ -39,6 +41,8 @@ public:
   void update();
   void apply_win() const;
   void updateGUI();
+  void readMaterialColors();
+  void writeMaterialColors();
   void fireEditorConfigChanged() const;
   void fireApplicationFontChanged() const;
   void insertListItem(QListWidget *listBox, QListWidgetItem *listItem);
@@ -78,6 +82,9 @@ public slots:
   void on_checkBoxSummaryArea_toggled(bool);
   void on_checkBoxSummaryBoundingBox_toggled(bool);
   void on_enableHidapiTraceCheckBox_toggled(bool);
+  void on_materialColorTable_itemChanged(QTableWidgetItem *);
+  void on_buttonAddMaterialColor_clicked();
+  void on_buttonRemoveMaterialColor_clicked();
   void on_checkBoxShowWarningsIn3dView_toggled(bool);
   void on_checkBoxTransparentColorSchemeBackground_toggled(bool);
   void on_checkBoxMouseCentricZoom_toggled(bool);

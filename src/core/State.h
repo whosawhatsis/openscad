@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <cstring>
 #include <memory>
 #include <utility>
@@ -23,6 +25,7 @@ public:
   void setParent(const std::shared_ptr<const AbstractNode>& parent) { this->parentnode = parent; }
   void setMatrix(const Transform3d& m) { this->matrix_ = m; }
   void setColor(const Color4f& c) { this->color_ = c; }
+  void setMaterialName(std::string name) { this->materialName_ = std::move(name); }
   void setPreferNef(bool on) { FLAG(this->flags, PREFERNEF, on); }
   [[nodiscard]] bool preferNef() const { return this->flags & PREFERNEF; }
 
@@ -34,6 +37,7 @@ public:
   [[nodiscard]] std::shared_ptr<const AbstractNode> parent() const { return this->parentnode; }
   [[nodiscard]] const Transform3d& matrix() const { return this->matrix_; }
   [[nodiscard]] const Color4f& color() const { return this->color_; }
+  [[nodiscard]] const std::string& materialName() const { return this->materialName_; }
 
 private:
   enum StateFlags : unsigned int {
@@ -61,4 +65,7 @@ private:
   // Transformation matrix and color. FIXME: Generalize such state variables?
   Transform3d matrix_;
   Color4f color_;
+  // Only ever read by the renderers, to look up a display-time default colour.
+  // It must not reach any exporter: a Preferences colour is colour scheme, not model.
+  std::string materialName_;
 };

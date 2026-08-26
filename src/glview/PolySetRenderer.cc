@@ -69,6 +69,14 @@ PolySetRenderer::PolySetRenderer(const std::shared_ptr<const class Geometry>& ge
 void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
 {
   assert(geom != nullptr);
+  // Every conversion below mints a fresh PolySet, which does not inherit the
+  // source geometry's body identity. The renderer needs the material name to
+  // look up its display-time default colour, so carry it across. This copies
+  // identity only - it never touches the geometry's own colours.
+  const auto addPolySet = [&](std::shared_ptr<PolySet> ps) {
+    ps->copyBodyAttributes(*geom);
+    this->polysets_.push_back(std::move(ps));
+  };
   if (const auto geomlist = std::dynamic_pointer_cast<const GeometryList>(geom)) {
     for (const auto& item : geomlist->getChildren()) {
       this->addGeometry(item.second);
@@ -77,12 +85,12 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
     assert(ps->getDimension() == 3);
     // We need to tessellate here, in case the generated PolySet contains concave polygons
     // See tests/data/scad/3D/features/polyhedron-concave-test.scad
-    this->polysets_.push_back(PolySetUtils::tessellate_faces(*ps));
+    addPolySet(PolySetUtils::tessellate_faces(*ps));
   } else if (const auto poly = std::dynamic_pointer_cast<const Polygon2d>(geom)) {
     this->polygons_.emplace_back(poly, std::shared_ptr<const PolySet>(poly->tessellate()));
 #ifdef ENABLE_MANIFOLD
   } else if (const auto mani = std::dynamic_pointer_cast<const ManifoldGeometry>(geom)) {
-    this->polysets_.push_back(mani->toPolySet());
+    addPolySet(mani->toPolySet());
 #endif
 #ifdef ENABLE_CGAL
   } else if (const auto N = std::dynamic_pointer_cast<const CGALNefGeometry>(geom)) {
@@ -92,7 +100,7 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
     if (!N->isEmpty()) {
       if (auto ps = CGALUtils::createPolySetFromNefPolyhedron3(*N->p3)) {
         ps->setConvexity(N->getConvexity());
-        this->polysets_.push_back(std::shared_ptr<PolySet>(std::move(ps)));
+        addPolySet(std::shared_ptr<PolySet>(std::move(ps)));
       }
     }
 #endif
@@ -133,7 +141,7 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
   for (const auto& polyset : this->polysets_) {
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
-    getShaderColor(ColorMode::MATERIAL, color, color);
+    getShaderColor(ColorMode::MATERIAL, color, polyset->materialName(), color);
     add_shader_pointers(vbo_builder, shaderinfo);
 
     vbo_builder.writeSurface();

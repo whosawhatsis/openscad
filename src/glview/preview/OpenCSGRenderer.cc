@@ -527,7 +527,7 @@ bool OpenCSGRenderer::buildProduct(PendingProduct& p, const std::function<bool()
   std::string stable_key;
   for (const auto& csgobj : product.intersections) {
     Color4f color;
-    getShaderColor(ColorMode::MATERIAL, csgobj.leaf->color, color);
+    getShaderColor(ColorMode::MATERIAL, csgobj.leaf->color, csgobj.leaf->materialName, color);
     transparent = transparent && color.a() < 1.0f;
     stable_key += csgobj.leaf->polyset ? csgobj.leaf->polyset->dump() : std::string();
     stable_key += std::to_string(color.r()) + std::to_string(color.g()) + std::to_string(color.b()) +
@@ -554,7 +554,7 @@ bool OpenCSGRenderer::buildProduct(PendingProduct& p, const std::function<bool()
       }
 
       Color4f color;
-      if (getShaderColor(colormode, c, color)) {
+      if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
         last_color = color;
       }
 
@@ -627,7 +627,7 @@ bool OpenCSGRenderer::buildProduct(PendingProduct& p, const std::function<bool()
       }
 
       Color4f color;
-      if (getShaderColor(colormode, c, color)) {
+      if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
         last_color = color;
       }
 

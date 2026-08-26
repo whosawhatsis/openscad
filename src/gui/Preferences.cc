@@ -66,6 +66,7 @@
 
 #include "Feature.h"
 #include "OctoPrintApiKeyDialog.h"
+#include "core/Material.h"
 #include "core/Settings.h"
 #include "geometry/GeometryCache.h"
 #include "gui/AutoUpdater.h"
@@ -792,6 +793,66 @@ void Preferences::on_launcherBox_toggled(bool state)
 {
   QSettingsCached settings;
   settings.setValue("launcher/showOnStartup", state);
+}
+
+// The table is the "name=color;..." setting shown as rows. Colours are held as
+// text rather than through a colour picker, because any spelling parse_color()
+// accepts is valid here - "yellow", "#ffff00", "#ffff0080".
+void Preferences::readMaterialColors()
+{
+  const QSignalBlocker blocker(this->materialColorTable);
+  this->materialColorTable->setRowCount(0);
+  const auto table = QString::fromStdString(Settings::SettingsMaterials::materialColors.value());
+  for (const auto& entry : table.split(';', Qt::SkipEmptyParts)) {
+    const int eq = entry.indexOf('=');
+    if (eq < 0) continue;
+    const int row = this->materialColorTable->rowCount();
+    this->materialColorTable->insertRow(row);
+    this->materialColorTable->setItem(row, 0, new QTableWidgetItem(entry.left(eq)));
+    this->materialColorTable->setItem(row, 1, new QTableWidgetItem(entry.mid(eq + 1)));
+  }
+}
+
+void Preferences::writeMaterialColors()
+{
+  QStringList entries;
+  for (int row = 0; row < this->materialColorTable->rowCount(); ++row) {
+    const auto *nameItem = this->materialColorTable->item(row, 0);
+    const auto *colorItem = this->materialColorTable->item(row, 1);
+    if (nameItem == nullptr || colorItem == nullptr) continue;
+    // A name has to survive being a filename suffix, and neither field may
+    // contain the characters that separate the entries.
+    const auto name = nameItem->text().trimmed();
+    const auto color = colorItem->text().trimmed();
+    if (name.isEmpty() || color.isEmpty()) continue;
+    if (name.contains(';') || name.contains('=') || color.contains(';')) continue;
+    if (!Material::isValidName(name.toStdString())) continue;
+    entries << name + "=" + color;
+  }
+  Settings::SettingsMaterials::materialColors.setValue(entries.join(";").toStdString());
+  writeSettings();
+}
+
+void Preferences::on_materialColorTable_itemChanged(QTableWidgetItem *)
+{
+  writeMaterialColors();
+}
+
+void Preferences::on_buttonAddMaterialColor_clicked()
+{
+  const int row = this->materialColorTable->rowCount();
+  this->materialColorTable->insertRow(row);
+  this->materialColorTable->setItem(row, 0, new QTableWidgetItem(""));
+  this->materialColorTable->setItem(row, 1, new QTableWidgetItem(""));
+  this->materialColorTable->editItem(this->materialColorTable->item(row, 0));
+}
+
+void Preferences::on_buttonRemoveMaterialColor_clicked()
+{
+  const int row = this->materialColorTable->currentRow();
+  if (row < 0) return;
+  this->materialColorTable->removeRow(row);
+  writeMaterialColors();
 }
 
 void Preferences::on_checkBoxShowWarningsIn3dView_toggled(bool val)
@@ -1897,6 +1958,7 @@ QVariant Preferences::getValue(const QString& key) const
 
 void Preferences::updateGUI()
 {
+  readMaterialColors();
   const auto found =
     this->colorSchemeChooser->findItems(getValue("3dview/colorscheme").toString(), Qt::MatchExactly);
   if (!found.isEmpty())

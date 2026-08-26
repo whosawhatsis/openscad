@@ -1344,6 +1344,22 @@ list(APPEND EXPERIMENTAL_TEXTMETRICS_FILES
 add_cmdline_test(echo           EXPERIMENTAL OPENSCAD SUFFIX echo FILES ${EXPERIMENTAL_TEXTMETRICS_ECHO_FILES} ARGS --enable=textmetrics)
 add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} ARGS --enable=textmetrics)
 add_cmdline_test(preview-cgal   EXPERIMENTAL OPENSCAD SUFFIX png  FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} EXPECTEDDIR preview ARGS --enable=textmetrics --backend=cgal)
+
+#
+# Feature 15: procedural bump on material() and color().
+#
+list(APPEND EXPERIMENTAL_MATERIAL_BUMP_FILES
+  ${TEST_SCAD_DIR}/misc/material-bump-tests.scad
+)
+add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_BUMP_FILES} ARGS --enable=multi-material)
+
+#
+# Feature 15: default colours for named materials.
+#
+list(APPEND EXPERIMENTAL_MATERIAL_COLOR_FILES
+  ${TEST_SCAD_DIR}/misc/material-default-colors.scad
+)
+add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_COLOR_FILES} ARGS --enable=multi-material)
 add_cmdline_test(throwntogether EXPERIMENTAL OPENSCAD SUFFIX png  FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} ARGS --preview=throwntogether --enable=textmetrics)
 add_cmdline_test(render-csg-cgal      EXPERIMENTAL SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX png FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} EXPECTEDDIR render ARGS ${OPENSCAD_EXE_ARG} --format=csg --render --enable=textmetrics)
 add_cmdline_test(render-cgal    EXPERIMENTAL OPENSCAD SUFFIX png FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} EXPECTEDDIR render ARGS --render --enable=textmetrics --backend=cgal)
