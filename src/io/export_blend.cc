@@ -35,10 +35,11 @@
 
 namespace {
 
-// ponytail: clone one frozen, dependency-closed Blender scene instead of reimplementing Blender's
-// scene defaults. The writer only owns mesh payloads, names, animation timing, and collection links.
+// ponytail: patch a frozen, dependency-closed Blender scene instead of reimplementing Blender's
+// scene defaults. Blender authored every ID; the writer only clones owner-adjacent mesh data.
 constexpr std::string_view BLEND_HEADER = "BLENDER17-01v0500";
 constexpr uint64_t GENERATED_ADDRESS_BASE = 0x0100000000000000ULL;
+constexpr size_t MAX_BLEND_FRAMES = 256;
 
 template <typename T>
 T readScalar(const std::vector<uint8_t>& bytes, size_t offset)
@@ -78,7 +79,8 @@ struct Structure {
   std::vector<Field> fields;
 };
 
-class Dna {
+class Dna
+{
 public:
   explicit Dna(const std::vector<uint8_t>& bytes)
   {
@@ -112,20 +114,11 @@ public:
     }
   }
 
-  std::string_view typeName(int structure) const
-  {
-    return types_.at(structures_.at(structure).type);
-  }
+  std::string_view typeName(int structure) const { return types_.at(structures_.at(structure).type); }
 
-  size_t structureSize(int structure) const
-  {
-    return lengths_.at(structures_.at(structure).type);
-  }
+  size_t structureSize(int structure) const { return lengths_.at(structures_.at(structure).type); }
 
-  int structureIndex(std::string_view type) const
-  {
-    return structureByType_.at(std::string(type));
-  }
+  int structureIndex(std::string_view type) const { return structureByType_.at(std::string(type)); }
 
   size_t fieldOffset(int structure, std::string_view path) const
   {
@@ -265,7 +258,8 @@ struct Block {
   std::vector<uint8_t> data;
 };
 
-class BlendScene {
+class BlendScene
+{
 public:
   explicit BlendScene(const fs::path& templatePath)
   {
@@ -303,30 +297,25 @@ public:
   void setFrames(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps)
   {
     if (frames.empty()) throw std::runtime_error("Blender animation has no frames");
+    if (frames.size() > MAX_BLEND_FRAMES) {
+      throw std::runtime_error("Blender export supports at most 256 frames");
+    }
 
     Block& scene = blockByCode("SC");
     writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.sfra"), 1);
     writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.efra"), int32_t(frames.size()));
     writeScalar<int16_t>(scene.data, dna_->fieldOffset(scene.dna, "r.frs_sec"), int16_t(fps));
 
-    Block& templateObject = blockByIdName("OBFrame Template");
-    const uint64_t templateObjectAddress = templateObject.old;
-    const auto package = ownedPackage(templateObjectAddress);
-
-    std::vector<uint64_t> objectAddresses{templateObjectAddress};
-    std::vector<std::set<uint64_t>> packages{package};
-    for (size_t frame = 1; frame < frames.size(); ++frame) {
-      auto [root, cloned] = clonePackage(templateObjectAddress, package);
-      objectAddresses.push_back(root);
-      packages.push_back(std::move(cloned));
-      rebuildIndex();
-    }
-    rebuildIndex();
-
     for (size_t frame = 0; frame < frames.size(); ++frame) {
-      patchPackage(packages[frame], objectAddresses[frame], frames[frame], frame);
+      char objectName[32];
+      std::snprintf(objectName, sizeof(objectName), "OBFrame %04zu", frame + 1);
+      Block& object = blockByIdName(objectName);
+      const uint64_t objectAddress = object.old;
+      const uint64_t meshAddress =
+        readScalar<uint64_t>(object.data, dna_->fieldOffset(object.dna, "data"));
+      detachMeshData(meshAddress);
+      patchPackage(ownedPackage(objectAddress), frames[frame]);
     }
-    rebuildCollectionLinks(objectAddresses, templateObjectAddress);
   }
 
   void write(std::ostream& output) const
@@ -346,14 +335,27 @@ public:
 private:
   Block& blockByCode(std::string_view code)
   {
-    return *std::find_if(blocks_.begin(), blocks_.end(), [&](const auto& block) {
-      return codeString(block.code) == code;
-    });
+    return *std::find_if(blocks_.begin(), blocks_.end(),
+                         [&](const auto& block) { return codeString(block.code) == code; });
   }
 
-  Block& blockByAddress(uint64_t address) { return blocks_.at(indexByAddress_.at(address)); }
+  Block& blockByAddress(uint64_t address)
+  {
+    const auto found = indexByAddress_.find(address);
+    if (found == indexByAddress_.end()) {
+      throw std::runtime_error("Missing Blender block address " + std::to_string(address));
+    }
+    return blocks_.at(found->second);
+  }
 
-  const Block& blockByAddress(uint64_t address) const { return blocks_.at(indexByAddress_.at(address)); }
+  const Block& blockByAddress(uint64_t address) const
+  {
+    const auto found = indexByAddress_.find(address);
+    if (found == indexByAddress_.end()) {
+      throw std::runtime_error("Missing Blender block address " + std::to_string(address));
+    }
+    return blocks_.at(found->second);
+  }
 
   std::string idName(const Block& block) const
   {
@@ -419,6 +421,29 @@ private:
     return result;
   }
 
+  void detachMeshData(uint64_t meshAddress)
+  {
+    auto package = ownedPackage(meshAddress);
+    package.erase(meshAddress);
+    std::unordered_map<uint64_t, uint64_t> remap;
+    for (const uint64_t address : package) remap[address] = nextAddress();
+
+    std::vector<Block> clones;
+    clones.reserve(package.size());
+    for (const uint64_t address : package) {
+      Block clone = blockByAddress(address);
+      clone.old = remap.at(address);
+      patchPointers(clone, remap);
+      clones.push_back(std::move(clone));
+    }
+    patchPointers(blockByAddress(meshAddress), remap);
+    const auto mesh = std::find_if(blocks_.begin(), blocks_.end(),
+                                   [&](const auto& block) { return block.old == meshAddress; });
+    blocks_.insert(std::next(mesh), std::make_move_iterator(clones.begin()),
+                   std::make_move_iterator(clones.end()));
+    rebuildIndex();
+  }
+
   void patchPointers(Block& block, const std::unordered_map<uint64_t, uint64_t>& remap)
   {
     std::vector<size_t> offsets;
@@ -439,46 +464,6 @@ private:
     }
   }
 
-  std::pair<uint64_t, std::set<uint64_t>> clonePackage(uint64_t root, const std::set<uint64_t>& package)
-  {
-    std::unordered_map<uint64_t, uint64_t> remap;
-    for (const uint64_t address : package) remap[address] = nextAddress();
-
-    std::vector<Block> clones;
-    clones.reserve(package.size());
-    for (const uint64_t address : package) {
-      Block clone = blockByAddress(address);
-      clone.old = remap.at(address);
-      patchPointers(clone, remap);
-      if (codeString(clone.code).size() == 2) {
-        writeScalar<uint64_t>(clone.data, dna_->fieldOffset(clone.dna, "id.next"), 0);
-        writeScalar<uint64_t>(clone.data, dna_->fieldOffset(clone.dna, "id.prev"), 0);
-        writeScalar<uint32_t>(clone.data, dna_->fieldOffset(clone.dna, "id.session_uid"),
-                              0x80000000U + uint32_t(nextSessionUid_++));
-      }
-      clones.push_back(std::move(clone));
-    }
-
-    std::vector<Block> dataClones;
-    for (auto& clone : clones) {
-      const std::string code = codeString(clone.code);
-      if (code.size() != 2) {
-        dataClones.push_back(std::move(clone));
-        continue;
-      }
-      const auto last = std::find_if(blocks_.rbegin(), blocks_.rend(),
-                                     [&](const auto& block) { return codeString(block.code) == code; });
-      blocks_.insert(last.base(), std::move(clone));
-    }
-    const auto dna = std::find_if(blocks_.begin(), blocks_.end(),
-                                  [](const auto& block) { return codeString(block.code) == "DNA1"; });
-    blocks_.insert(dna, std::make_move_iterator(dataClones.begin()),
-                   std::make_move_iterator(dataClones.end()));
-    std::set<uint64_t> clonedAddresses;
-    for (const auto& [old, replacement] : remap) clonedAddresses.insert(replacement);
-    return {remap.at(root), std::move(clonedAddresses)};
-  }
-
   uint64_t nextAddress()
   {
     while (indexByAddress_.find(GENERATED_ADDRESS_BASE + nextGeneratedAddress_ * 16) !=
@@ -488,43 +473,12 @@ private:
     return GENERATED_ADDRESS_BASE + nextGeneratedAddress_++ * 16;
   }
 
-  void replaceText(const std::set<uint64_t>& package, std::string_view from, std::string_view to)
+  void patchPackage(const std::set<uint64_t>& package, const std::shared_ptr<const Geometry>& geometry)
   {
-    if (to.size() > from.size()) throw std::runtime_error("Blender template name is too short");
-    for (const uint64_t address : package) {
-      auto& data = blockByAddress(address).data;
-      for (size_t offset = 0; offset + from.size() <= data.size(); ++offset) {
-        if (std::memcmp(data.data() + offset, from.data(), from.size()) == 0) {
-          std::fill(data.begin() + offset, data.begin() + offset + from.size(), 0);
-          std::copy(to.begin(), to.end(), data.begin() + offset);
-        }
-      }
-    }
-  }
-
-  void patchPackage(const std::set<uint64_t>& package, uint64_t objectAddress,
-                    const std::shared_ptr<const Geometry>& geometry, size_t frame)
-  {
-    char frameName[32];
-    std::snprintf(frameName, sizeof(frameName), "Frame %04zu", frame + 1);
-    replaceText(package, "Frame Template", frameName);
-
     for (const uint64_t address : package) {
       Block& block = blockByAddress(address);
       if (codeString(block.code) == "ME") patchMesh(block, geometry);
-      if (dna_->typeName(block.dna) == "BezTriple") {
-        const size_t itemSize = dna_->structureSize(block.dna);
-        const size_t vec = dna_->fieldOffset(block.dna, "vec");
-        for (int64_t key = 0; key < block.count; ++key) {
-          for (size_t point = 0; point < 3; ++point) {
-            const size_t offset = size_t(key) * itemSize + vec + point * 3 * sizeof(float);
-            writeScalar<float>(block.data, offset,
-                               readScalar<float>(block.data, offset) + float(frame));
-          }
-        }
-      }
     }
-    (void)objectAddress;
   }
 
   void patchMesh(Block& mesh, const std::shared_ptr<const Geometry>& geometry)
@@ -559,24 +513,29 @@ private:
     writeScalar<int32_t>(mesh.data, dna_->fieldOffset(mesh.dna, "totloop"),
                          int32_t(cornerVertices.size()));
 
-    const uint64_t offsetAddress = readScalar<uint64_t>(
-      mesh.data, dna_->fieldOffset(mesh.dna, "poly_offset_indices"));
+    const uint64_t offsetAddress =
+      readScalar<uint64_t>(mesh.data, dna_->fieldOffset(mesh.dna, "poly_offset_indices"));
+    if (!offsetAddress) throw std::runtime_error("Blender mesh has no polygon offsets");
     setRaw(blockByAddress(offsetAddress), offsets);
 
-    const uint64_t attributesAddress = readScalar<uint64_t>(
-      mesh.data, dna_->fieldOffset(mesh.dna, "attribute_storage.dna_attributes"));
+    const uint64_t attributesAddress =
+      readScalar<uint64_t>(mesh.data, dna_->fieldOffset(mesh.dna, "attribute_storage.dna_attributes"));
+    if (!attributesAddress) throw std::runtime_error("Blender mesh has no attributes");
     Block& attributes = blockByAddress(attributesAddress);
     const size_t attributeSize = dna_->structureSize(attributes.dna);
     for (int64_t item = 0; item < attributes.count; ++item) {
       const size_t base = size_t(item) * attributeSize;
-      const uint64_t nameAddress = readScalar<uint64_t>(
-        attributes.data, base + dna_->fieldOffset(attributes.dna, "name"));
+      const uint64_t nameAddress =
+        readScalar<uint64_t>(attributes.data, base + dna_->fieldOffset(attributes.dna, "name"));
+      if (!nameAddress) throw std::runtime_error("Blender mesh attribute has no name");
       const std::string name = rawString(blockByAddress(nameAddress));
-      const uint64_t arrayAddress = readScalar<uint64_t>(
-        attributes.data, base + dna_->fieldOffset(attributes.dna, "data"));
+      const uint64_t arrayAddress =
+        readScalar<uint64_t>(attributes.data, base + dna_->fieldOffset(attributes.dna, "data"));
+      if (!arrayAddress) throw std::runtime_error("Blender mesh attribute has no array");
       Block& array = blockByAddress(arrayAddress);
-      const uint64_t payloadAddress = readScalar<uint64_t>(
-        array.data, dna_->fieldOffset(array.dna, "data"));
+      const uint64_t payloadAddress =
+        readScalar<uint64_t>(array.data, dna_->fieldOffset(array.dna, "data"));
+      if (!payloadAddress) throw std::runtime_error("Blender mesh attribute has no payload: " + name);
       Block& payload = blockByAddress(payloadAddress);
 
       if (name == "position") {
@@ -627,60 +586,11 @@ private:
     return std::string(data, std::find(data, data + block.data.size(), '\0'));
   }
 
-  void rebuildCollectionLinks(const std::vector<uint64_t>& objects, uint64_t templateObject)
-  {
-    Block& scene = blockByCode("SC");
-    const uint64_t collectionAddress = readScalar<uint64_t>(
-      scene.data, dna_->fieldOffset(scene.dna, "master_collection"));
-    Block& collection = blockByAddress(collectionAddress);
-    const size_t firstOffset = dna_->fieldOffset(collection.dna, "gobject.first");
-    const size_t lastOffset = dna_->fieldOffset(collection.dna, "gobject.last");
-    const uint64_t first = readScalar<uint64_t>(collection.data, firstOffset);
-
-    std::vector<uint64_t> originalLinks;
-    uint64_t current = first;
-    uint64_t templateLink = 0;
-    while (current) {
-      originalLinks.push_back(current);
-      const Block& link = blockByAddress(current);
-      const uint64_t object = readScalar<uint64_t>(link.data, dna_->fieldOffset(link.dna, "ob"));
-      if (object == templateObject) templateLink = current;
-      current = readScalar<uint64_t>(link.data, dna_->fieldOffset(link.dna, "next"));
-    }
-    if (!templateLink) throw std::runtime_error("Blender template object is not in its collection");
-
-    std::vector<uint64_t> links{templateLink};
-    for (size_t i = 1; i < objects.size(); ++i) {
-      Block link = blockByAddress(templateLink);
-      link.old = nextAddress();
-      writeScalar<uint64_t>(link.data, dna_->fieldOffset(link.dna, "ob"), objects[i]);
-      links.push_back(link.old);
-      const auto dnaBlock = std::find_if(blocks_.begin(), blocks_.end(),
-                                         [](const auto& block) { return codeString(block.code) == "DNA1"; });
-      blocks_.insert(dnaBlock, std::move(link));
-    }
-    for (const uint64_t link : originalLinks) {
-      if (link != templateLink) links.push_back(link);
-    }
-    rebuildIndex();
-
-    for (size_t i = 0; i < links.size(); ++i) {
-      Block& link = blockByAddress(links[i]);
-      writeScalar<uint64_t>(link.data, dna_->fieldOffset(link.dna, "prev"), i ? links[i - 1] : 0);
-      writeScalar<uint64_t>(link.data, dna_->fieldOffset(link.dna, "next"),
-                            i + 1 < links.size() ? links[i + 1] : 0);
-    }
-    Block& updatedCollection = blockByAddress(collectionAddress);
-    writeScalar<uint64_t>(updatedCollection.data, firstOffset, links.front());
-    writeScalar<uint64_t>(updatedCollection.data, lastOffset, links.back());
-  }
-
   std::vector<uint8_t> bytes_;
   std::vector<Block> blocks_;
   std::unordered_map<uint64_t, size_t> indexByAddress_;
   std::unique_ptr<Dna> dna_;
   uint64_t nextGeneratedAddress_ = 1;
-  uint64_t nextSessionUid_ = 1;
 };
 
 }  // namespace
@@ -688,8 +598,7 @@ private:
 void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
                             std::ostream& output)
 {
-  const fs::path templatePath =
-    PlatformUtils::resourcePath("templates") / "blender-5.0.1.blend";
+  const fs::path templatePath = PlatformUtils::resourcePath("templates") / "blender-5.0.1.blend";
   BlendScene scene(templatePath);
   std::vector<std::shared_ptr<const Geometry>> geometry;
   geometry.reserve(frames.size());
