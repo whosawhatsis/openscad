@@ -40,32 +40,32 @@ finish { conserve_energy specular 0.5 ambient 0 diffuse 0.6 roughness 0.6 metall
 polygon { 5, 
 <20, 0, 0>, <20, 0, 10>, <20, 10, 10>, <20, 10, 0>, <20, 0, 0>
 texture { pigment { color rgbf <0, 0, 1, 0> } }
-finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+finish { conserve_energy specular 0.9 ambient 0 diffuse 0.6 roughness 0.001 emission 0.2 reflection{0 0.63 fresnel} } interior { ior 1.5 }
 }
 polygon { 5, 
 <20, 0, 0>, <20, 10, 0>, <30, 10, 0>, <30, 0, 0>, <20, 0, 0>
 texture { pigment { color rgbf <0, 0, 1, 0> } }
-finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+finish { conserve_energy specular 0.9 ambient 0 diffuse 0.6 roughness 0.001 emission 0.2 reflection{0 0.63 fresnel} } interior { ior 1.5 }
 }
 polygon { 5, 
 <20, 0, 0>, <30, 0, 0>, <30, 0, 10>, <20, 0, 10>, <20, 0, 0>
 texture { pigment { color rgbf <0, 0, 1, 0> } }
-finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+finish { conserve_energy specular 0.9 ambient 0 diffuse 0.6 roughness 0.001 emission 0.2 reflection{0 0.63 fresnel} } interior { ior 1.5 }
 }
 polygon { 5, 
 <20, 0, 10>, <30, 0, 10>, <30, 10, 10>, <20, 10, 10>, <20, 0, 10>
 texture { pigment { color rgbf <0, 0, 1, 0> } }
-finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+finish { conserve_energy specular 0.9 ambient 0 diffuse 0.6 roughness 0.001 emission 0.2 reflection{0 0.63 fresnel} } interior { ior 1.5 }
 }
 polygon { 5, 
 <20, 10, 0>, <20, 10, 10>, <30, 10, 10>, <30, 10, 0>, <20, 10, 0>
 texture { pigment { color rgbf <0, 0, 1, 0> } }
-finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+finish { conserve_energy specular 0.9 ambient 0 diffuse 0.6 roughness 0.001 emission 0.2 reflection{0 0.63 fresnel} } interior { ior 1.5 }
 }
 polygon { 5, 
 <30, 0, 0>, <30, 10, 0>, <30, 10, 10>, <30, 0, 10>, <30, 0, 0>
 texture { pigment { color rgbf <0, 0, 1, 0> } }
-finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+finish { conserve_energy specular 0.9 ambient 0 diffuse 0.6 roughness 0.001 emission 0.2 reflection{0 0.63 fresnel} } interior { ior 1.5 }
 }
 light_source { <-60, -20, -20> color rgb <0.2, 0.2, 0.2> }
 light_source { <-60, -20, 5> color rgb <0.2, 0.2, 0.2> }
