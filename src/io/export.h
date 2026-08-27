@@ -61,6 +61,7 @@ enum class FileFormat {
   POV,
   USDA,
   USDZ,
+  BLEND,
   PARAM
 };
 
@@ -365,6 +366,8 @@ void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigne
                            std::ostream& output, const ExportInfo& exportInfo);
 void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo);
+void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                            std::ostream& output);
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_nefdbg(const std::shared_ptr<const Geometry>& geom, std::ostream& output);

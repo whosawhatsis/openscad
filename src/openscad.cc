@@ -769,7 +769,9 @@ int cmdline(const CommandLine& cmd)
       const bool wrote = with_output(
         false, fs::path(cmd.output_file).generic_string(),
         [&](std::ostream& stream) {
-          if (export_format == FileFormat::USDZ) {
+          if (export_format == FileFormat::BLEND) {
+            export_blend_animation(usdFrames, cmd.animate.fps, stream);
+          } else if (export_format == FileFormat::USDZ) {
             export_usdz_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
           } else {
             export_usda_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
@@ -998,7 +1000,7 @@ int openscad_main(int argc, char **argv)
     ("preview", po::value<std::string>()->implicit_value(""),
       "[=throwntogether] -for ThrownTogether preview png")
     ("animate", po::value<unsigned>(), "export N animated frames")
-    ("animate_fps", po::value<unsigned>(), "frame rate for formats that fold the frames into one file (gif, apng, avi, usda, usdz); default 30")
+    ("animate_fps", po::value<unsigned>(), "frame rate for formats that fold the frames into one file (gif, apng, avi, usda, usdz, blend); default 30")
     ("animate_sharding", po::value<std::string>(),
       "Parameter <shard>/<num_shards> - Divide work into <num_shards> and only output frames for "
       "<shard>. E.g. 2/5 only outputs the second 1/5 of frames. Use to parallelize work on multiple "

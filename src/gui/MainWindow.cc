@@ -1941,12 +1941,15 @@ bool MainWindow::writeUsdAnimation(const QString& path, const std::vector<UsdAni
                                    unsigned fps)
 {
   const auto suffix = outputSuffix(path.toStdString());
-  const auto format = suffix == "usdz" ? FileFormat::USDZ : FileFormat::USDA;
+  const auto format = suffix == "blend" ? FileFormat::BLEND
+                      : suffix == "usdz" ? FileFormat::USDZ
+                                          : FileFormat::USDA;
   const auto exportInfo = createExportInfo(format, fileformat::info(format),
                                            activeEditor->filepath.toStdString(), &qglview->cam, {});
   std::ofstream stream(std::filesystem::u8path(path.toStdString()), std::ios::out | std::ios::binary);
   if (!stream) return false;
-  if (format == FileFormat::USDZ) export_usdz_animation(frames, fps, stream, exportInfo);
+  if (format == FileFormat::BLEND) export_blend_animation(frames, fps, stream);
+  else if (format == FileFormat::USDZ) export_usdz_animation(frames, fps, stream, exportInfo);
   else export_usda_animation(frames, fps, stream, exportInfo);
   return stream.good();
 }

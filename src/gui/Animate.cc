@@ -315,7 +315,7 @@ void Animate::startDump()
 
   const QString path =
     QFileDialog::getSaveFileName(this, _("Export Animation"), QString(),
-                                 _("USD ASCII animation (*.usda);;USDZ animation (*.usdz);;"
+                                 _("Blender animation (*.blend);;USD ASCII animation (*.usda);;USDZ animation (*.usdz);;"
                                    "Animated GIF (*.gif);;Animated PNG (*.apng);;MJPEG AVI (*.avi);;"
                                    "PNG image sequence (*.png)"));
 
