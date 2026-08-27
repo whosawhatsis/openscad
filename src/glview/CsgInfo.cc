@@ -138,14 +138,16 @@ std::vector<CSGChainObject> read_chain(const json& input,
       }
     }
     const auto& color = item["color"];
-    // No material name: this wire format does not carry one, so a leaf rebuilt in
-    // a worker process cannot resolve a Preferences default colour. Adding it
-    // means extending this format, which belongs to the process-isolation row.
-    auto leaf =
-      std::make_shared<CSGLeaf>(geometry->second, matrix,
-                                Color4f(color[0].get<float>(), color[1].get<float>(),
-                                        color[2].get<float>(), color[3].get<float>()),
-                                "", item["label"].get<std::string>(), item["index"].get<int>());
+    // No material name and default shading attributes: this wire format carries
+    // neither, so a leaf rebuilt in a worker process cannot resolve a Preferences
+    // default colour and renders with the default shininess and metalness.
+    // Carrying them means extending this format, which belongs to the
+    // process-isolation row.
+    auto leaf = std::make_shared<CSGLeaf>(geometry->second, matrix,
+                                          Color4f(color[0].get<float>(), color[1].get<float>(),
+                                                  color[2].get<float>(), color[3].get<float>()),
+                                          "", 64.0f, 0.0f, item["label"].get<std::string>(),
+                                          item["index"].get<int>());
     output.emplace_back(leaf, static_cast<CSGNode::Flag>(item["flags"].get<unsigned int>()));
   }
   return output;
