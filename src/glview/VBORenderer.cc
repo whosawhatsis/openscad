@@ -192,13 +192,7 @@ void VBORenderer::add_shader_pointers(VBOBuilder& vbo_builder, const ShaderUtils
                  material_index % mcount % mtype % mstride % (GLvoid *)(ss->drawOffset() + moffset));
         GL_CHECKD(glVertexAttribPointer(material_index, mcount, mtype, GL_FALSE, mstride,
                                         (GLvoid *)(ss->drawOffset() + moffset)));
-        GL_TRACE("glEnableVertexAttribArray(%d)", material_index);
-        GL_CHECKD(glEnableVertexAttribArray(material_index));
       });
-    ss->glEnd().emplace_back([material_index]() {
-      GL_TRACE("glDisableVertexAttribArray(%d)", material_index);
-      GL_CHECKD(glDisableVertexAttribArray(material_index));
-    });
   }
 
   vbo_builder.states().emplace_back(std::move(ss));

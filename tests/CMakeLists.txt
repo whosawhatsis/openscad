@@ -1114,6 +1114,7 @@ add_cmdline_test(export-svg-fill-only SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX 
 # with anything. It's self-contained and returns != 0 on error
 add_cmdline_test(export-stl-sanitytest  SCRIPT ${STLEXPORTSANITYTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/normal-nan.scad ARGS ${OPENSCAD_EXE_ARG})
 add_cmdline_test(export-multi-stl       EXPERIMENTAL SCRIPT ${MULTISTLEXPORTTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/multi-stl-bodies.scad ARGS ${OPENSCAD_EXE_ARG} --enable=predictible-output --enable=multi-material --export-format asciistl --render)
+add_cmdline_test(material-shading       EXPERIMENTAL SCRIPT ${MATERIALRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 
 # Export/import color support
 add_cmdline_test(offcolorpngtest EXPERIMENTAL SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX png FILES ${COLOR_3D_TEST_FILES} EXPECTEDDIR render-manifold ARGS ${OPENSCAD_EXE_ARG} --format=OFF --backend=manifold --render)
