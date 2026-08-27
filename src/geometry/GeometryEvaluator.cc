@@ -532,7 +532,7 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
             // Appearance, not identity: color() carries these too, and unlike the
             // body colour they never propagate through a boolean.
             if (node.hasPbrRoughness) {
-              mutableGeom->setShininess(Geometry::shininessForRoughness(node.pbrRoughness));
+              mutableGeom->setRoughness(static_cast<float>(node.pbrRoughness));
             }
             if (node.hasMetallic) mutableGeom->setMetallic(static_cast<float>(node.metallic));
             if (node.isMaterial) {

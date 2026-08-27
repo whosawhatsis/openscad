@@ -35,6 +35,9 @@
 #include "geometry/PolySetUtils.h"
 #include "geometry/linalg.h"
 #include "io/export.h"
+#include <string>
+#include <sstream>
+#include <algorithm>
 
 void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo)
@@ -55,6 +58,22 @@ void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
   output << "#declare MATERIAL_INT=interior{ior 1.32}\n";
 
   auto has_color = !ps->color_indices.empty();
+
+  // POV's own finish vocabulary matches ours closely enough to pass the values
+  // straight through: its "roughness" is a highlight width in (0, 1] where small
+  // is shiny, and its "metallic" tints the highlight with the pigment colour,
+  // which is exactly what metallic means here. A body that sets neither keeps
+  // the shared MATERIAL finish, so existing exports are unchanged.
+  std::string finish_block = "finish { MATERIAL }";
+  if (geom->hasRoughness() || geom->metallic() > 0.0f) {
+    std::ostringstream finish;
+    finish << "finish { specular 0.5 reflection{0 0.63 fresnel} ambient 0 diffuse 0.6 "
+              "conserve_energy roughness "
+           << std::clamp(geom->hasRoughness() ? geom->roughness() : 0.001f, 0.0005f, 1.0f);
+    if (geom->metallic() > 0.0f) finish << " metallic " << geom->metallic();
+    finish << " }";
+    finish_block = finish.str();
+  }
 
   for (size_t polygon_index = 0; polygon_index < ps->indices.size(); polygon_index++) {
     const auto& polygon = ps->indices[polygon_index];
@@ -85,7 +104,7 @@ void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
     output << "\n";
     output << "texture { pigment { color rgbf <" << r << ", " << g << ", " << b << ", " << f
            << "> } }\n";
-    output << "finish { MATERIAL } interior { MATERIAL_INT }\n";
+      output << finish_block << " interior { MATERIAL_INT }\n";
     output << "}\n";
   }
 
