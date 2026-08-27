@@ -58,8 +58,20 @@ public:
     if (a2 <= 0.0) return 4096.0f;
     return static_cast<float>(std::clamp(2.0 / a2 - 2.0, 1.0, 4096.0));
   }
-  void setShininess(float s) { shininess_ = s; }
-  [[nodiscard]] float shininess() const { return shininess_; }
+  // Roughness is stored as the user wrote it, because that is what exporters
+  // need; the renderer converts to an exponent at draw time. Storing both would
+  // be two sources of truth for one property.
+  void setRoughness(float r)
+  {
+    roughness_ = r;
+    hasRoughness_ = true;
+  }
+  [[nodiscard]] bool hasRoughness() const { return hasRoughness_; }
+  [[nodiscard]] float roughness() const { return roughness_; }
+  [[nodiscard]] float shininess() const
+  {
+    return hasRoughness_ ? shininessForRoughness(roughness_) : 64.0f;
+  }
   void setMetallic(float m) { metallic_ = m; }
   [[nodiscard]] float metallic() const { return metallic_; }
   [[nodiscard]] const std::string& materialName() const { return materialName_; }
@@ -80,7 +92,8 @@ public:
   void copyBodyAttributes(const Geometry& other)
   {
     materialName_ = other.materialName_;
-    shininess_ = other.shininess_;
+    roughness_ = other.roughness_;
+    hasRoughness_ = other.hasRoughness_;
     metallic_ = other.metallic_;
     bodyBoundary_ = other.bodyBoundary_;
     bodyColor_ = other.bodyColor_;
@@ -105,7 +118,8 @@ public:
 protected:
   int convexity{1};
   std::string materialName_;
-  float shininess_{64.0f};
+  float roughness_{0.0f};
+  bool hasRoughness_{false};
   float metallic_{0.0f};
   bool bodyBoundary_{false};
   Color4f bodyColor_;

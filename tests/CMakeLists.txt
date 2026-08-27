@@ -960,6 +960,7 @@ list(APPEND EXPORT_3MF_MULTI_MATERIAL_TEST_FILES ${TEST_SCAD_DIR}/misc/multi-stl
 list(APPEND EXPORT_3MF_LAZY_UNION_TEST_FILES ${TEST_SCAD_DIR}/experimental/lazyunion-color-cubes.scad)
 
 list(APPEND EXPORT_POV_TEST_FILES ${TEST_SCAD_DIR}/pov/pov-export.scad)
+list(APPEND EXPORT_POV_MATERIAL_TEST_FILES ${TEST_SCAD_DIR}/pov/pov-material.scad)
 
 list(APPEND EXPORT_IMPORT_3D_FILES
 ${TEST_SCAD_DIR}/3D/features/mirror-tests.scad
@@ -1031,6 +1032,7 @@ add_cmdline_test(export-3mf              EXPERIMENTAL OPENSCAD SUFFIX 3mf FILES 
 add_cmdline_test(export-3mf-stdio        EXPERIMENTAL OPENSCAD SUFFIX 3mf FILES ${EXPORT_3MF_TEST_FILES} STDIO ARGS --enable=predictible-output --export-format 3mf)
 endif()
 add_cmdline_test(export-pov-as-is        EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold)
+add_cmdline_test(export-pov-material     EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_MATERIAL_TEST_FILES} ARGS --enable=predictible-output --enable=multi-material --backend=manifold)
 add_cmdline_test(export-pov-translate-1  EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=0,0,0,0,0,0,140)
 add_cmdline_test(export-pov-translate-2  EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=10,0,0,0,0,0,140)
 add_cmdline_test(export-pov-translate-3  EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=0,10,0,0,0,0,140)
