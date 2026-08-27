@@ -10,60 +10,90 @@ global_settings { assumed_gamma 1.0 }
 polygon { 5, 
 <0, 0, 0>, <0, 0, 10>, <0, 10, 10>, <0, 10, 0>, <0, 0, 0>
 texture { pigment { color rgbf <1, 0, 0, 0> } }
-finish { specular 0.5 reflection{0 0.63 fresnel} ambient 0 diffuse 0.6 conserve_energy roughness 0.6 metallic 1 } interior { MATERIAL_INT }
+finish { conserve_energy specular 0.5 ambient 0 diffuse 0.6 roughness 0.6 metallic 1 reflection{0 0.63 fresnel} } interior { MATERIAL_INT }
 }
 polygon { 5, 
 <0, 0, 0>, <0, 10, 0>, <10, 10, 0>, <10, 0, 0>, <0, 0, 0>
 texture { pigment { color rgbf <1, 0, 0, 0> } }
-finish { specular 0.5 reflection{0 0.63 fresnel} ambient 0 diffuse 0.6 conserve_energy roughness 0.6 metallic 1 } interior { MATERIAL_INT }
+finish { conserve_energy specular 0.5 ambient 0 diffuse 0.6 roughness 0.6 metallic 1 reflection{0 0.63 fresnel} } interior { MATERIAL_INT }
 }
 polygon { 5, 
 <0, 0, 0>, <10, 0, 0>, <10, 0, 10>, <0, 0, 10>, <0, 0, 0>
 texture { pigment { color rgbf <1, 0, 0, 0> } }
-finish { specular 0.5 reflection{0 0.63 fresnel} ambient 0 diffuse 0.6 conserve_energy roughness 0.6 metallic 1 } interior { MATERIAL_INT }
+finish { conserve_energy specular 0.5 ambient 0 diffuse 0.6 roughness 0.6 metallic 1 reflection{0 0.63 fresnel} } interior { MATERIAL_INT }
 }
 polygon { 5, 
 <0, 0, 10>, <10, 0, 10>, <10, 10, 10>, <0, 10, 10>, <0, 0, 10>
 texture { pigment { color rgbf <1, 0, 0, 0> } }
-finish { specular 0.5 reflection{0 0.63 fresnel} ambient 0 diffuse 0.6 conserve_energy roughness 0.6 metallic 1 } interior { MATERIAL_INT }
+finish { conserve_energy specular 0.5 ambient 0 diffuse 0.6 roughness 0.6 metallic 1 reflection{0 0.63 fresnel} } interior { MATERIAL_INT }
 }
 polygon { 5, 
 <0, 10, 0>, <0, 10, 10>, <10, 10, 10>, <10, 10, 0>, <0, 10, 0>
 texture { pigment { color rgbf <1, 0, 0, 0> } }
-finish { specular 0.5 reflection{0 0.63 fresnel} ambient 0 diffuse 0.6 conserve_energy roughness 0.6 metallic 1 } interior { MATERIAL_INT }
+finish { conserve_energy specular 0.5 ambient 0 diffuse 0.6 roughness 0.6 metallic 1 reflection{0 0.63 fresnel} } interior { MATERIAL_INT }
 }
 polygon { 5, 
 <10, 0, 0>, <10, 10, 0>, <10, 10, 10>, <10, 0, 10>, <10, 0, 0>
 texture { pigment { color rgbf <1, 0, 0, 0> } }
-finish { specular 0.5 reflection{0 0.63 fresnel} ambient 0 diffuse 0.6 conserve_energy roughness 0.6 metallic 1 } interior { MATERIAL_INT }
+finish { conserve_energy specular 0.5 ambient 0 diffuse 0.6 roughness 0.6 metallic 1 reflection{0 0.63 fresnel} } interior { MATERIAL_INT }
 }
-light_source { <-20, -20, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <-20, -20, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <-20, -20, 30> color rgb <0.2, 0.2, 0.2> }
-light_source { <-20, 5, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <-20, 5, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <-20, 5, 30> color rgb <0.2, 0.2, 0.2> }
-light_source { <-20, 30, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <-20, 30, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <-20, 30, 30> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, -20, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, -20, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, -20, 30> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, 5, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, 5, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, 5, 30> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, 30, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, 30, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <5, 30, 30> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, -20, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, -20, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, -20, 30> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, 5, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, 5, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, 5, 30> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, 30, -20> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, 30, 5> color rgb <0.2, 0.2, 0.2> }
-light_source { <30, 30, 30> color rgb <0.2, 0.2, 0.2> }
+polygon { 5, 
+<20, 0, 0>, <20, 0, 10>, <20, 10, 10>, <20, 10, 0>, <20, 0, 0>
+texture { pigment { color rgbf <0, 0, 1, 0> } }
+finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+}
+polygon { 5, 
+<20, 0, 0>, <20, 10, 0>, <30, 10, 0>, <30, 0, 0>, <20, 0, 0>
+texture { pigment { color rgbf <0, 0, 1, 0> } }
+finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+}
+polygon { 5, 
+<20, 0, 0>, <30, 0, 0>, <30, 0, 10>, <20, 0, 10>, <20, 0, 0>
+texture { pigment { color rgbf <0, 0, 1, 0> } }
+finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+}
+polygon { 5, 
+<20, 0, 10>, <30, 0, 10>, <30, 10, 10>, <20, 10, 10>, <20, 0, 10>
+texture { pigment { color rgbf <0, 0, 1, 0> } }
+finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+}
+polygon { 5, 
+<20, 10, 0>, <20, 10, 10>, <30, 10, 10>, <30, 10, 0>, <20, 10, 0>
+texture { pigment { color rgbf <0, 0, 1, 0> } }
+finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+}
+polygon { 5, 
+<30, 0, 0>, <30, 10, 0>, <30, 10, 10>, <30, 0, 10>, <30, 0, 0>
+texture { pigment { color rgbf <0, 0, 1, 0> } }
+finish { conserve_energy specular 0.9 ambient 0.1 diffuse 0.3 roughness 0.001 brilliance 2 crand 0.05 emission 0.2 reflection{0.4} } interior { ior 1.5 }
+}
+light_source { <-60, -20, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <-60, -20, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <-60, -20, 30> color rgb <0.2, 0.2, 0.2> }
+light_source { <-60, 5, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <-60, 5, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <-60, 5, 30> color rgb <0.2, 0.2, 0.2> }
+light_source { <-60, 30, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <-60, 30, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <-60, 30, 30> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, -20, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, -20, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, -20, 30> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, 5, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, 5, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, 5, 30> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, 30, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, 30, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <15, 30, 30> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, -20, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, -20, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, -20, 30> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, 5, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, 5, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, 5, 30> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, 30, -20> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, 30, 5> color rgb <0.2, 0.2, 0.2> }
+light_source { <90, 30, 30> color rgb <0.2, 0.2, 0.2> }
 camera { look_at <0, 0, 0>
  location <0, 0, 140>
  angle 22.5 up <0, 1, 0> right <1, 0, 0> sky <0, 1, 0> right -x*image_width/image_height

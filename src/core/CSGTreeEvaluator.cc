@@ -234,10 +234,10 @@ std::shared_ptr<CSGNode> CSGTreeEvaluator::evaluateCSGNodeFromGeometry(
     }
   }
 
-  std::shared_ptr<CSGNode> t(new CSGLeaf(ps, state.matrix(), state.color(), state.materialName(),
-                                         state.hasRoughness() ? Geometry::shininessForRoughness(state.roughness()) : 64.0f,
-                                         state.metallic(),
-                                         STR(node.name(), node.index()), node.index()));
+  std::shared_ptr<CSGNode> t(
+    new CSGLeaf(ps, state.matrix(), state.color(), state.materialName(),
+                state.hasRoughness() ? Geometry::shininessForRoughness(state.roughness()) : 64.0f,
+                state.metallic(), STR(node.name(), node.index()), node.index()));
   if (modinst->isHighlight() || state.isHighlight()) t->setHighlight(true);
   if (modinst->isBackground() || state.isBackground()) t->setBackground(true);
   return t;
