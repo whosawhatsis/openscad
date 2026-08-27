@@ -180,7 +180,37 @@ std::string formatList(const std::vector<T>& values)
   return out.str();
 }
 
-void writeMaterial(std::ostream& output, size_t index, const Color4f& color)
+// The surface parameters a body carries, in the form UsdPreviewSurface wants.
+// TODO these come from the exported geometry as a whole. USD materials are keyed
+// by colour rather than by body, so a multi-body model with different surface
+// parameters per body needs the same body-aware treatment export_pov.cc got.
+struct UsdSurface {
+  float roughness{0.4f};
+  float metallic{0.0f};
+  const double *specular{nullptr};
+  const double *emission{nullptr};
+  const double *ior{nullptr};
+};
+
+UsdSurface usdSurfaceFor(const std::shared_ptr<const Geometry>& geom)
+{
+  UsdSurface surface;
+  if (!geom) return surface;
+  if (geom->hasRoughness()) surface.roughness = geom->roughness();
+  surface.metallic = geom->metallic();
+  const auto& params = geom->finishParams();
+  const auto find = [&](const char *name) -> const double * {
+    const auto it = params.find(name);
+    return it == params.end() ? nullptr : &it->second;
+  };
+  surface.specular = find("specular");
+  surface.emission = find("emission");
+  surface.ior = find("ior");
+  return surface;
+}
+
+void writeMaterial(std::ostream& output, size_t index, const Color4f& color,
+                   const UsdSurface& surface = {})
 {
   const std::string name = "mat" + std::to_string(index);
   output << "        def Material \"" << name << "\"\n";
@@ -195,8 +225,19 @@ void writeMaterial(std::ostream& output, size_t index, const Color4f& color)
   output << "                uniform token info:id = \"UsdPreviewSurface\"\n";
   output << "                color3f inputs:diffuseColor = (" << color.r() << ", " << color.g() << ", "
          << color.b() << ")\n";
-  output << "                float inputs:metallic = 0\n";
-  output << "                float inputs:roughness = 0.4\n";
+  output << "                float inputs:metallic = " << surface.metallic << "\n";
+  output << "                float inputs:roughness = " << surface.roughness << "\n";
+  // Emitted only when the body asked for them, so a model that sets nothing
+  // produces exactly the file it did before.
+  if (surface.specular) {
+    output << "                color3f inputs:specularColor = (" << *surface.specular << ", "
+           << *surface.specular << ", " << *surface.specular << ")\n";
+  }
+  if (surface.emission) {
+    output << "                color3f inputs:emissiveColor = (" << *surface.emission << ", "
+           << *surface.emission << ", " << *surface.emission << ")\n";
+  }
+  if (surface.ior) output << "                float inputs:ior = " << *surface.ior << "\n";
   output << "                float inputs:opacity = " << color.a() << "\n";
   output << "                token outputs:surface\n";
   output << "            }\n";
@@ -278,9 +319,12 @@ void writeStage(const std::vector<std::shared_ptr<const Geometry>>& frames, unsi
 
   output << "    def Scope \"Materials\"\n";
   output << "    {\n";
+  // Frame 0 is the still export's only frame, and the surface parameters belong
+  // to the geometry rather than to a frame.
+  const UsdSurface surface = usdSurfaceFor(frames.empty() ? nullptr : frames[0]);
   for (size_t i = 0; i < scene.materials.size(); ++i) {
     if (i) output << "\n";
-    writeMaterial(output, i, scene.materials[i]);
+    writeMaterial(output, i, scene.materials[i], surface);
   }
   output << "    }\n\n";
 

@@ -409,3 +409,30 @@ TEST_CASE("USDA export honours predictible-output", "[export][usd]")
   // Sorted export must emit the lowest vertex first, whatever order it arrived in.
   REQUIRE(sorted.find("point3f[] points = [(0, 0, 0),") != std::string::npos);
 }
+
+TEST_CASE("USDA export carries the body's surface parameters", "[export][usd]")
+{
+  // The five attributes chosen to be portable across POV, Blender and USD all
+  // have direct UsdPreviewSurface inputs, so they must reach the file rather
+  // than being replaced by the fixed values the exporter used to emit.
+  auto ps = makeTriangle();
+  ps->setRoughness(0.6f);
+  ps->setMetallic(1.0f);
+  ps->setFinishParams({{"specular", 0.9}, {"emission", 0.2}, {"ior", 1.5}});
+  const std::string usda = exportToString(std::shared_ptr<const Geometry>(std::move(ps)));
+
+  REQUIRE(usda.find("float inputs:roughness = 0.6") != std::string::npos);
+  REQUIRE(usda.find("float inputs:metallic = 1") != std::string::npos);
+  REQUIRE(usda.find("float inputs:ior = 1.5") != std::string::npos);
+  REQUIRE(usda.find("color3f inputs:specularColor = (0.9, 0.9, 0.9)") != std::string::npos);
+  REQUIRE(usda.find("color3f inputs:emissiveColor = (0.2, 0.2, 0.2)") != std::string::npos);
+}
+
+TEST_CASE("USDA export keeps its defaults when the body sets nothing", "[export][usd]")
+{
+  const std::string usda = exportToString(makeTriangle());
+  REQUIRE(usda.find("float inputs:roughness = 0.4") != std::string::npos);
+  REQUIRE(usda.find("float inputs:metallic = 0") != std::string::npos);
+  REQUIRE(usda.find("inputs:ior") == std::string::npos);
+  REQUIRE(usda.find("inputs:emissiveColor") == std::string::npos);
+}
