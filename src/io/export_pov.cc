@@ -104,7 +104,7 @@ void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
     output << "\n";
     output << "texture { pigment { color rgbf <" << r << ", " << g << ", " << b << ", " << f
            << "> } }\n";
-      output << finish_block << " interior { MATERIAL_INT }\n";
+    output << finish_block << " interior { MATERIAL_INT }\n";
     output << "}\n";
   }
 
