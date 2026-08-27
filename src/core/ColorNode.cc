@@ -223,11 +223,15 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
     *param.flag = true;
   }
 
-  // Straight POV-Ray finish parameters. TODO: nothing but the POV exporter reads
-  // these yet - the viewport shader and the USD exporter should grow support,
-  // and USD has direct counterparts for emission (emissiveColor) and ior.
-  for (const char *const finishName :
-       {"ambient", "diffuse", "specular", "brilliance", "reflection", "emission", "crand", "ior"}) {
+  // Surface parameters beyond roughness and metallic. Deliberately only the ones
+  // POV-Ray and Blender's Principled BSDF both express, so a value written here
+  // means the same thing in either renderer: specular, emission and ior.
+  // POV-only finish keywords (ambient, brilliance, crand) are left out on
+  // purpose - they would not survive to any other target.
+  // TODO: only the POV exporter reads these. The viewport shader should grow
+  // support, and USD's preview surface has direct counterparts for all three
+  // (inputs:specularColor, inputs:emissiveColor, inputs:ior).
+  for (const char *const finishName : {"specular", "emission", "ior"}) {
     const auto& value = parameters[finishName];
     if (!value.isDefined()) continue;
     if (value.type() != Value::Type::NUMBER) {

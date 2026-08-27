@@ -89,14 +89,8 @@ void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
       finish << " roughness "
              << std::clamp(bodyGeom->hasRoughness() ? bodyGeom->roughness() : 0.001f, 0.0005f, 1.0f);
       if (bodyGeom->metallic() > 0.0f) finish << " metallic " << bodyGeom->metallic();
-      for (const char *const name : {"brilliance", "crand", "emission"}) {
-        if (const double *v = finishParam(name)) finish << " " << name << " " << *v;
-      }
-      if (const double *v = finishParam("reflection")) {
-        finish << " reflection{" << *v << "}";
-      } else {
-        finish << " reflection{0 0.63 fresnel}";
-      }
+      if (const double *v = finishParam("emission")) finish << " emission " << *v;
+      finish << " reflection{0 0.63 fresnel}";
       finish << " }";
       finish_block = finish.str();
     }
