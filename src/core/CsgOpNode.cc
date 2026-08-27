@@ -28,6 +28,7 @@
 
 #include <cassert>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -37,31 +38,61 @@
 #include "core/Parameters.h"
 #include "core/enums.h"
 #include "core/module.h"
+#include "utils/printutils.h"
+
+namespace {
+
+std::shared_ptr<CsgOpNode> createCsgOpNode(const ModuleInstantiation *inst, Arguments arguments,
+                                           OpenSCADOperator type)
+{
+  const Parameters parameters = Parameters::parse(std::move(arguments), inst->location(), {"fillet"});
+  const Value& fillet = parameters["fillet"];
+  double radius = 0.0;
+
+  if (!fillet.isDefined()) {
+    return std::make_shared<CsgOpNode>(inst, type);
+  }
+  if (!fillet.getFiniteDouble(radius)) {
+    LOG(message_group::Error, inst->location(), parameters.documentRoot(),
+        "fillet radius must be a finite number");
+    radius = 0.0;
+  } else if (radius < 0.0) {
+    LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+        "negative fillet radius treated as zero");
+    radius = 0.0;
+  }
+
+  return std::make_shared<CsgOpNode>(inst, type, radius, true);
+}
+
+}  // namespace
 
 static std::shared_ptr<AbstractNode> builtin_union(const ModuleInstantiation *inst, Arguments arguments,
                                                    const Children& children)
 {
-  Parameters parameters = Parameters::parse(std::move(arguments), inst->location(), {});
-  return children.instantiate(std::make_shared<CsgOpNode>(inst, OpenSCADOperator::UNION));
+  return children.instantiate(createCsgOpNode(inst, std::move(arguments), OpenSCADOperator::UNION));
 }
 
 static std::shared_ptr<AbstractNode> builtin_difference(const ModuleInstantiation *inst,
                                                         Arguments arguments, const Children& children)
 {
-  Parameters parameters = Parameters::parse(std::move(arguments), inst->location(), {});
-  return children.instantiate(std::make_shared<CsgOpNode>(inst, OpenSCADOperator::DIFFERENCE));
+  return children.instantiate(createCsgOpNode(inst, std::move(arguments), OpenSCADOperator::DIFFERENCE));
 }
 
 static std::shared_ptr<AbstractNode> builtin_intersection(const ModuleInstantiation *inst,
                                                           Arguments arguments, const Children& children)
 {
-  Parameters parameters = Parameters::parse(std::move(arguments), inst->location(), {});
-  return children.instantiate(std::make_shared<CsgOpNode>(inst, OpenSCADOperator::INTERSECTION));
+  return children.instantiate(
+    createCsgOpNode(inst, std::move(arguments), OpenSCADOperator::INTERSECTION));
 }
 
 std::string CsgOpNode::toString() const
 {
-  return this->name() + "()";
+  std::ostringstream stream;
+  stream << this->name() << "(";
+  if (this->hasFillet) stream << "fillet = " << this->filletRadius;
+  stream << ")";
+  return stream.str();
 }
 
 std::string CsgOpNode::name() const
@@ -79,16 +110,16 @@ void register_builtin_csgops()
 {
   Builtins::init("union", new BuiltinModule(builtin_union),
                  {
-                   "union()",
+                   "union(fillet = number)",
                  });
 
   Builtins::init("difference", new BuiltinModule(builtin_difference),
                  {
-                   "difference()",
+                   "difference(fillet = number)",
                  });
 
   Builtins::init("intersection", new BuiltinModule(builtin_intersection),
                  {
-                   "intersection()",
+                   "intersection(fillet = number)",
                  });
 }

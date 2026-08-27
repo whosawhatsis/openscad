@@ -11,7 +11,13 @@ class CsgOpNode : public AbstractNode
 public:
   VISITABLE();
   OpenSCADOperator type;
-  CsgOpNode(const ModuleInstantiation *mi, OpenSCADOperator type) : AbstractNode(mi), type(type) {}
+  double filletRadius;
+  bool hasFillet;
+  CsgOpNode(const ModuleInstantiation *mi, OpenSCADOperator type, double filletRadius = 0.0,
+            bool hasFillet = false)
+    : AbstractNode(mi), type(type), filletRadius(filletRadius), hasFillet(hasFillet)
+  {
+  }
   std::string toString() const override;
   std::string name() const override;
 };
