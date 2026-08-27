@@ -557,6 +557,7 @@ bool OpenCSGRenderer::buildProduct(PendingProduct& p, const std::function<bool()
       if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
         last_color = color;
       }
+      vbo_builder.setMaterialParams(csgobj.leaf->shininess, csgobj.leaf->metallic);
 
       add_shader_pointers(vbo_builder, shaderinfo);
 
@@ -630,6 +631,7 @@ bool OpenCSGRenderer::buildProduct(PendingProduct& p, const std::function<bool()
       if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
         last_color = color;
       }
+      vbo_builder.setMaterialParams(csgobj.leaf->shininess, csgobj.leaf->metallic);
 
       add_shader_pointers(vbo_builder, shaderinfo);
 

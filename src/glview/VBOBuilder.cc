@@ -1,5 +1,7 @@
 #include "glview/VBOBuilder.h"
 
+#include <algorithm>
+
 #include <cmath>
 #include <unordered_map>
 #include <cstring>
@@ -347,6 +349,8 @@ void VBOBuilder::addShaderData()
   shader_attributes_index_ = vertex_data->attributes().size();
   vertex_data->addAttributeData(
     std::make_shared<AttributeData<GLubyte, 4, GL_UNSIGNED_BYTE>>());  // barycentric
+  vertex_data->addAttributeData(
+    std::make_shared<AttributeData<GLfloat, 2, GL_FLOAT>>());  // shininess, metallic
 }
 
 void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t primitive_index,
@@ -384,6 +388,11 @@ void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t pri
 
   addAttributeValues(*(vertex_data->attributes()[shader_attributes_index_ + BARYCENTRIC_ATTRIB]),
                      barycentric_flags[0], barycentric_flags[1], barycentric_flags[2], 0);
+
+  // Written here, alongside barycentric, so the two shader attribute arrays get
+  // exactly one entry per vertex and stay aligned.
+  addAttributeValues(*(vertex_data->attributes()[shader_attributes_index_ + MATERIAL_ATTRIB]),
+                     material_shininess_, material_metallic_);
 }
 
 void VBOBuilder::create_triangle(const Color4f& color, const Vector3d& p0, const Vector3d& p1,

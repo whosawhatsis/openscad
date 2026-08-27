@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <cassert>
 #include <cstddef>
 #include <list>
@@ -63,6 +65,25 @@ public:
     const auto it = this->metadata.find("material");
     return it == this->metadata.end() ? none : it->second;
   }
+  // Blinn-Phong specular exponent and metalness. The defaults are exactly what
+  // the shader used before these were configurable, so geometry that sets
+  // neither renders identically to before.
+  // TODO these are plain members, so unlike materialName they do NOT survive the
+  // compute worker transport. Move them into the metadata channel above.
+  // Standard Blinn-Phong mapping: alpha = roughness^2, exponent = 2/alpha^2 - 2.
+  // Note roughness 0.417 reproduces the shader's previous fixed exponent of 64,
+  // which is why that is the default when no roughness is given.
+  static float shininessForRoughness(double roughness)
+  {
+    const double alpha = roughness * roughness;
+    const double a2 = alpha * alpha;
+    if (a2 <= 0.0) return 4096.0f;
+    return static_cast<float>(std::clamp(2.0 / a2 - 2.0, 1.0, 4096.0));
+  }
+  void setShininess(float s) { shininess_ = s; }
+  [[nodiscard]] float shininess() const { return shininess_; }
+  void setMetallic(float m) { metallic_ = m; }
+  [[nodiscard]] float metallic() const { return metallic_; }
   void setBodyBoundary(bool boundary = true) { bodyBoundary_ = boundary; }
   [[nodiscard]] bool isBodyBoundary() const { return bodyBoundary_; }
   void setBodyColor(const Color4f& color)
@@ -80,6 +101,8 @@ public:
   void copyBodyAttributes(const Geometry& other)
   {
     setMaterialName(other.materialName());
+    shininess_ = other.shininess_;
+    metallic_ = other.metallic_;
     bodyBoundary_ = other.bodyBoundary_;
     bodyColor_ = other.bodyColor_;
     hasBodyColor_ = other.hasBodyColor_;
@@ -102,6 +125,8 @@ public:
 
 protected:
   int convexity{1};
+  float shininess_{64.0f};
+  float metallic_{0.0f};
   bool bodyBoundary_{false};
   Color4f bodyColor_;
   bool hasBodyColor_{false};
