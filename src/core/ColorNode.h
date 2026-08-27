@@ -1,5 +1,8 @@
 #pragma once
 
+#include <map>
+#include <string>
+
 #include <string>
 
 #include "core/BaseVisitable.h"
@@ -32,5 +35,8 @@ public:
   double pbrRoughness{0.0};
   bool hasPbrRoughness{false};
   double metallic{0.0};
+  // Additional POV-Ray finish parameters, kept as a map because nothing but the
+  // POV exporter consumes them yet - see ColorNode.cc for the accepted names.
+  std::map<std::string, double> finishParams;
   bool hasMetallic{false};
 };

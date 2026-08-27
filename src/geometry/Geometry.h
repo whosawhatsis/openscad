@@ -1,6 +1,8 @@
 #pragma once
 
 #include <algorithm>
+#include <map>
+#include <string>
 
 #include <cassert>
 #include <cstddef>
@@ -94,6 +96,12 @@ public:
   {
     return hasRoughness_ ? shininessForRoughness(roughness_) : 64.0f;
   }
+  // Extra POV-Ray finish parameters, carried as a map because only the POV
+  // exporter reads them so far. TODO fold these into the metadata channel that
+  // materialName uses on the process-isolation branch, so they survive the
+  // compute worker transport too.
+  void setFinishParams(std::map<std::string, double> params) { finishParams_ = std::move(params); }
+  [[nodiscard]] const std::map<std::string, double>& finishParams() const { return finishParams_; }
   void setMetallic(float m) { metallic_ = m; }
   [[nodiscard]] float metallic() const { return metallic_; }
   void setBodyBoundary(bool boundary = true) { bodyBoundary_ = boundary; }
@@ -116,6 +124,7 @@ public:
     roughness_ = other.roughness_;
     hasRoughness_ = other.hasRoughness_;
     metallic_ = other.metallic_;
+    finishParams_ = other.finishParams_;
     bodyBoundary_ = other.bodyBoundary_;
     bodyColor_ = other.bodyColor_;
     hasBodyColor_ = other.hasBodyColor_;
@@ -141,6 +150,7 @@ protected:
   float roughness_{0.0f};
   bool hasRoughness_{false};
   float metallic_{0.0f};
+  std::map<std::string, double> finishParams_;
   bool bodyBoundary_{false};
   Color4f bodyColor_;
   bool hasBodyColor_{false};

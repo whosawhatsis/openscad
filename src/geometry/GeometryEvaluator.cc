@@ -535,6 +535,7 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
               mutableGeom->setRoughness(static_cast<float>(node.pbrRoughness));
             }
             if (node.hasMetallic) mutableGeom->setMetallic(static_cast<float>(node.metallic));
+            if (!node.finishParams.empty()) mutableGeom->setFinishParams(node.finishParams);
             if (node.isMaterial) {
               // material("PLA") with no colour is the natural minimal form now
               // that the name comes first; it names the material without

@@ -64,7 +64,8 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
                                  : std::vector<std::string>{"c", "alpha", "roughness"},
                       // Named-only. Without declaring them, every bump= or metallic= warns
                       // "variable not specified as parameter" while still taking effect.
-                      {"bump", "metallic"});
+                      {"bump", "metallic", "ambient", "diffuse", "specular", "brilliance", "reflection",
+                       "emission", "crand", "ior"});
   if (isMaterial && parameters["name"].type() == Value::Type::STRING) {
     const auto& name = parameters["name"].toString();
     if (Material::isValidName(name)) {
@@ -222,6 +223,27 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
     *param.flag = true;
   }
 
+  // Straight POV-Ray finish parameters. TODO: nothing but the POV exporter reads
+  // these yet - the viewport shader and the USD exporter should grow support,
+  // and USD has direct counterparts for emission (emissiveColor) and ior.
+  for (const char *const finishName :
+       {"ambient", "diffuse", "specular", "brilliance", "reflection", "emission", "crand", "ior"}) {
+    const auto& value = parameters[finishName];
+    if (!value.isDefined()) continue;
+    if (value.type() != Value::Type::NUMBER) {
+      LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+          "%1$s() %2$s must be a number", moduleName, finishName);
+      continue;
+    }
+    const double v = value.toDouble();
+    if (v < 0.0) {
+      LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+          "%1$s() %2$s must not be negative, got %3$.6g", moduleName, finishName, v);
+      continue;
+    }
+    node->finishParams[finishName] = v;
+  }
+
   // A material with no colour of its own takes a default: from $material_colors
   // in the model first, so a shared script carries its own colours, and from the
   // Preferences table second, which is personal to this machine. An explicit
@@ -287,6 +309,9 @@ std::string ColorNode::toString() const
   }
   if (hasMetallic) {
     attrs += STR(", metallic = ", this->metallic);
+  }
+  for (const auto& [name, value] : this->finishParams) {
+    attrs += STR(", ", name, " = ", value);
   }
   if (isMaterial) {
     return STR("material([", this->color.r(), ", ", this->color.g(), ", ", this->color.b(), ", ",
