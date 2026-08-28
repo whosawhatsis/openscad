@@ -9,6 +9,7 @@ struct BrepBooleanResult {
   TopoDS_Shape shape;
   std::size_t filletedEdgeCount;
   double achievedFilletRadius;
+  double clearanceRadiusUpperBound;
 };
 
 BrepBooleanResult applyBrepDifference(std::initializer_list<TopoDS_Shape> operands, double filletRadius);

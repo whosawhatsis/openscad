@@ -1,6 +1,7 @@
 #ifdef ENABLE_OPENCSCADE
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 
 #include "geometry/brep/BrepBoolean.h"
 
@@ -32,8 +33,11 @@ TEST_CASE("B-Rep fillet reduces an infeasible radius", "[brep]")
 
   const auto result = applyBrepDifference({box, cylinder}, 10.0);
 
+  REQUIRE(result.clearanceRadiusUpperBound > 0.0);
+  REQUIRE(result.clearanceRadiusUpperBound < 10.0);
+  REQUIRE(result.clearanceRadiusUpperBound == Catch::Approx(5.0));
   REQUIRE(result.achievedFilletRadius > 0.0);
-  REQUIRE(result.achievedFilletRadius < 10.0);
+  REQUIRE(result.achievedFilletRadius <= result.clearanceRadiusUpperBound);
   REQUIRE(BRepCheck_Analyzer(result.shape).IsValid());
 }
 
