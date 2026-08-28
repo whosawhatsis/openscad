@@ -313,11 +313,11 @@ void Animate::startDump()
   const bool wasRunning = animateTimer->isActive();
   animateTimer->stop();
 
-  const QString path =
-    QFileDialog::getSaveFileName(this, _("Export Animation"), QString(),
-                                 _("Blender animation (*.blend);;USD ASCII animation (*.usda);;USDZ animation (*.usdz);;"
-                                   "Animated GIF (*.gif);;Animated PNG (*.apng);;MJPEG AVI (*.avi);;"
-                                   "PNG image sequence (*.png)"));
+  const QString path = QFileDialog::getSaveFileName(
+    this, _("Export Animation"), QString(),
+    _("Blender animation (*.blend);;USD ASCII animation (*.usda);;USDZ animation (*.usdz);;"
+      "Animated GIF (*.gif);;Animated PNG (*.apng);;MJPEG AVI (*.avi);;"
+      "PNG image sequence (*.png)"));
 
   if (wasRunning) animateTimer->start();
 
@@ -346,7 +346,7 @@ void Animate::startDump()
 void Animate::stopDump()
 {
   if (!dumpGeometryFrames.empty()) {
-    if (mainWindow->writeUsdAnimation(dumpPath, dumpGeometryFrames, dumpFps)) {
+    if (mainWindow->writeUsdAnimation(dumpPath, dumpGeometryFrames, dumpFps, e_blend_samples->value())) {
       LOG("Wrote %1$d frames to %2$s.", dumpFrame, dumpPath.toStdString());
     } else {
       LOG(message_group::Error, "Can't write %1$s.", dumpPath.toStdString());

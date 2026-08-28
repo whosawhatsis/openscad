@@ -365,8 +365,8 @@ private slots:
 
 public:
   UsdAnimationFrame usdAnimationFrame();
-  bool writeUsdAnimation(const QString& path, const std::vector<UsdAnimationFrame>& frames,
-                         unsigned fps);
+  bool writeUsdAnimation(const QString& path, const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                         size_t blendRemeshSamples = 256);
   void viewModeActionsUncheck();
   void setCurrentOutput();
   void clearCurrentOutput();

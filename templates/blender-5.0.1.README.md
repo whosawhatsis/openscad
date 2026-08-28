@@ -2,8 +2,8 @@
 
 `blender-5.0.1.blend` is a normal saved scene generated with the
 official Blender 5.0.1 Linux build. It contains one scene, one animated frame
-object and mesh for each of 256 remesh slots, 256 hidden persistent-object
-slots, a camera, an area light, a world, and one material. The direct `.blend`
+object and mesh for each of 256 remesh slots, 1024 hidden persistent-object
+slots, an animated camera, an area light, a world, and 1024 materials. The direct `.blend`
 exporter fills those authored slots and patches their mesh/action data without
 requiring Blender to be installed.
 
@@ -18,13 +18,14 @@ Generation settings:
 - EEVEE renderer, 320×240, 24 fps;
 - 256 separately authored quad meshes and objects, each visible only at its
   corresponding frame, with boolean visibility keyed around that frame;
-- one camera, one area light, one diffuse material, and a neutral world.
+- one animated camera, one area light, 1024 Principled materials, and a neutral world.
 
-The companion `generate-blender-5.0.1.py` script adds 256 hidden persistent-object
-slots with Blender-authored transform actions. Run it with Blender 5.0.1 against
+The companion `generate-blender-5.0.1.py` script adds 1024 hidden persistent-object
+slots with Blender-authored transform actions, the material pool, and camera action. Run it with Blender 5.0.1 against
 this template and pass the replacement path after `--`.
 
-This gives dependency-free export 256 evenly spaced remesh samples while
-persistent objects can carry longer transform animations.
+This gives dependency-free export up to 256 configurable, evenly spaced remesh samples while
+up to 1024 persistent objects can carry longer transform animations. OpenSCAD patches camera,
+per-face material, and transform animation data into the authored IDs.
 
-SHA-256: `dc3d2830d65483f7062daae72574d3b11455955a58b7b3dc896a33d94015ff49`
+SHA-256: `36cdd4cdadd3fde529e52da3c2ee6ef85ed57246109bce0abee705e7d63923d3`

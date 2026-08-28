@@ -1938,7 +1938,7 @@ UsdAnimationFrame MainWindow::usdAnimationFrame()
 }
 
 bool MainWindow::writeUsdAnimation(const QString& path, const std::vector<UsdAnimationFrame>& frames,
-                                   unsigned fps)
+                                   unsigned fps, size_t blendRemeshSamples)
 {
   const auto suffix = outputSuffix(path.toStdString());
   const auto format = suffix == "blend"  ? FileFormat::BLEND
@@ -1948,8 +1948,9 @@ bool MainWindow::writeUsdAnimation(const QString& path, const std::vector<UsdAni
                                            activeEditor->filepath.toStdString(), &qglview->cam, {});
   std::ofstream stream(std::filesystem::u8path(path.toStdString()), std::ios::out | std::ios::binary);
   if (!stream) return false;
-  if (format == FileFormat::BLEND) export_blend_animation(frames, fps, stream);
-  else if (format == FileFormat::USDZ) export_usdz_animation(frames, fps, stream, exportInfo);
+  if (format == FileFormat::BLEND) {
+    export_blend_animation(frames, fps, stream, {.remeshSamples = blendRemeshSamples});
+  } else if (format == FileFormat::USDZ) export_usdz_animation(frames, fps, stream, exportInfo);
   else export_usda_animation(frames, fps, stream, exportInfo);
   return stream.good();
 }

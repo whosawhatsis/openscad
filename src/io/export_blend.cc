@@ -415,6 +415,10 @@ public:
       readScalar<uint64_t>(object.data, dna_->fieldOffset(object.dna, "data"));
     Block& cameraData = blockByAddress(cameraAddress);
     const Camera& camera = *frames[0].camera;
+    Block& scene = blockByCode("SC");
+    writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.xsch"), camera.pixel_width);
+    writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.ysch"), camera.pixel_height);
+    writeScalar<int16_t>(scene.data, dna_->fieldOffset(scene.dna, "r.size"), 100);
     const float sensor = 36.0f;
     const float verticalFov = camera.fovValue() * std::acos(-1.0) / 180.0;
     writeScalar<int16_t>(cameraData.data, dna_->fieldOffset(cameraData.dna, "type"),
