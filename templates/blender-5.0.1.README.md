@@ -19,6 +19,11 @@ Generation settings:
   corresponding frame, with boolean visibility keyed around that frame;
 - one camera, one area light, one diffuse material, and a neutral world.
 
-This gives dependency-free export a maximum animation length of 256 frames.
+The companion `generate-blender-5.0.1.py` script adds 256 hidden persistent-object
+slots with Blender-authored transform actions. Run it with Blender 5.0.1 against
+this template and pass the replacement path after `--`.
+
+This gives dependency-free export 256 evenly spaced remesh samples while
+persistent objects can carry longer transform animations.
 
 SHA-256: `9ac2c29a05557ad397440d4c6654e2813f4ab1acb1e52a7e9f4739298565bccc`

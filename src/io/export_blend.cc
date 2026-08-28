@@ -297,24 +297,29 @@ public:
   void setFrames(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps)
   {
     if (frames.empty()) throw std::runtime_error("Blender animation has no frames");
-    if (frames.size() > MAX_BLEND_FRAMES) {
-      throw std::runtime_error("Blender export supports at most 256 frames");
-    }
 
     Block& scene = blockByCode("SC");
     writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.sfra"), 1);
     writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.efra"), int32_t(frames.size()));
     writeScalar<int16_t>(scene.data, dna_->fieldOffset(scene.dna, "r.frs_sec"), int16_t(fps));
 
-    for (size_t frame = 0; frame < frames.size(); ++frame) {
+    const size_t samples = std::min(frames.size(), MAX_BLEND_FRAMES);
+    for (size_t sample = 0; sample < samples; ++sample) {
+      const size_t frame =
+        samples == 1 ? 0 : (sample * (frames.size() - 1) + (samples - 1) / 2) / (samples - 1);
+      const size_t nextFrame =
+        sample + 1 == samples ? frames.size()
+                              : ((sample + 1) * (frames.size() - 1) + (samples - 1) / 2) / (samples - 1);
       char objectName[32];
-      std::snprintf(objectName, sizeof(objectName), "OBFrame %04zu", frame + 1);
+      std::snprintf(objectName, sizeof(objectName), "OBFrame %04zu", sample + 1);
       Block& object = blockByIdName(objectName);
       const uint64_t objectAddress = object.old;
       const uint64_t meshAddress =
         readScalar<uint64_t>(object.data, dna_->fieldOffset(object.dna, "data"));
       detachMeshData(meshAddress);
       patchPackage(ownedPackage(objectAddress), frames[frame]);
+      std::snprintf(objectName, sizeof(objectName), "ACFrame %04zu", sample + 1);
+      patchVisibility(ownedPackage(blockByIdName(objectName).old), frame + 1, nextFrame + 1);
     }
   }
 
@@ -478,6 +483,22 @@ private:
     for (const uint64_t address : package) {
       Block& block = blockByAddress(address);
       if (codeString(block.code) == "ME") patchMesh(block, geometry);
+    }
+  }
+
+  void patchVisibility(const std::set<uint64_t>& package, size_t frame, size_t nextFrame)
+  {
+    const std::array<float, 3> times{float(frame - 1), float(frame), float(nextFrame)};
+    for (const uint64_t address : package) {
+      Block& block = blockByAddress(address);
+      if (dna_->typeName(block.dna) != "BezTriple" || block.count != 3) continue;
+      const size_t itemSize = dna_->structureSize(block.dna);
+      const size_t vec = dna_->fieldOffset(block.dna, "vec");
+      for (size_t key = 0; key < times.size(); ++key) {
+        for (size_t point = 0; point < 3; ++point) {
+          writeScalar<float>(block.data, key * itemSize + vec + point * 3 * sizeof(float), times[key]);
+        }
+      }
     }
   }
 

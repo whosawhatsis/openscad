@@ -54,13 +54,37 @@ TEST_CASE("BLEND is a 3D animation-capable file format", "[export][blend]")
   REQUIRE(fileformat::canAnimate(FileFormat::BLEND));
 }
 
-TEST_CASE("BLEND export rejects animations beyond its authored frame capacity", "[export][blend]")
+TEST_CASE("BLEND export samples long animations into its authored mesh capacity", "[export][blend]")
 {
   PlatformUtils::registerApplicationPath(
     fs::path(__FILE__).parent_path().parent_path().parent_path().string());
-  std::vector<UsdAnimationFrame> frames(257);
-  for (auto& frame : frames) frame.geometry = triangle();
+  std::vector<UsdAnimationFrame> frames(300);
+  for (size_t frame = 0; frame < frames.size(); ++frame) {
+    frames[frame].geometry = frame % 2 ? quad() : triangle();
+  }
   std::ostringstream output;
-  REQUIRE_THROWS_WITH(export_blend_animation(frames, 24, output),
-                      "Blender export supports at most 256 frames");
+
+  REQUIRE_NOTHROW(export_blend_animation(frames, 24, output));
+  REQUIRE(output.str().compare(0, 17, "BLENDER17-01v0500") == 0);
+}
+
+TEST_CASE("BLEND export keeps stable geometry as a transform-animated object", "[export][blend]")
+{
+  PlatformUtils::registerApplicationPath(
+    fs::path(__FILE__).parent_path().parent_path().parent_path().string());
+  const auto mesh = triangle();
+  std::vector<UsdAnimationFrame> frames(300);
+  for (size_t frame = 0; frame < frames.size(); ++frame) {
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(Vector3d(frame, 0, 0));
+    frames[frame] = {
+      .geometry = mesh,
+      .objects = {
+        {.geometry = mesh, .transform = transform, .color = Color4f(1, 0, 0, 1), .nodeIndex = 7}}};
+  }
+  std::ostringstream output;
+
+  export_blend_animation(frames, 24, output);
+
+  REQUIRE(output.str().find("OBStable 0001") != std::string::npos);
 }
