@@ -131,13 +131,10 @@ TEST_CASE("BLEND export applies camera and body colours", "[export][blend]")
   Transform3d shifted = Transform3d::Identity();
   shifted.translate(Vector3d(10, 0, 0));
   const std::vector<UsdAnimationObject> objects{{mesh, Transform3d::Identity(), color, 1},
-                                                 {mesh, shifted, Color4f(), 2}};
-  const std::vector<UsdAnimationFrame> frames{{.geometry = mesh,
-                                                .objects = objects,
-                                                .camera = camera},
-                                               {.geometry = mesh,
-                                                .objects = objects,
-                                                .camera = secondCamera}};
+                                                {mesh, shifted, Color4f(), 2}};
+  const std::vector<UsdAnimationFrame> frames{
+    {.geometry = mesh, .objects = objects, .camera = camera},
+    {.geometry = mesh, .objects = objects, .camera = secondCamera}};
   std::ostringstream output;
 
   export_blend_animation(frames, 24, output, {.defaultColor = defaultColor});
@@ -155,9 +152,8 @@ TEST_CASE("BLEND export applies camera and body colours", "[export][blend]")
   const float secondOrthoScale = 2 * secondCamera.zoomValue() * std::tan(float(std::acos(-1.0) / 6));
   REQUIRE(blend.find(std::string(reinterpret_cast<const char *>(&secondLens), sizeof(secondLens))) !=
           std::string::npos);
-  REQUIRE(blend.find(
-            std::string(reinterpret_cast<const char *>(&secondOrthoScale), sizeof(secondOrthoScale))) !=
-          std::string::npos);
+  REQUIRE(blend.find(std::string(reinterpret_cast<const char *>(&secondOrthoScale),
+                                 sizeof(secondOrthoScale))) != std::string::npos);
   REQUIRE(blend.find("OpenSCAD Camera") != std::string::npos);
 }
 

@@ -21,11 +21,12 @@ Generation settings:
 - one animated camera, one area light, 1024 Principled materials, and a neutral world.
 
 The companion `generate-blender-5.0.1.py` script adds 1024 hidden persistent-object
-slots with Blender-authored transform actions, the material pool, and camera action. Run it with Blender 5.0.1 against
+slots with Blender-authored transform actions, the material pool, and camera actions for transform,
+projection, lens, and orthographic scale. Run it with Blender 5.0.1 against
 this template and pass the replacement path after `--`.
 
 This gives dependency-free export up to 256 configurable, evenly spaced remesh samples while
 up to 1024 persistent objects can carry longer transform animations. OpenSCAD patches camera,
 per-face material, and transform animation data into the authored IDs.
 
-SHA-256: `36cdd4cdadd3fde529e52da3c2ee6ef85ed57246109bce0abee705e7d63923d3`
+SHA-256: `c794e94501f1b9d9fe62e2ba532adeb6ac6a73ff2b701b38cc4de5940aa03b76`

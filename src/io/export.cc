@@ -241,7 +241,7 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
   case FileFormat::POV:        export_pov(root_geom, output, exportInfo); break;
   case FileFormat::USDA:       export_usda(root_geom, output, exportInfo); break;
   case FileFormat::USDZ:       export_usdz(root_geom, output, exportInfo); break;
-  case FileFormat::BLEND: {
+  case FileFormat::BLEND:      {
     UsdAnimationFrame frame;
     frame.geometry = root_geom;
     export_blend_animation({std::move(frame)}, 30, output);
