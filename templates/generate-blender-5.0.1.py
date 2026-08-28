@@ -10,6 +10,12 @@ scene = bpy.context.scene
 source = bpy.data.objects["Frame 0001"]
 
 base_material = source.data.materials[0]
+for action in list(bpy.data.actions):
+    if action.name.startswith("Stable ") or action.name.startswith("OpenSCAD Camera"):
+        bpy.data.actions.remove(action)
+for material in list(bpy.data.materials):
+    if material != base_material and material.name.startswith("OpenSCAD Material "):
+        bpy.data.materials.remove(material, do_unlink=True)
 base_material.name = "OpenSCAD Material 0001"
 materials = [base_material]
 for index in range(2, MAX_MATERIALS + 1):
@@ -26,6 +32,9 @@ for obj in (obj for obj in bpy.data.objects if obj.name.startswith("Frame ")):
 for obj in list(bpy.data.objects):
     if obj.name.startswith("Stable "):
         bpy.data.objects.remove(obj, do_unlink=True)
+for mesh in list(bpy.data.meshes):
+    if mesh.name.startswith("Stable "):
+        bpy.data.meshes.remove(mesh)
 
 for index in range(1, MAX_OBJECTS + 1):
     name = f"Stable {index:04d}"

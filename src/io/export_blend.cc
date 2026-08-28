@@ -773,8 +773,10 @@ private:
     std::snprintf(name, sizeof(name), "MAOpenSCAD Material %04zu", materials_.size() + 1);
     Block& material = blockByIdName(name);
     const std::array<float, 4> rgba{color.r(), color.g(), color.b(), color.a()};
-    const size_t diffuse = dna_->fieldOffset(material.dna, "diffuse_color");
-    std::memcpy(material.data.data() + diffuse, rgba.data(), sizeof(rgba));
+    writeScalar<float>(material.data, dna_->fieldOffset(material.dna, "r"), color.r());
+    writeScalar<float>(material.data, dna_->fieldOffset(material.dna, "g"), color.g());
+    writeScalar<float>(material.data, dna_->fieldOffset(material.dna, "b"), color.b());
+    writeScalar<float>(material.data, dna_->fieldOffset(material.dna, "a"), color.a());
 
     for (const uint64_t address : ownedPackage(material.old)) {
       Block& socket = blockByAddress(address);
