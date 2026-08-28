@@ -31,10 +31,6 @@ for index in range(1, MAX_SAMPLES + 1):
         obj.keyframe_insert(data_path="location", frame=frame)
         obj.keyframe_insert(data_path="rotation_quaternion", frame=frame)
     obj.animation_data.action.name = name
-    for curve in obj.animation_data.action.fcurves:
-        for point in curve.keyframe_points:
-            point.interpolation = "CONSTANT" if curve.data_path.startswith("hide_") else "LINEAR"
-
 scene.frame_start = 1
 bpy.context.preferences.filepaths.use_file_compression = False
 bpy.ops.wm.save_as_mainfile(filepath=output, compress=False)
