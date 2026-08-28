@@ -37,6 +37,8 @@ struct UsdAnimationFrame {
   std::vector<UsdAnimationObject> objects;
 };
 
+bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames);
+
 enum class FileFormat {
   ASCII_STL,
   BINARY_STL,

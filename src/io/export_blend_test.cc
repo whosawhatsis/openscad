@@ -88,3 +88,24 @@ TEST_CASE("BLEND export keeps stable geometry as a transform-animated object", "
 
   REQUIRE(output.str().find("OBStable 0001") != std::string::npos);
 }
+
+TEST_CASE("BLEND export combines transform animation with shared remesh samples", "[export][blend]")
+{
+  PlatformUtils::registerApplicationPath(
+    fs::path(__FILE__).parent_path().parent_path().parent_path().string());
+  const auto stable = triangle();
+  const std::vector<std::shared_ptr<const PolySet>> changing{triangle(), quad()};
+  Transform3d separated = Transform3d::Identity();
+  separated.translate(Vector3d(10, 0, 0));
+  std::vector<UsdAnimationFrame> frames(300);
+  for (size_t frame = 0; frame < frames.size(); ++frame) {
+    frames[frame] = {.geometry = stable,
+                     .objects = {{stable, Transform3d::Identity(), Color4f(1, 0, 0, 1), 1},
+                                 {changing[frame % 2], separated, Color4f(0, 0, 1, 1), 2}}};
+  }
+  std::ostringstream output;
+
+  REQUIRE_NOTHROW(export_blend_animation(frames, 24, output));
+  REQUIRE(output.str().find("OBStable 0001") != std::string::npos);
+  REQUIRE(output.str().find("OBFrame 0256") != std::string::npos);
+}

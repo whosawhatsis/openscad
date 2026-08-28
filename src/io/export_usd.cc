@@ -307,26 +307,6 @@ bool objectsOverlap(const UsdAnimationObject& a, const UsdAnimationObject& b)
          (bBounds.min().array() <= aBounds.max().array()).all();
 }
 
-bool canUseObjectAnimation(const std::vector<UsdAnimationFrame>& frames)
-{
-  if (frames.empty() || frames[0].objects.empty()) return false;
-  const auto& first = frames[0].objects;
-  for (const auto& frame : frames) {
-    if (frame.objects.size() != first.size()) return false;
-    for (size_t i = 0; i < first.size(); ++i) {
-      const auto& object = frame.objects[i];
-      if (!object.geometry || object.nodeIndex != first[i].nodeIndex || object.color != first[i].color ||
-          !isRigidTransform(object.transform)) {
-        return false;
-      }
-      for (size_t j = 0; j < i; ++j) {
-        if (objectsOverlap(object, frame.objects[j])) return false;
-      }
-    }
-  }
-  return true;
-}
-
 void writeTranslation(std::ostream& output, const Transform3d& transform)
 {
   const auto& translation = transform.translation();
@@ -539,6 +519,26 @@ void writeUsdz(const std::string& usda, std::ostream& output)
 
 }  // namespace
 
+bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames)
+{
+  if (frames.empty() || frames[0].objects.empty()) return false;
+  const auto& first = frames[0].objects;
+  for (const auto& frame : frames) {
+    if (frame.objects.size() != first.size()) return false;
+    for (size_t i = 0; i < first.size(); ++i) {
+      const auto& object = frame.objects[i];
+      if (!object.geometry || object.nodeIndex != first[i].nodeIndex || object.color != first[i].color ||
+          !isRigidTransform(object.transform)) {
+        return false;
+      }
+      for (size_t j = 0; j < i; ++j) {
+        if (objectsOverlap(object, frame.objects[j])) return false;
+      }
+    }
+  }
+  return true;
+}
+
 void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                  const ExportInfo& exportInfo)
 {
@@ -570,7 +570,7 @@ void export_usdz_animation(const std::vector<std::shared_ptr<const Geometry>>& f
 void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo)
 {
-  if (canUseObjectAnimation(frames)) {
+  if (canExportObjectAnimation(frames)) {
     writeTransformStage(frames, fps, output, exportInfo);
     return;
   }

@@ -297,11 +297,7 @@ public:
   void setFrames(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps)
   {
     if (frames.empty()) throw std::runtime_error("Blender animation has no frames");
-
-    Block& scene = blockByCode("SC");
-    writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.sfra"), 1);
-    writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.efra"), int32_t(frames.size()));
-    writeScalar<int16_t>(scene.data, dna_->fieldOffset(scene.dna, "r.frs_sec"), int16_t(fps));
+    setScene(frames.size(), fps);
 
     const size_t samples = std::min(frames.size(), MAX_BLEND_FRAMES);
     for (size_t sample = 0; sample < samples; ++sample) {
@@ -316,11 +312,54 @@ public:
       const uint64_t objectAddress = object.old;
       const uint64_t meshAddress =
         readScalar<uint64_t>(object.data, dna_->fieldOffset(object.dna, "data"));
-      detachMeshData(meshAddress);
+      detachOwnedData(meshAddress);
       patchPackage(ownedPackage(objectAddress), frames[frame]);
       std::snprintf(objectName, sizeof(objectName), "ACFrame %04zu", sample + 1);
       patchVisibility(ownedPackage(blockByIdName(objectName).old), frame + 1, nextFrame + 1);
     }
+  }
+
+  void setObjectAnimation(const std::vector<UsdAnimationFrame>& frames, unsigned fps)
+  {
+    std::vector<bool> stable(frames[0].objects.size(), true);
+    for (size_t object = 0; object < stable.size(); ++object) {
+      for (const auto& frame : frames) {
+        stable[object] = stable[object] && frame.objects[object].geometry.get() ==
+                                             frames[0].objects[object].geometry.get();
+      }
+    }
+
+    size_t stableSlot = 0;
+    for (size_t object = 0; object < stable.size(); ++object) {
+      if (!stable[object]) continue;
+      patchStableObject(++stableSlot, frames, object);
+    }
+
+    if (std::all_of(stable.begin(), stable.end(), [](bool value) { return value; })) {
+      setScene(frames.size(), fps);
+      hideFrameObjects();
+      return;
+    }
+
+    std::vector<std::shared_ptr<const Geometry>> remeshed;
+    remeshed.reserve(frames.size());
+    for (const auto& frame : frames) {
+      auto mesh = std::make_shared<PolySet>(3);
+      for (size_t object = 0; object < stable.size(); ++object) {
+        if (stable[object]) continue;
+        const auto& source = *frame.objects[object].geometry;
+        const int offset = mesh->vertices.size();
+        for (const auto& vertex : source.vertices) {
+          mesh->vertices.push_back(frame.objects[object].transform * vertex);
+        }
+        for (const auto& face : source.indices) {
+          auto& destination = mesh->indices.emplace_back();
+          for (const auto index : face) destination.push_back(offset + index);
+        }
+      }
+      remeshed.push_back(std::move(mesh));
+    }
+    setFrames(remeshed, fps);
   }
 
   void write(std::ostream& output) const
@@ -338,6 +377,14 @@ public:
   }
 
 private:
+  void setScene(size_t frames, unsigned fps)
+  {
+    Block& scene = blockByCode("SC");
+    writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.sfra"), 1);
+    writeScalar<int32_t>(scene.data, dna_->fieldOffset(scene.dna, "r.efra"), int32_t(frames));
+    writeScalar<int16_t>(scene.data, dna_->fieldOffset(scene.dna, "r.frs_sec"), int16_t(fps));
+  }
+
   Block& blockByCode(std::string_view code)
   {
     return *std::find_if(blocks_.begin(), blocks_.end(),
@@ -373,8 +420,10 @@ private:
 
   Block& blockByIdName(std::string_view name)
   {
-    return *std::find_if(blocks_.begin(), blocks_.end(),
-                         [&](const auto& block) { return idName(block) == name; });
+    const auto found = std::find_if(blocks_.begin(), blocks_.end(),
+                                    [&](const auto& block) { return idName(block) == name; });
+    if (found == blocks_.end()) throw std::runtime_error("Missing Blender ID: " + std::string(name));
+    return *found;
   }
 
   void rebuildIndex()
@@ -426,10 +475,10 @@ private:
     return result;
   }
 
-  void detachMeshData(uint64_t meshAddress)
+  void detachOwnedData(uint64_t ownerAddress)
   {
-    auto package = ownedPackage(meshAddress);
-    package.erase(meshAddress);
+    auto package = ownedPackage(ownerAddress);
+    package.erase(ownerAddress);
     std::unordered_map<uint64_t, uint64_t> remap;
     for (const uint64_t address : package) remap[address] = nextAddress();
 
@@ -441,10 +490,10 @@ private:
       patchPointers(clone, remap);
       clones.push_back(std::move(clone));
     }
-    patchPointers(blockByAddress(meshAddress), remap);
-    const auto mesh = std::find_if(blocks_.begin(), blocks_.end(),
-                                   [&](const auto& block) { return block.old == meshAddress; });
-    blocks_.insert(std::next(mesh), std::make_move_iterator(clones.begin()),
+    patchPointers(blockByAddress(ownerAddress), remap);
+    const auto owner = std::find_if(blocks_.begin(), blocks_.end(),
+                                    [&](const auto& block) { return block.old == ownerAddress; });
+    blocks_.insert(std::next(owner), std::make_move_iterator(clones.begin()),
                    std::make_move_iterator(clones.end()));
     rebuildIndex();
   }
@@ -494,9 +543,128 @@ private:
       if (dna_->typeName(block.dna) != "BezTriple" || block.count != 3) continue;
       const size_t itemSize = dna_->structureSize(block.dna);
       const size_t vec = dna_->fieldOffset(block.dna, "vec");
+      const size_t interpolation = dna_->fieldOffset(block.dna, "ipo");
       for (size_t key = 0; key < times.size(); ++key) {
         for (size_t point = 0; point < 3; ++point) {
           writeScalar<float>(block.data, key * itemSize + vec + point * 3 * sizeof(float), times[key]);
+        }
+        writeScalar<int8_t>(block.data, key * itemSize + interpolation, 0);
+      }
+    }
+  }
+
+  void patchStableObject(size_t slot, const std::vector<UsdAnimationFrame>& frames, size_t objectIndex)
+  {
+    char name[32];
+    std::snprintf(name, sizeof(name), "OBStable %04zu", slot);
+    Block& object = blockByIdName(name);
+    const uint64_t meshAddress =
+      readScalar<uint64_t>(object.data, dna_->fieldOffset(object.dna, "data"));
+    detachOwnedData(meshAddress);
+    patchPackage(ownedPackage(object.old), frames[0].objects[objectIndex].geometry);
+
+    std::snprintf(name, sizeof(name), "ACStable %04zu", slot);
+    const uint64_t actionAddress = blockByIdName(name).old;
+    detachOwnedData(actionAddress);
+    patchTransformAction(ownedPackage(actionAddress), frames, objectIndex);
+  }
+
+  void patchTransformAction(const std::set<uint64_t>& package,
+                            const std::vector<UsdAnimationFrame>& frames, size_t objectIndex)
+  {
+    std::vector<Eigen::Quaterniond> orientations;
+    orientations.reserve(frames.size());
+    for (const auto& frame : frames) {
+      Eigen::Quaterniond orientation(frame.objects[objectIndex].transform.linear());
+      if (!orientations.empty() && orientations.back().dot(orientation) < 0) {
+        orientation.coeffs() *= -1;
+      }
+      orientations.push_back(orientation);
+    }
+
+    std::vector<uint64_t> curves;
+    for (const uint64_t address : package) {
+      if (dna_->typeName(blockByAddress(address).dna) == "FCurve") curves.push_back(address);
+    }
+    for (const uint64_t address : curves) {
+      detachCurveKeys(address);
+      Block& curve = blockByAddress(address);
+      const uint64_t pathAddress =
+        readScalar<uint64_t>(curve.data, dna_->fieldOffset(curve.dna, "rna_path"));
+      const std::string path = rawString(blockByAddress(pathAddress));
+      const int32_t component =
+        readScalar<int32_t>(curve.data, dna_->fieldOffset(curve.dna, "array_index"));
+      std::vector<float> values;
+      if (path == "hide_render" || path == "hide_viewport") {
+        values = {0, 0};
+      } else if (path == "location") {
+        for (const auto& frame : frames) {
+          values.push_back(frame.objects[objectIndex].transform.translation()[component]);
+        }
+      } else if (path == "rotation_quaternion") {
+        for (const auto& orientation : orientations) {
+          values.push_back(component == 0 ? orientation.w() : orientation.coeffs()[component - 1]);
+        }
+      } else {
+        continue;
+      }
+      patchCurve(curve, values, path.rfind("hide_", 0) == 0 ? 0 : 1);
+    }
+  }
+
+  void detachCurveKeys(uint64_t curveAddress)
+  {
+    Block& curve = blockByAddress(curveAddress);
+    const size_t bezt = dna_->fieldOffset(curve.dna, "bezt");
+    Block keys = blockByAddress(readScalar<uint64_t>(curve.data, bezt));
+    keys.old = nextAddress();
+    writeScalar<uint64_t>(curve.data, bezt, keys.old);
+    const auto owner = std::find_if(blocks_.begin(), blocks_.end(),
+                                    [&](const auto& block) { return block.old == curveAddress; });
+    blocks_.insert(std::next(owner), std::move(keys));
+    rebuildIndex();
+  }
+
+  void patchCurve(Block& curve, const std::vector<float>& values, int8_t interpolation)
+  {
+    const uint64_t keysAddress = readScalar<uint64_t>(curve.data, dna_->fieldOffset(curve.dna, "bezt"));
+    Block& keys = blockByAddress(keysAddress);
+    const size_t itemSize = dna_->structureSize(keys.dna);
+    if (keys.data.size() < itemSize) throw std::runtime_error("Blender action has no keyframes");
+    const std::vector<uint8_t> exemplar(keys.data.begin(), keys.data.begin() + itemSize);
+    keys.data.clear();
+    for (size_t key = 0; key < values.size(); ++key) {
+      keys.data.insert(keys.data.end(), exemplar.begin(), exemplar.end());
+    }
+    keys.count = values.size();
+    writeScalar<int32_t>(curve.data, dna_->fieldOffset(curve.dna, "totvert"), values.size());
+    const size_t vec = dna_->fieldOffset(keys.dna, "vec");
+    const size_t ipo = dna_->fieldOffset(keys.dna, "ipo");
+    for (size_t key = 0; key < values.size(); ++key) {
+      for (size_t point = 0; point < 3; ++point) {
+        const size_t offset = key * itemSize + vec + point * 3 * sizeof(float);
+        writeScalar<float>(keys.data, offset, float(key + 1));
+        writeScalar<float>(keys.data, offset + sizeof(float), values[key]);
+      }
+      writeScalar<int8_t>(keys.data, key * itemSize + ipo, interpolation);
+    }
+  }
+
+  void hideFrameObjects()
+  {
+    for (size_t slot = 1; slot <= MAX_BLEND_FRAMES; ++slot) {
+      char name[32];
+      std::snprintf(name, sizeof(name), "ACFrame %04zu", slot);
+      for (const uint64_t address : ownedPackage(blockByIdName(name).old)) {
+        Block& block = blockByAddress(address);
+        if (dna_->typeName(block.dna) != "BezTriple") continue;
+        const size_t itemSize = dna_->structureSize(block.dna);
+        const size_t vec = dna_->fieldOffset(block.dna, "vec");
+        for (int64_t key = 0; key < block.count; ++key) {
+          for (size_t point = 0; point < 3; ++point) {
+            writeScalar<float>(block.data,
+                               size_t(key) * itemSize + vec + (point * 3 + 1) * sizeof(float), 1);
+          }
         }
       }
     }
@@ -621,6 +789,12 @@ void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsign
 {
   const fs::path templatePath = PlatformUtils::resourcePath("templates") / "blender-5.0.1.blend";
   BlendScene scene(templatePath);
+  if (!frames.empty() && frames[0].objects.size() <= MAX_BLEND_FRAMES &&
+      canExportObjectAnimation(frames)) {
+    scene.setObjectAnimation(frames, fps);
+    scene.write(output);
+    return;
+  }
   std::vector<std::shared_ptr<const Geometry>> geometry;
   geometry.reserve(frames.size());
   for (const auto& frame : frames) geometry.push_back(frame.geometry);
