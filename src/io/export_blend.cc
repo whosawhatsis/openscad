@@ -456,7 +456,8 @@ public:
       if (!values.empty()) patchCurve(curve, values, path == "type" ? 0 : 1);
     }
 
-    const auto package = ownedPackage(blockByIdName("ACOpenSCAD Camera").old);
+    // Blender 5 stores the Object and Camera datablock channels in two slots of one Action.
+    const auto package = ownedPackage(blockByIdName("ACOpenSCAD Camera Data").old);
     std::vector<uint64_t> curves;
     for (const uint64_t address : package) {
       if (dna_->typeName(blockByAddress(address).dna) == "FCurve") curves.push_back(address);
