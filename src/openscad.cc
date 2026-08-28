@@ -780,7 +780,8 @@ int cmdline(const CommandLine& cmd)
           if (export_format == FileFormat::BLEND) {
             export_blend_animation(
               usdFrames, cmd.animate.fps, stream,
-              {.remeshSamples = static_cast<size_t>(cmd.animate.blend_remesh_samples)});
+              {.remeshSamples = static_cast<size_t>(cmd.animate.blend_remesh_samples),
+               .defaultColor = exportInfo.defaultColor});
           } else if (export_format == FileFormat::USDZ) {
             export_usdz_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
           } else {

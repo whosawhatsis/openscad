@@ -123,19 +123,28 @@ TEST_CASE("BLEND export applies camera and body colours", "[export][blend]")
   camera.setVpd(246.8135);
   camera.setVpf(31.4159);
   const Color4f color(0.123456f, 0.234567f, 0.345678f, 0.456789f);
+  const Color4f defaultColor(0.654321f, 0.54321f, 0.4321f, 1.0f);
+  Transform3d shifted = Transform3d::Identity();
+  shifted.translate(Vector3d(10, 0, 0));
   const std::vector<UsdAnimationFrame> frames{{
     .geometry = mesh,
-    .objects = {{mesh, Transform3d::Identity(), color, 1}},
+    .objects = {{mesh, Transform3d::Identity(), color, 1},
+                {mesh, shifted, Color4f(), 2}},
     .camera = camera,
   }};
   std::ostringstream output;
 
-  export_blend_animation(frames, 24, output);
+  export_blend_animation(frames, 24, output, {.defaultColor = defaultColor});
 
   const std::string blend = output.str();
   const std::array<float, 4> components{color.r(), color.g(), color.b(), color.a()};
   const std::string rgba(reinterpret_cast<const char *>(components.data()), 4 * sizeof(float));
+  const std::array<float, 4> defaultComponents{defaultColor.r(), defaultColor.g(), defaultColor.b(),
+                                               defaultColor.a()};
+  const std::string defaultRgba(reinterpret_cast<const char *>(defaultComponents.data()),
+                                4 * sizeof(float));
   REQUIRE(blend.find(rgba) != std::string::npos);
+  REQUIRE(blend.find(defaultRgba) != std::string::npos);
   REQUIRE(blend.find("OpenSCAD Camera") != std::string::npos);
 }
 

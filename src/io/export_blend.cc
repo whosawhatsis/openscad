@@ -266,7 +266,7 @@ struct Block {
 class BlendScene
 {
 public:
-  explicit BlendScene(const fs::path& templatePath)
+  BlendScene(const fs::path& templatePath, const Color4f& defaultColor) : defaultColor_(defaultColor)
   {
     std::ifstream input(templatePath, std::ios::binary);
     if (!input) throw std::runtime_error("Can't open Blender export template: " + templatePath.string());
@@ -819,8 +819,8 @@ private:
     std::map<std::tuple<float, float, float, float>, int32_t> materialIndices;
     std::vector<int32_t> faceMaterials;
     for (size_t face = 0; face < faces.size(); ++face) {
-      Color4f color(0.8f, 0.8f, 0.8f, 1.0f);
-      if (overrideColor) {
+      Color4f color = defaultColor_;
+      if (overrideColor && overrideColor->isValid()) {
         color = *overrideColor;
       } else if (polyset && face < polyset->color_indices.size()) {
         const int index = polyset->color_indices[face];
@@ -828,6 +828,7 @@ private:
           color = polyset->colors[index];
         }
       }
+      if (!color.isValid()) color = defaultColor_;
       const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a());
       auto [found, inserted] = materialIndices.emplace(key, materialSlots.size());
       if (inserted) materialSlots.push_back(materialAddress(color));
@@ -945,6 +946,7 @@ private:
   std::vector<Block> blocks_;
   std::unordered_map<uint64_t, size_t> indexByAddress_;
   std::map<std::tuple<float, float, float, float>, uint64_t> materials_;
+  Color4f defaultColor_;
   std::unique_ptr<Dna> dna_;
   uint64_t nextGeneratedAddress_ = 1;
 };
@@ -958,7 +960,7 @@ void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsign
     throw std::runtime_error("Blender remesh samples must be in range 1..256");
   }
   const fs::path templatePath = PlatformUtils::resourcePath("templates") / "blender-5.0.1.blend";
-  BlendScene scene(templatePath);
+  BlendScene scene(templatePath, options.defaultColor);
   scene.setCamera(frames);
   if (!frames.empty() && frames[0].objects.size() <= MAX_BLEND_OBJECTS &&
       canExportObjectAnimation(frames)) {
