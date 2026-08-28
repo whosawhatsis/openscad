@@ -611,7 +611,7 @@ if(ENABLE_OPENCSCADE)
     message(FATAL_ERROR "OpenCASCADE 7.9 or newer is required")
   endif()
   target_compile_definitions(OpenSCADLibInternal PUBLIC ENABLE_OPENCSCADE)
-  target_link_libraries(OpenSCADLibInternal PUBLIC TKFillet TKBool TKPrim)
+  target_link_libraries(OpenSCADLibInternal PUBLIC TKFillet TKBool TKPrim TKMesh)
   message(STATUS "OpenCASCADE: ${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}")
 endif()
 
@@ -1148,7 +1148,11 @@ endif()
 if(ENABLE_OPENCSCADE)
   list(APPEND CORE_SOURCES
     src/geometry/brep/BrepBoolean.cc
-    src/geometry/brep/BrepBoolean.h)
+    src/geometry/brep/BrepBoolean.h
+    src/geometry/brep/BrepGeometry.cc
+    src/geometry/brep/BrepGeometry.h
+    src/geometry/brep/BrepGeometryData.h
+    src/geometry/brep/BrepGeometryOCCT.cc)
 endif()
 
 if(EXPERIMENTAL AND ENABLE_CGAL)
