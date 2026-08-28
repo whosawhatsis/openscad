@@ -430,6 +430,32 @@ public:
     writeScalar<float>(cameraData.data, dna_->fieldOffset(cameraData.dna, "ortho_scale"),
                        2 * camera.zoomValue() * std::tan(verticalFov / 2));
 
+    const auto dataPackage = ownedPackage(blockByIdName("ACOpenSCAD Camera Data").old);
+    std::vector<uint64_t> dataCurves;
+    for (const uint64_t address : dataPackage) {
+      if (dna_->typeName(blockByAddress(address).dna) == "FCurve") dataCurves.push_back(address);
+    }
+    for (const uint64_t address : dataCurves) {
+      detachCurveKeys(address);
+      Block& curve = blockByAddress(address);
+      const uint64_t pathAddress =
+        readScalar<uint64_t>(curve.data, dna_->fieldOffset(curve.dna, "rna_path"));
+      const std::string path = rawString(blockByAddress(pathAddress));
+      std::vector<float> values;
+      for (const auto& frame : frames) {
+        const Camera& value = frame.camera.value_or(camera);
+        const float fov = value.fovValue() * std::acos(-1.0) / 180.0;
+        if (path == "lens") {
+          values.push_back(sensor / (2 * std::tan(fov / 2)));
+        } else if (path == "ortho_scale") {
+          values.push_back(2 * value.zoomValue() * std::tan(fov / 2));
+        } else if (path == "type") {
+          values.push_back(value.projection == Camera::ProjectionType::ORTHOGONAL ? 1 : 0);
+        }
+      }
+      if (!values.empty()) patchCurve(curve, values, path == "type" ? 0 : 1);
+    }
+
     const auto package = ownedPackage(blockByIdName("ACOpenSCAD Camera").old);
     std::vector<uint64_t> curves;
     for (const uint64_t address : package) {

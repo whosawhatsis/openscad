@@ -1,6 +1,7 @@
 #include <catch2/catch_all.hpp>
 
 #include <array>
+#include <cmath>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -122,16 +123,21 @@ TEST_CASE("BLEND export applies camera and body colours", "[export][blend]")
   camera.setVpr(17.25, 28.5, 39.75);
   camera.setVpd(246.8135);
   camera.setVpf(31.4159);
+  Camera secondCamera = camera;
+  secondCamera.setVpf(60);
+  secondCamera.setProjection(Camera::ProjectionType::ORTHOGONAL);
   const Color4f color(0.123456f, 0.234567f, 0.345678f, 0.456789f);
   const Color4f defaultColor(0.654321f, 0.54321f, 0.4321f, 1.0f);
   Transform3d shifted = Transform3d::Identity();
   shifted.translate(Vector3d(10, 0, 0));
-  const std::vector<UsdAnimationFrame> frames{{
-    .geometry = mesh,
-    .objects = {{mesh, Transform3d::Identity(), color, 1},
-                {mesh, shifted, Color4f(), 2}},
-    .camera = camera,
-  }};
+  const std::vector<UsdAnimationObject> objects{{mesh, Transform3d::Identity(), color, 1},
+                                                 {mesh, shifted, Color4f(), 2}};
+  const std::vector<UsdAnimationFrame> frames{{.geometry = mesh,
+                                                .objects = objects,
+                                                .camera = camera},
+                                               {.geometry = mesh,
+                                                .objects = objects,
+                                                .camera = secondCamera}};
   std::ostringstream output;
 
   export_blend_animation(frames, 24, output, {.defaultColor = defaultColor});
@@ -145,6 +151,13 @@ TEST_CASE("BLEND export applies camera and body colours", "[export][blend]")
                                 4 * sizeof(float));
   REQUIRE(blend.find(rgba) != std::string::npos);
   REQUIRE(blend.find(defaultRgba) != std::string::npos);
+  const float secondLens = 36.0f / (2 * std::tan(float(std::acos(-1.0) / 6)));
+  const float secondOrthoScale = 2 * secondCamera.zoomValue() * std::tan(float(std::acos(-1.0) / 6));
+  REQUIRE(blend.find(std::string(reinterpret_cast<const char *>(&secondLens), sizeof(secondLens))) !=
+          std::string::npos);
+  REQUIRE(blend.find(
+            std::string(reinterpret_cast<const char *>(&secondOrthoScale), sizeof(secondOrthoScale))) !=
+          std::string::npos);
   REQUIRE(blend.find("OpenSCAD Camera") != std::string::npos);
 }
 

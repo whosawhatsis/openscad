@@ -63,10 +63,15 @@ camera.name = "OpenSCAD Camera"
 camera.data.name = "OpenSCAD Camera"
 camera.rotation_mode = "QUATERNION"
 camera.animation_data_clear()
+camera.data.animation_data_clear()
 for frame in (1, 2):
     camera.keyframe_insert(data_path="location", frame=frame)
     camera.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+    camera.data.keyframe_insert(data_path="lens", frame=frame)
+    camera.data.keyframe_insert(data_path="ortho_scale", frame=frame)
+    camera.data.keyframe_insert(data_path="type", frame=frame)
 camera.animation_data.action.name = "OpenSCAD Camera"
+camera.data.animation_data.action.name = "OpenSCAD Camera Data"
 scene.frame_start = 1
 bpy.context.preferences.filepaths.use_file_compression = False
 bpy.ops.wm.save_as_mainfile(filepath=output, compress=False)
