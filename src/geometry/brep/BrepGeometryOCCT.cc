@@ -1,4 +1,5 @@
 #include "geometry/brep/BrepGeometryData.h"
+#include "geometry/brep/BrepBoolean.h"
 
 #include <array>
 #include <memory>
@@ -9,10 +10,13 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_GTransform.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
+#include <Standard_Failure.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS.hxx>
@@ -31,6 +35,11 @@ const TopoDS_Shape& shapeFrom(const std::shared_ptr<void>& shape)
 bool brepIsEmpty(const std::shared_ptr<void>& shape)
 {
   return !shape || shapeFrom(shape).IsNull();
+}
+
+std::shared_ptr<void> brepMakeCube(double x, double y, double z)
+{
+  return std::make_shared<TopoDS_Shape>(BRepPrimAPI_MakeBox(x, y, z).Shape());
 }
 
 std::shared_ptr<void> brepMakeCylinder(double radius, double height)
@@ -69,6 +78,16 @@ std::array<double, 6> brepBounds(const std::shared_ptr<void>& shape)
 std::shared_ptr<void> brepTransform(const std::shared_ptr<void>& shape,
                                     const std::array<double, 12>& matrix)
 {
+  try {
+    gp_Trsf transform;
+    transform.SetValues(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], matrix[6],
+                        matrix[7], matrix[8], matrix[9], matrix[10], matrix[11]);
+    BRepBuilderAPI_Transform operation(shapeFrom(shape), transform, true);
+    if (!operation.IsDone()) throw std::runtime_error("OpenCASCADE transform failed");
+    return std::make_shared<TopoDS_Shape>(operation.Shape());
+  } catch (const Standard_Failure&) {
+  }
+
   gp_GTrsf transform;
   for (int row = 0; row < 3; ++row) {
     for (int column = 0; column < 4; ++column) {
@@ -110,4 +129,12 @@ BrepMeshData brepMesh(const std::shared_ptr<void>& shape, double linearDeflectio
     }
   }
   return result;
+}
+
+BrepDifferenceData brepDifference(const std::shared_ptr<void>& object, const std::shared_ptr<void>& tool,
+                                  double filletRadius)
+{
+  BrepBooleanResult result = applyBrepDifference({shapeFrom(object), shapeFrom(tool)}, filletRadius);
+  return {std::make_shared<TopoDS_Shape>(std::move(result.shape)),
+          {result.filletedEdgeCount, result.achievedFilletRadius, result.clearanceRadiusUpperBound}};
 }

@@ -13,6 +13,11 @@ BrepGeometry::BrepGeometry(std::shared_ptr<void> shape) : shape_(std::move(shape
 {
 }
 
+BrepGeometry BrepGeometry::cube(double x, double y, double z)
+{
+  return BrepGeometry(brepMakeCube(x, y, z));
+}
+
 BrepGeometry BrepGeometry::cylinder(double radius, double height)
 {
   return BrepGeometry(brepMakeCylinder(radius, height));
@@ -60,6 +65,14 @@ void BrepGeometry::transform(const Transform3d& matrix)
     for (int column = 0; column < 4; ++column) values[row * 4 + column] = matrix(row, column);
   }
   shape_ = brepTransform(shape_, values);
+}
+
+BrepGeometry BrepGeometry::difference(const BrepGeometry& tool, double filletRadius,
+                                      BrepFilletDiagnostics& diagnostics) const
+{
+  BrepDifferenceData result = brepDifference(shape_, tool.shape_, filletRadius);
+  diagnostics = result.diagnostics;
+  return BrepGeometry(std::move(result.shape));
 }
 
 std::unique_ptr<PolySet> BrepGeometry::toPolySet(double linearDeflection, double angularDeflection) const

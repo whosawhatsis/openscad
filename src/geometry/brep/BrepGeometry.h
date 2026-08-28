@@ -8,12 +8,19 @@ class PolySet;
 
 enum class BrepSurfaceType { Plane, Cylinder, Cone, Sphere, Torus, Bezier, BSpline, Other };
 
+struct BrepFilletDiagnostics {
+  size_t filletedEdgeCount{0};
+  double achievedRadius{0.0};
+  double radiusUpperBound{0.0};
+};
+
 class BrepGeometry : public Geometry
 {
 public:
   VISITABLE_GEOMETRY();
 
   explicit BrepGeometry(std::shared_ptr<void> shape);
+  static BrepGeometry cube(double x, double y, double z);
   static BrepGeometry cylinder(double radius, double height);
 
   [[nodiscard]] size_t memsize() const override;
@@ -26,6 +33,8 @@ public:
   [[nodiscard]] size_t surfaceCount(BrepSurfaceType type) const;
 
   void transform(const Transform3d& matrix) override;
+  [[nodiscard]] BrepGeometry difference(const BrepGeometry& tool, double filletRadius,
+                                        BrepFilletDiagnostics& diagnostics) const;
 
   [[nodiscard]] std::unique_ptr<PolySet> toPolySet(double linearDeflection,
                                                    double angularDeflection) const;
