@@ -1,10 +1,19 @@
 #ifdef ENABLE_OPENCSCADE
 
+#include <optional>
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 
 #include "geometry/PolySet.h"
 #include "geometry/brep/BrepGeometry.h"
+#include "geometry/GeometryEvaluator.h"
+#include "core/CsgOpNode.h"
+#include "core/CurveDiscretizer.h"
+#include "core/ModuleInstantiation.h"
+#include "core/TransformNode.h"
+#include "core/Tree.h"
+#include "core/primitives.h"
 
 TEST_CASE("BrepGeometry retains analytic surfaces until tessellation", "[brep]")
 {
@@ -34,6 +43,41 @@ TEST_CASE("BrepGeometry performs an exact filleted difference", "[brep]")
   REQUIRE(result.surfaceCount(BrepSurfaceType::Cylinder) == 1);
   REQUIRE(result.surfaceCount(BrepSurfaceType::Torus) == 2);
   REQUIRE(result.numFacets() == 0);
+}
+
+TEST_CASE("GeometryEvaluator routes filleted difference through B-Rep", "[brep]")
+{
+  ModuleInstantiation differenceInstantiation("difference");
+  ModuleInstantiation cubeInstantiation("cube");
+  ModuleInstantiation transformInstantiation("translate");
+  ModuleInstantiation cylinderInstantiation("cylinder");
+
+  auto difference =
+    std::make_shared<CsgOpNode>(&differenceInstantiation, OpenSCADOperator::DIFFERENCE, 10.0, true);
+  auto cube = std::make_shared<CubeNode>(&cubeInstantiation);
+  cube->x = 20.0;
+  cube->y = 20.0;
+  cube->z = 10.0;
+  auto transform = std::make_shared<TransformNode>(&transformInstantiation, "translate");
+  transform->matrix.translate(Vector3d(10.0, 10.0, -1.0));
+  auto cylinder = std::make_shared<CylinderNode>(
+    &cylinderInstantiation,
+    CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  cylinder->r1 = cylinder->r2 = 4.0;
+  cylinder->h = 12.0;
+  transform->children.push_back(cylinder);
+  difference->children.push_back(cube);
+  difference->children.push_back(transform);
+
+  Tree tree(difference);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*difference, true);
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+
+  REQUIRE(brep);
+  REQUIRE(brep->surfaceCount(BrepSurfaceType::Cylinder) == 1);
+  REQUIRE(brep->surfaceCount(BrepSurfaceType::Torus) == 2);
+  REQUIRE(brep->numFacets() == 0);
 }
 
 #endif

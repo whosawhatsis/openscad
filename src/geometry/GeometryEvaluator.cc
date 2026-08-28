@@ -27,6 +27,7 @@
 #include "core/Tree.h"
 #include "core/enums.h"
 #include "core/node.h"
+#include "core/primitives.h"
 #include "geometry/ClipperUtils.h"
 #include "geometry/Geometry.h"
 #include "geometry/GeometryCache.h"
@@ -35,6 +36,9 @@
 #include "geometry/PolySetUtils.h"
 #include "geometry/Polygon2d.h"
 #include "geometry/boolean_utils.h"
+#ifdef ENABLE_OPENCSCADE
+#include "geometry/brep/BrepGeometry.h"
+#endif
 #include "geometry/cgal/cgal.h"
 #include "geometry/linalg.h"
 #include "geometry/linear_extrude.h"
@@ -61,6 +65,45 @@
 class Geometry;
 class Polygon2d;
 class Tree;
+
+#ifdef ENABLE_OPENCSCADE
+namespace {
+
+std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node)
+{
+  if (const auto *cube = dynamic_cast<const CubeNode *>(&node)) {
+    if (cube->x <= 0.0 || cube->y <= 0.0 || cube->z <= 0.0) return {};
+    auto result = std::make_unique<BrepGeometry>(BrepGeometry::cube(cube->x, cube->y, cube->z));
+    if (cube->center) {
+      Transform3d transform = Transform3d::Identity();
+      transform.translate(Vector3d(-cube->x / 2.0, -cube->y / 2.0, -cube->z / 2.0));
+      result->transform(transform);
+    }
+    return result;
+  }
+  if (const auto *cylinder = dynamic_cast<const CylinderNode *>(&node)) {
+    if (cylinder->r1 <= 0.0 || cylinder->r1 != cylinder->r2 || cylinder->h <= 0.0 ||
+        cylinder->discretizer.isFnSpecified())
+      return {};
+    auto result = std::make_unique<BrepGeometry>(BrepGeometry::cylinder(cylinder->r1, cylinder->h));
+    if (cylinder->center) {
+      Transform3d transform = Transform3d::Identity();
+      transform.translate(Vector3d(0.0, 0.0, -cylinder->h / 2.0));
+      result->transform(transform);
+    }
+    return result;
+  }
+  if (const auto *transform = dynamic_cast<const TransformNode *>(&node)) {
+    if (transform->children.size() != 1) return {};
+    auto result = createBrepGeometry(*transform->children.front());
+    if (result) result->transform(transform->matrix);
+    return result;
+  }
+  return {};
+}
+
+}  // namespace
+#endif
 
 GeometryEvaluator::GeometryEvaluator(const Tree& tree) : tree(tree)
 {
@@ -716,7 +759,39 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
   if (state.isPostfix()) {
     std::shared_ptr<const Geometry> geom;
     if (!isSmartCached(node)) {
-      geom = applyToChildren(node, node.type).constptr();
+#ifdef ENABLE_OPENCSCADE
+      if (node.hasFillet && node.filletRadius > 0.0) {
+        if (node.type == OpenSCADOperator::DIFFERENCE && node.children.size() == 2) {
+          auto object = createBrepGeometry(*node.children[0]);
+          auto tool = createBrepGeometry(*node.children[1]);
+          if (object && tool) {
+            BrepFilletDiagnostics diagnostics;
+            geom =
+              std::make_shared<BrepGeometry>(object->difference(*tool, node.filletRadius, diagnostics));
+            if (diagnostics.achievedRadius < node.filletRadius) {
+              LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
+                  "fillet radius reduced from %1$.17g to %2$.17g", node.filletRadius,
+                  diagnostics.achievedRadius);
+            }
+          }
+        }
+        if (!geom) {
+          LOG(message_group::Error, node.modinst->location(), this->tree.getDocumentPath(),
+              "fillet is not supported for this B-Rep subtree");
+          geom = PolySet::createEmpty();
+        }
+      } else {
+        geom = applyToChildren(node, node.type).constptr();
+      }
+#else
+      if (node.hasFillet && node.filletRadius > 0.0) {
+        LOG(message_group::Error, node.modinst->location(), this->tree.getDocumentPath(),
+            "fillet requires a build with OpenCASCADE support");
+        geom = PolySet::createEmpty();
+      } else {
+        geom = applyToChildren(node, node.type).constptr();
+      }
+#endif
     } else {
       geom = smartCacheGet(node, state.preferNef());
     }
