@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -23,6 +24,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -32,6 +34,7 @@
 #include "geometry/linalg.h"
 #include "io/export.h"
 #include "platform/PlatformUtils.h"
+#include "utils/printutils.h"
 
 namespace {
 
@@ -40,6 +43,8 @@ namespace {
 constexpr std::string_view BLEND_HEADER = "BLENDER17-01v0500";
 constexpr uint64_t GENERATED_ADDRESS_BASE = 0x0100000000000000ULL;
 constexpr size_t MAX_BLEND_FRAMES = 256;
+constexpr size_t MAX_BLEND_OBJECTS = 1024;
+constexpr size_t MAX_BLEND_MATERIALS = 1024;
 
 template <typename T>
 T readScalar(const std::vector<uint8_t>& bytes, size_t offset)
@@ -294,12 +299,13 @@ public:
     dna_ = std::make_unique<Dna>(dnaBlock.data);
   }
 
-  void setFrames(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps)
+  void setFrames(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                 size_t maxSamples)
   {
     if (frames.empty()) throw std::runtime_error("Blender animation has no frames");
     setScene(frames.size(), fps);
 
-    const size_t samples = std::min(frames.size(), MAX_BLEND_FRAMES);
+    const size_t samples = std::min(frames.size(), maxSamples);
     for (size_t sample = 0; sample < samples; ++sample) {
       const size_t frame =
         samples == 1 ? 0 : (sample * (frames.size() - 1) + (samples - 1) / 2) / (samples - 1);
@@ -313,13 +319,13 @@ public:
       const uint64_t meshAddress =
         readScalar<uint64_t>(object.data, dna_->fieldOffset(object.dna, "data"));
       detachOwnedData(meshAddress);
-      patchPackage(ownedPackage(objectAddress), frames[frame]);
+      patchPackage(ownedPackage(objectAddress), frames[frame], std::nullopt);
       std::snprintf(objectName, sizeof(objectName), "ACFrame %04zu", sample + 1);
       patchVisibility(ownedPackage(blockByIdName(objectName).old), frame + 1, nextFrame + 1);
     }
   }
 
-  void setObjectAnimation(const std::vector<UsdAnimationFrame>& frames, unsigned fps)
+  void setObjectAnimation(const std::vector<UsdAnimationFrame>& frames, unsigned fps, size_t maxSamples)
   {
     std::vector<bool> stable(frames[0].objects.size(), true);
     for (size_t object = 0; object < stable.size(); ++object) {
@@ -352,14 +358,97 @@ public:
         for (const auto& vertex : source.vertices) {
           mesh->vertices.push_back(frame.objects[object].transform * vertex);
         }
+        const int colorIndex = mesh->colors.size();
+        mesh->colors.push_back(frame.objects[object].color);
         for (const auto& face : source.indices) {
           auto& destination = mesh->indices.emplace_back();
           for (const auto index : face) destination.push_back(offset + index);
+          mesh->color_indices.push_back(colorIndex);
         }
       }
       remeshed.push_back(std::move(mesh));
     }
-    setFrames(remeshed, fps);
+    setFrames(remeshed, fps, maxSamples);
+  }
+
+  void setCamera(const std::vector<UsdAnimationFrame>& frames)
+  {
+    if (frames.empty() || !frames[0].camera) return;
+    std::vector<Vector3d> locations;
+    std::vector<Eigen::Quaterniond> orientations;
+    locations.reserve(frames.size());
+    orientations.reserve(frames.size());
+    for (const auto& frame : frames) {
+      const Camera& camera = frame.camera.value_or(*frames[0].camera);
+      const double radians = std::acos(-1.0) / 180.0;
+      const Eigen::Matrix3d modelRotation =
+        (Eigen::AngleAxisd(camera.object_rot.x() * radians, Vector3d::UnitX()) *
+         Eigen::AngleAxisd(camera.object_rot.y() * radians, Vector3d::UnitY()) *
+         Eigen::AngleAxisd(camera.object_rot.z() * radians, Vector3d::UnitZ()))
+          .toRotationMatrix();
+      Eigen::Matrix3d base;
+      base.col(0) = Vector3d::UnitX();
+      base.col(1) = Vector3d::UnitZ();
+      base.col(2) = -Vector3d::UnitY();
+      locations.push_back(camera.getVpt() +
+                          modelRotation.transpose() * Vector3d(0, -camera.zoomValue(), 0));
+      Eigen::Quaterniond orientation(modelRotation.transpose() * base);
+      if (!orientations.empty() && orientations.back().dot(orientation) < 0) {
+        orientation.coeffs() *= -1;
+      }
+      orientations.push_back(orientation);
+    }
+
+    Block& object = blockByIdName("OBOpenSCAD Camera");
+    const size_t location = dna_->fieldOffset(object.dna, "loc");
+    const size_t rotation = dna_->fieldOffset(object.dna, "quat");
+    for (size_t component = 0; component < 3; ++component) {
+      writeScalar<float>(object.data, location + component * sizeof(float), locations[0][component]);
+    }
+    writeScalar<float>(object.data, rotation, orientations[0].w());
+    for (size_t component = 0; component < 3; ++component) {
+      writeScalar<float>(object.data, rotation + (component + 1) * sizeof(float),
+                         orientations[0].coeffs()[component]);
+    }
+
+    const uint64_t cameraAddress =
+      readScalar<uint64_t>(object.data, dna_->fieldOffset(object.dna, "data"));
+    Block& cameraData = blockByAddress(cameraAddress);
+    const Camera& camera = *frames[0].camera;
+    const float sensor = 36.0f;
+    const float verticalFov = camera.fovValue() * std::acos(-1.0) / 180.0;
+    writeScalar<int16_t>(cameraData.data, dna_->fieldOffset(cameraData.dna, "type"),
+                         camera.projection == Camera::ProjectionType::ORTHOGONAL ? 1 : 0);
+    writeScalar<int8_t>(cameraData.data, dna_->fieldOffset(cameraData.dna, "sensor_fit"), 2);
+    writeScalar<float>(cameraData.data, dna_->fieldOffset(cameraData.dna, "sensor_y"), sensor);
+    writeScalar<float>(cameraData.data, dna_->fieldOffset(cameraData.dna, "lens"),
+                       sensor / (2 * std::tan(verticalFov / 2)));
+    writeScalar<float>(cameraData.data, dna_->fieldOffset(cameraData.dna, "ortho_scale"),
+                       2 * camera.zoomValue() * std::tan(verticalFov / 2));
+
+    const auto package = ownedPackage(blockByIdName("ACOpenSCAD Camera").old);
+    std::vector<uint64_t> curves;
+    for (const uint64_t address : package) {
+      if (dna_->typeName(blockByAddress(address).dna) == "FCurve") curves.push_back(address);
+    }
+    for (const uint64_t address : curves) {
+      detachCurveKeys(address);
+      Block& curve = blockByAddress(address);
+      const uint64_t pathAddress =
+        readScalar<uint64_t>(curve.data, dna_->fieldOffset(curve.dna, "rna_path"));
+      const std::string path = rawString(blockByAddress(pathAddress));
+      const int32_t component =
+        readScalar<int32_t>(curve.data, dna_->fieldOffset(curve.dna, "array_index"));
+      std::vector<float> values;
+      if (path == "location") {
+        for (const auto& value : locations) values.push_back(value[component]);
+      } else if (path == "rotation_quaternion") {
+        for (const auto& value : orientations) {
+          values.push_back(component == 0 ? value.w() : value.coeffs()[component - 1]);
+        }
+      }
+      if (!values.empty()) patchCurve(curve, values, 1);
+    }
   }
 
   void write(std::ostream& output) const
@@ -527,11 +616,12 @@ private:
     return GENERATED_ADDRESS_BASE + nextGeneratedAddress_++ * 16;
   }
 
-  void patchPackage(const std::set<uint64_t>& package, const std::shared_ptr<const Geometry>& geometry)
+  void patchPackage(const std::set<uint64_t>& package, const std::shared_ptr<const Geometry>& geometry,
+                    const std::optional<Color4f>& color)
   {
     for (const uint64_t address : package) {
       Block& block = blockByAddress(address);
-      if (codeString(block.code) == "ME") patchMesh(block, geometry);
+      if (codeString(block.code) == "ME") patchMesh(block, geometry, color);
     }
   }
 
@@ -561,7 +651,8 @@ private:
     const uint64_t meshAddress =
       readScalar<uint64_t>(object.data, dna_->fieldOffset(object.dna, "data"));
     detachOwnedData(meshAddress);
-    patchPackage(ownedPackage(object.old), frames[0].objects[objectIndex].geometry);
+    patchPackage(ownedPackage(object.old), frames[0].objects[objectIndex].geometry,
+                 frames[0].objects[objectIndex].color);
 
     std::snprintf(name, sizeof(name), "ACStable %04zu", slot);
     const uint64_t actionAddress = blockByIdName(name).old;
@@ -670,13 +761,79 @@ private:
     }
   }
 
-  void patchMesh(Block& mesh, const std::shared_ptr<const Geometry>& geometry)
+  uint64_t materialAddress(const Color4f& color)
+  {
+    const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a());
+    const auto found = materials_.find(key);
+    if (found != materials_.end()) return found->second;
+    if (materials_.size() == MAX_BLEND_MATERIALS) {
+      throw std::runtime_error("Blender export supports at most 1024 materials");
+    }
+    char name[48];
+    std::snprintf(name, sizeof(name), "MAOpenSCAD Material %04zu", materials_.size() + 1);
+    Block& material = blockByIdName(name);
+    const std::array<float, 4> rgba{color.r(), color.g(), color.b(), color.a()};
+    const size_t diffuse = dna_->fieldOffset(material.dna, "diffuse_color");
+    std::memcpy(material.data.data() + diffuse, rgba.data(), sizeof(rgba));
+
+    for (const uint64_t address : ownedPackage(material.old)) {
+      Block& socket = blockByAddress(address);
+      if (dna_->typeName(socket.dna) != "bNodeSocket") continue;
+      const size_t itemSize = dna_->structureSize(socket.dna);
+      for (int64_t item = 0; item < socket.count; ++item) {
+        const size_t base = size_t(item) * itemSize;
+        const size_t nameOffset = base + dna_->fieldOffset(socket.dna, "name");
+        const char *socketName = reinterpret_cast<const char *>(socket.data.data() + nameOffset);
+        const uint64_t valueAddress =
+          readScalar<uint64_t>(socket.data, base + dna_->fieldOffset(socket.dna, "default_value"));
+        if (!valueAddress) continue;
+        Block& value = blockByAddress(valueAddress);
+        if (std::string_view(socketName) == "Base Color") {
+          std::memcpy(value.data.data() + dna_->fieldOffset(value.dna, "value"), rgba.data(),
+                      sizeof(rgba));
+        } else if (std::string_view(socketName) == "Alpha") {
+          writeScalar<float>(value.data, dna_->fieldOffset(value.dna, "value"), color.a());
+        }
+      }
+    }
+    materials_.emplace(key, material.old);
+    return material.old;
+  }
+
+  void patchMesh(Block& mesh, const std::shared_ptr<const Geometry>& geometry,
+                 const std::optional<Color4f>& overrideColor)
   {
     const auto polyset = PolySetUtils::getGeometryAsPolySet(geometry);
     const std::vector<Vector3d> emptyVertices;
     const PolygonIndices emptyFaces;
     const auto& vertices = polyset ? polyset->vertices : emptyVertices;
     const auto& faces = polyset ? polyset->indices : emptyFaces;
+
+    std::vector<uint64_t> materialSlots;
+    std::map<std::tuple<float, float, float, float>, int32_t> materialIndices;
+    std::vector<int32_t> faceMaterials;
+    for (size_t face = 0; face < faces.size(); ++face) {
+      Color4f color(0.8f, 0.8f, 0.8f, 1.0f);
+      if (overrideColor) {
+        color = *overrideColor;
+      } else if (polyset && face < polyset->color_indices.size()) {
+        const int index = polyset->color_indices[face];
+        if (index >= 0 && static_cast<size_t>(index) < polyset->colors.size()) {
+          color = polyset->colors[index];
+        }
+      }
+      const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a());
+      auto [found, inserted] = materialIndices.emplace(key, materialSlots.size());
+      if (inserted) materialSlots.push_back(materialAddress(color));
+      faceMaterials.push_back(found->second);
+    }
+    if (materialSlots.empty()) {
+      materialSlots.push_back(materialAddress(Color4f(0.8f, 0.8f, 0.8f, 1.0f)));
+    }
+    const uint64_t materialArray = readScalar<uint64_t>(mesh.data, dna_->fieldOffset(mesh.dna, "mat"));
+    if (!materialArray) throw std::runtime_error("Blender mesh has no material array");
+    setRaw(blockByAddress(materialArray), materialSlots);
+    writeScalar<int16_t>(mesh.data, dna_->fieldOffset(mesh.dna, "totcol"), materialSlots.size());
 
     std::vector<std::array<int32_t, 2>> edges;
     std::map<std::pair<int32_t, int32_t>, int32_t> edgeIndex;
@@ -753,6 +910,9 @@ private:
       } else if (name == ".select_poly" || name == "sharp_face") {
         payload.data.assign(faces.size(), 0);
         setArraySize(array, faces.size());
+      } else if (name == "material_index" || name == ".material_index") {
+        setRaw(payload, faceMaterials);
+        setArraySize(array, faceMaterials.size());
       }
     }
   }
@@ -778,6 +938,7 @@ private:
   std::vector<uint8_t> bytes_;
   std::vector<Block> blocks_;
   std::unordered_map<uint64_t, size_t> indexByAddress_;
+  std::map<std::tuple<float, float, float, float>, uint64_t> materials_;
   std::unique_ptr<Dna> dna_;
   uint64_t nextGeneratedAddress_ = 1;
 };
@@ -785,19 +946,42 @@ private:
 }  // namespace
 
 void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
-                            std::ostream& output)
+                            std::ostream& output, const BlendExportOptions& options)
 {
+  if (options.remeshSamples == 0 || options.remeshSamples > MAX_BLEND_FRAMES) {
+    throw std::runtime_error("Blender remesh samples must be in range 1..256");
+  }
   const fs::path templatePath = PlatformUtils::resourcePath("templates") / "blender-5.0.1.blend";
   BlendScene scene(templatePath);
-  if (!frames.empty() && frames[0].objects.size() <= MAX_BLEND_FRAMES &&
+  scene.setCamera(frames);
+  if (!frames.empty() && frames[0].objects.size() <= MAX_BLEND_OBJECTS &&
       canExportObjectAnimation(frames)) {
-    scene.setObjectAnimation(frames, fps);
+    const bool remeshes =
+      std::any_of(frames[0].objects.begin(), frames[0].objects.end(), [&](const auto& object) {
+        const size_t index = &object - frames[0].objects.data();
+        return std::any_of(frames.begin(), frames.end(), [&](const auto& frame) {
+          return frame.objects[index].geometry.get() != object.geometry.get();
+        });
+      });
+    if (remeshes && frames.size() > options.remeshSamples) {
+      LOG(message_group::Warning,
+          "Blender export samples changing geometry at %1$d evenly spaced frames out of %2$d; "
+          "brief changes between samples may be missed.",
+          options.remeshSamples, frames.size());
+    }
+    scene.setObjectAnimation(frames, fps, options.remeshSamples);
     scene.write(output);
     return;
+  }
+  if (frames.size() > options.remeshSamples) {
+    LOG(message_group::Warning,
+        "Blender export samples changing geometry at %1$d evenly spaced frames out of %2$d; brief "
+        "changes between samples may be missed.",
+        options.remeshSamples, frames.size());
   }
   std::vector<std::shared_ptr<const Geometry>> geometry;
   geometry.reserve(frames.size());
   for (const auto& frame : frames) geometry.push_back(frame.geometry);
-  scene.setFrames(geometry, fps);
+  scene.setFrames(geometry, fps, options.remeshSamples);
   scene.write(output);
 }

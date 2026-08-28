@@ -7,6 +7,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -35,6 +36,11 @@ struct UsdAnimationObject {
 struct UsdAnimationFrame {
   std::shared_ptr<const Geometry> geometry;
   std::vector<UsdAnimationObject> objects;
+  std::optional<Camera> camera;
+};
+
+struct BlendExportOptions {
+  size_t remeshSamples = 256;
 };
 
 bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames);
@@ -369,7 +375,7 @@ void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigne
 void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo);
 void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
-                            std::ostream& output);
+                            std::ostream& output, const BlendExportOptions& options = {});
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_nefdbg(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
