@@ -76,5 +76,19 @@ for frame in (1, 2):
     camera.data.keyframe_insert(data_path="type", frame=frame)
 camera.data.animation_data.action.name = "OpenSCAD Camera Data"
 scene.frame_start = 1
+scene.render.engine = "CYCLES"
+scene.cycles.device = "GPU"
+scene.cycles.samples = 128
+scene.cycles.use_denoising = True
+scene.render.threads_mode = "AUTO"
+try:
+    cpref = bpy.context.preferences.addons["cycles"].preferences
+    cpref.compute_device_type = "CUDA"
+    cpref.get_devices()
+    for d in cpref.devices:
+        if d.type in ("CUDA", "OPTIX", "METAL", "HIP", "ONEAPI"):
+            d.use = True
+except Exception:
+    pass
 bpy.context.preferences.filepaths.use_file_compression = False
 bpy.ops.wm.save_as_mainfile(filepath=output, compress=False)
