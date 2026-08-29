@@ -64,8 +64,11 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
                                  : std::vector<std::string>{"c", "alpha", "roughness"},
                       // Named-only. Without declaring them, every bump= or metallic= warns
                       // "variable not specified as parameter" while still taking effect.
-                      {"bump", "metallic", "ambient", "diffuse", "specular", "brilliance", "reflection",
-                       "emission", "crand", "ior"});
+                      // Exactly the set the reader below consumes. ambient, diffuse,
+                      // brilliance, reflection and crand were dropped when the attribute
+                      // set was cut to what POV and Blender both express; leaving them
+                      // declared here meant they parsed, warned nothing, and did nothing.
+                      {"bump", "metallic", "specular", "emission", "ior"});
   if (isMaterial && parameters["name"].type() == Value::Type::STRING) {
     const auto& name = parameters["name"].toString();
     if (Material::isValidName(name)) {

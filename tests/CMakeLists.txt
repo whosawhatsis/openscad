@@ -1358,6 +1358,14 @@ list(APPEND EXPERIMENTAL_MATERIAL_BUMP_FILES
 add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_BUMP_FILES} ARGS --enable=multi-material)
 
 #
+# Feature 15: parameters that were dropped must warn, not be swallowed.
+#
+list(APPEND EXPERIMENTAL_MATERIAL_DROPPED_FILES
+  ${TEST_SCAD_DIR}/misc/material-dropped-params.scad
+)
+add_cmdline_test(echo           EXPERIMENTAL OPENSCAD SUFFIX echo FILES ${EXPERIMENTAL_MATERIAL_DROPPED_FILES} ARGS --enable=multi-material)
+
+#
 # Feature 15: default colors for named materials.
 #
 list(APPEND EXPERIMENTAL_MATERIAL_COLOR_FILES
