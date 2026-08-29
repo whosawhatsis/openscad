@@ -340,6 +340,7 @@ void register_builtin_color()
                    "color(\"colorname\", 1.0)",
                    "color(c = [r, g, b], bump = [scale, strength, seed])",
                    "color(c = [r, g, b], roughness = 0.5, metallic = 0.0)",
+                   "color(c = [r, g, b], specular = 0.5, emission = 0.0, ior = 1.5)",
                  });
   Builtins::init("material", new BuiltinModule(builtin_material, &Feature::ExperimentalMultiMaterial),
                  {
@@ -349,5 +350,6 @@ void register_builtin_color()
                    "material(\"name\", \"colorname\", 1.0)",
                    "material(\"name\", c = [r, g, b], bump = [scale, strength, seed])",
                    "material(\"name\", c = [r, g, b], roughness = 0.5, metallic = 0.0)",
+                   "material(\"name\", c = [r, g, b], specular = 0.5, emission = 0.0, ior = 1.5)",
                  });
 }

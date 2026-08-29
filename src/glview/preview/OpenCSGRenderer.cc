@@ -241,7 +241,18 @@ std::vector<OpenCSGRenderer::PendingProduct> OpenCSGRenderer::beginPrepare(
 {
   std::vector<PendingProduct> pending;
 #ifdef ENABLE_OPENCSG
-  if (!vertex_state_containers_.empty()) return pending;
+  // Rebuild when the shader changes, not just when there is nothing built yet.
+  // A prepared container carries glVertexAttribPointer calls recorded against one
+  // program's attribute locations, and draw() enables every attribute the *current*
+  // program declares. Reusing containers across a mode switch therefore enables an
+  // attribute whose pointer was never set for this program, and the driver
+  // dereferences null inside glDrawElements. Containers are cached by shaderinfo in
+  // OpenCSGRendererCache, so switching back does not rebuild from scratch.
+  if (!vertex_state_containers_.empty()) {
+    if (shaderinfo == prepared_shaderinfo_) return pending;
+    vertex_state_containers_.clear();
+  }
+  prepared_shaderinfo_ = shaderinfo;
 
   const auto addProducts = [&](const std::shared_ptr<CSGProducts>& products, bool highlight_mode,
                                bool background_mode) {

@@ -126,6 +126,8 @@ private:
   bool buildProduct(PendingProduct& pending, const std::function<bool()>& shouldContinue);
 
   std::vector<std::shared_ptr<OpenCSGVBOProduct>> vertex_state_containers_;
+  // The shader the containers above were prepared for; see beginPrepare().
+  const ShaderUtils::ShaderInfo *prepared_shaderinfo_ = nullptr;
   std::shared_ptr<CSGProducts> root_products_;
   std::shared_ptr<CSGProducts> highlights_products_;
   std::shared_ptr<CSGProducts> background_products_;
