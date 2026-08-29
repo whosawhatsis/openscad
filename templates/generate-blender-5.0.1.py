@@ -1,4 +1,5 @@
 import bpy
+import mathutils
 import sys
 
 
@@ -80,6 +81,42 @@ for frame in (1, 2):
     camera.data.keyframe_insert(data_path="ortho_scale", frame=frame)
     camera.data.keyframe_insert(data_path="type", frame=frame)
 camera.data.animation_data.action.name = "OpenSCAD Camera Data"
+
+# Default Lighting: Dual Directional Sun Headlights parented to camera
+for obj in list(bpy.data.objects):
+    if obj.type == "LIGHT":
+        bpy.data.objects.remove(obj, do_unlink=True)
+for light in list(bpy.data.lights):
+    bpy.data.lights.remove(light, do_unlink=True)
+
+sun0_data = bpy.data.lights.new(name="OpenSCAD Headlight 0", type="SUN")
+sun0_data.energy = 3.0
+sun0_data.color = (1.0, 1.0, 1.0)
+sun0_data.use_fake_user = True
+sun0_obj = bpy.data.objects.new("OpenSCAD Headlight 0", sun0_data)
+scene.collection.objects.link(sun0_obj)
+sun0_obj.parent = camera
+
+sun1_data = bpy.data.lights.new(name="OpenSCAD Headlight 1", type="SUN")
+sun1_data.energy = 1.2
+sun1_data.color = (0.92, 0.95, 1.0)
+sun1_data.use_fake_user = True
+sun1_obj = bpy.data.objects.new("OpenSCAD Headlight 1", sun1_data)
+scene.collection.objects.link(sun1_obj)
+sun1_obj.parent = camera
+
+dir0 = mathutils.Vector((0.577, 0.577, -0.577)).normalized()
+dir1 = mathutils.Vector((-0.577, -0.577, 0.577)).normalized()
+sun0_obj.rotation_euler = dir0.to_track_quat("-Z", "Y").to_euler()
+sun1_obj.rotation_euler = dir1.to_track_quat("-Z", "Y").to_euler()
+
+if scene.world:
+    scene.world.use_nodes = True
+    bg = scene.world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs["Color"].default_value = (0.05, 0.05, 0.06, 1.0)
+        bg.inputs["Strength"].default_value = 0.4
+
 scene.frame_start = 1
 scene.render.engine = "CYCLES"
 scene.cycles.device = "GPU"

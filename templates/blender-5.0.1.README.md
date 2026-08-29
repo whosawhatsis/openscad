@@ -29,4 +29,4 @@ This gives dependency-free export up to 256 configurable, evenly spaced remesh s
 up to 1024 persistent objects can carry longer transform animations. OpenSCAD patches camera,
 per-face material, and transform animation data into the authored IDs.
 
-SHA-256: `a11d2c7b7d84da5a3fa517324c2962c00f1dd939d7c9e971831a052d8985ac09`
+SHA-256: `7a03699aa49efc64ecb2019e36ba89ad7fb48c5e8b2d13b8b3c446e672f7dc32`
