@@ -56,8 +56,13 @@ void main(void)
   vec3 F0 = mix(vec3(0.04), vColor.rgb, metallic);
   float NdotV = max(dot(normal, viewDirection), 1e-4);
 
+  // Ambient stands in for an environment this viewport does not have. Without
+  // the specular half a metal has no diffuse response and nothing to reflect,
+  // so it renders near black - correct for two lights in a void, and a plain
+  // downgrade from the shader this replaced. A uniform environment of radiance
+  // L integrates to roughly L * F0, which is the whole approximation here.
   vec3 diffuse = albedo * 0.18;
-  vec3 specular = vec3(0.0);
+  vec3 specular = F0 * 0.18;
 
   for (int i = 0; i < 2; ++i) {
     vec3 lightDirection = normalize(gl_LightSource[i].position.xyz);
