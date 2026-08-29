@@ -238,10 +238,10 @@ std::shared_ptr<CSGNode> CSGTreeEvaluator::evaluateCSGNodeFromGeometry(
   // earliest point a consumer could begin work on it -- which is the whole point of the hook.
   if (this->leafCallback && ps) this->leafCallback(ps);
 
-  std::shared_ptr<CSGNode> t(
-    new CSGLeaf(ps, state.matrix(), state.color(), state.materialName(),
-                state.hasRoughness() ? Geometry::shininessForRoughness(state.roughness()) : 64.0f,
-                state.metallic(), STR(node.name(), node.index()), node.index()));
+  std::shared_ptr<CSGNode> t(new CSGLeaf(ps, state.matrix(), state.color(), state.materialName(),
+                                         state.hasRoughness() ? state.roughness() : 0.0f,
+                                         state.metallic(), STR(node.name(), node.index()),
+                                         node.index()));
   if (modinst->isHighlight() || state.isHighlight()) t->setHighlight(true);
   if (modinst->isBackground() || state.isBackground()) t->setBackground(true);
   return t;

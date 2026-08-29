@@ -74,8 +74,8 @@ private:
   // Transformation matrix and color. FIXME: Generalize such state variables?
   Transform3d matrix_;
   Color4f color_;
-  // Only ever read by the renderers, to look up a display-time default colour.
-  // It must not reach any exporter: a Preferences colour is colour scheme, not model.
+  // Only ever read by the renderers, to look up a display-time default color.
+  // It must not reach any exporter: a Preferences color is color scheme, not model.
   std::string materialName_;
   float roughness_{0.0f};
   bool hasRoughness_{false};

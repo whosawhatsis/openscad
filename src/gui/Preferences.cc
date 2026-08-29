@@ -795,8 +795,8 @@ void Preferences::on_launcherBox_toggled(bool state)
   settings.setValue("launcher/showOnStartup", state);
 }
 
-// The table is the "name=color;..." setting shown as rows. Colours are held as
-// text rather than through a colour picker, because any spelling parse_color()
+// The table is the "name=color;..." setting shown as rows. Colors are held as
+// text rather than through a color picker, because any spelling parse_color()
 // accepts is valid here - "yellow", "#ffff00", "#ffff0080".
 void Preferences::readMaterialColors()
 {

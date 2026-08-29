@@ -140,7 +140,7 @@ std::vector<CSGChainObject> read_chain(const json& input,
     const auto& color = item["color"];
     // No material name and default shading attributes: this wire format carries
     // neither, so a leaf rebuilt in a worker process cannot resolve a Preferences
-    // default colour and renders with the default shininess and metalness.
+    // default color and renders with the default roughness and metalness.
     // Carrying them means extending this format, which belongs to the
     // process-isolation row.
     auto leaf = std::make_shared<CSGLeaf>(geometry->second, matrix,

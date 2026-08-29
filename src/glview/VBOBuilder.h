@@ -369,15 +369,15 @@ public:
   inline ElementsMap& elementsMap() { return elements_map_; }
 
   size_t shader_attributes_index_{0};
-  float material_shininess_{64.0f};
+  float material_roughness_{0.0f};
   float material_metallic_{0.0f};
   void addShaderData();
   // Shading attributes for the vertices written from here on. They ride in the
   // same per-vertex array as barycentric coordinates, so a batch may hold many
   // bodies with different materials without splitting the draw.
-  void setMaterialParams(float shininess, float metallic)
+  void setMaterialParams(float roughness, float metallic)
   {
-    material_shininess_ = shininess;
+    material_roughness_ = roughness;
     material_metallic_ = metallic;
   }
 

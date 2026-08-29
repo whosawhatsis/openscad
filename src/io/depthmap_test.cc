@@ -13,7 +13,7 @@
 
 namespace {
 
-//! Rotation centre for the cases below: the models are centred on the origin,
+//! Rotation center for the cases below: the models are centered on the origin,
 //! which is also where the viewport rotates about after a View All.
 const double kOrigin[3] = {0.0, 0.0, 0.0};
 
@@ -27,7 +27,7 @@ std::uint16_t grey16(const DepthImage& img, size_t pixel)
 
 }  // namespace
 
-TEST_CASE("metric profile encodes linear millimetres, near dark", "[Depthmap]")
+TEST_CASE("metric profile encodes linear millimeters, near dark", "[Depthmap]")
 {
   // A 2x2 buffer: three depths plus one background pixel.
   const std::vector<float> depths = {10.0f, 20.0f, 100.0f, BG};
@@ -36,7 +36,7 @@ TEST_CASE("metric profile encodes linear millimetres, near dark", "[Depthmap]")
   REQUIRE(img.bytesPerPixel == 2);
   REQUIRE(img.pixels.size() == 4 * 2);
 
-  // Value is the distance itself, so it survives a round trip to millimetres.
+  // Value is the distance itself, so it survives a round trip to millimeters.
   CHECK(grey16(img, 0) == 10);
   CHECK(grey16(img, 1) == 20);
   CHECK(grey16(img, 2) == 100);
@@ -370,7 +370,7 @@ TEST_CASE("the camera sidecar states its conventions", "[Depthmap]")
   // plausible-looking transposed reconstruction. Say it in the file.
   CHECK(json.find("\"matrixOrder\": \"column-major\"") != std::string::npos);
   CHECK(json.find("\"handedness\": \"right\"") != std::string::npos);
-  // Depth is measured from the eye in both projections, and in millimetres.
+  // Depth is measured from the eye in both projections, and in millimeters.
   CHECK(json.find("\"depthOrigin\": \"eye\"") != std::string::npos);
   CHECK(json.find("\"depthUnits\": \"mm\"") != std::string::npos);
 }
@@ -469,13 +469,13 @@ TEST_CASE("the sphere range spans the model's bounding sphere", "[Depthmap]")
 TEST_CASE("shading is independent of viewing distance while the cap is idle", "[Depthmap]")
 {
   // The property the whole design rests on: with range = [d-R, d+R], a surface a
-  // fixed offset from the centre maps to the same place in the range whatever d
+  // fixed offset from the center maps to the same place in the range whatever d
   // is. A cap that binds derives R from d and destroys exactly this, which is how
   // a capped diameter of d came to rescale the image at every realistic distance
   // on a long model.
   const double bmin[3] = {-20.0, -20.0, -20.0};
   const double bmax[3] = {20.0, 20.0, 20.0};
-  const double offset = 7.0;  // a surface 7mm in front of the model centre
+  const double offset = 7.0;  // a surface 7mm in front of the model center
   double shade[2];
   int i = 0;
   for (const double d : {300.0, 900.0}) {
@@ -519,20 +519,20 @@ TEST_CASE("the sphere range never collapses or inverts", "[Depthmap]")
   const auto degenerate = capped_sphere_range(p, p, kOrigin, viewDownZ(10.0).data());
   CHECK(degenerate.end > degenerate.start);
 
-  // Centre behind the eye: nothing sensible to normalize across, but it must
+  // Center behind the eye: nothing sensible to normalize across, but it must
   // still hand back a usable, positive, non-inverted range rather than NaN.
   const auto behind = capped_sphere_range(p, p, kOrigin, viewDownZ(-10.0).data());
   CHECK(behind.end > behind.start);
   CHECK(behind.start >= 0.0);
 }
 
-TEST_CASE("the range is stable when the camera orbits its own centre", "[Depthmap]")
+TEST_CASE("the range is stable when the camera orbits its own center", "[Depthmap]")
 {
-  // The reason the sphere is centred on the rotation centre rather than the
-  // model: orbiting keeps the eye-to-rotation-centre distance constant, so both
-  // the radius and the range stay put. Centred on a model sitting off to one
+  // The reason the sphere is centered on the rotation center rather than the
+  // model: orbiting keeps the eye-to-rotation-center distance constant, so both
+  // the radius and the range stay put. Centered on a model sitting off to one
   // side, the same orbit changes that distance and rescales the image.
-  const double bmin[3] = {60.0, -10.0, -10.0};  // model well off the rotation centre
+  const double bmin[3] = {60.0, -10.0, -10.0};  // model well off the rotation center
   const double bmax[3] = {140.0, 10.0, 10.0};
   const auto a = capped_sphere_range(bmin, bmax, kOrigin, viewDownZ(400.0).data());
   const auto b = capped_sphere_range(bmin, bmax, kOrigin, viewDownX(400.0).data());
@@ -540,7 +540,7 @@ TEST_CASE("the range is stable when the camera orbits its own centre", "[Depthma
   CHECK(a.end == Catch::Approx(b.end));
 }
 
-TEST_CASE("the sphere grows to contain a model it is not centred on", "[Depthmap]")
+TEST_CASE("the sphere grows to contain a model it is not centered on", "[Depthmap]")
 {
   // Panning away from the model must cost contrast, not correctness: the far
   // corner has to stay inside the range or it would clamp to black.
@@ -572,7 +572,7 @@ TEST_CASE("the fine metric profile saturates below the background value", "[Dept
 {
   // Beyond 655.34mm the range is exhausted. Clamping must stop just short of the
   // background sentinel so "too far to represent" stays distinguishable from
-  // "no geometry here" - the same rule the millimetre profile follows.
+  // "no geometry here" - the same rule the millimeter profile follows.
   const std::vector<float> depths = {5000.0f};
   const auto img = encode_depthmap(depths, 1, 1, DepthProfile::metricFine);
   const int value = static_cast<int>(img.pixels[0]) << 8 | img.pixels[1];

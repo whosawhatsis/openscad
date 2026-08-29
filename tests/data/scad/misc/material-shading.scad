@@ -1,5 +1,5 @@
 // Rendered by materialrendertest.py in shaded mode, once per mode= value.
-// Same geometry and colour every time, so any pixel difference between renders
+// Same geometry and color every time, so any pixel difference between renders
 // comes from the material attributes alone.
 mode = 0;
 

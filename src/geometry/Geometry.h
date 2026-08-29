@@ -67,24 +67,13 @@ public:
     const auto it = this->metadata.find("material");
     return it == this->metadata.end() ? none : it->second;
   }
-  // Blinn-Phong specular exponent and metalness. The defaults are exactly what
-  // the shader used before these were configurable, so geometry that sets
-  // neither renders identically to before.
-  // TODO these are plain members, so unlike materialName they do NOT survive the
-  // compute worker transport. Move them into the metadata channel above.
-  // Standard Blinn-Phong mapping: alpha = roughness^2, exponent = 2/alpha^2 - 2.
-  // Note roughness 0.417 reproduces the shader's previous fixed exponent of 64,
-  // which is why that is the default when no roughness is given.
-  static float shininessForRoughness(double roughness)
-  {
-    const double alpha = roughness * roughness;
-    const double a2 = alpha * alpha;
-    if (a2 <= 0.0) return 4096.0f;
-    return static_cast<float>(std::clamp(2.0 / a2 - 2.0, 1.0, 4096.0));
-  }
-  // Roughness is stored as the user wrote it, because that is what exporters
-  // need; the renderer converts to an exponent at draw time. Storing both would
-  // be two sources of truth for one property.
+  // Roughness reaches the shader as the user wrote it: the microfacet BRDF is
+  // parameterized on roughness directly, so there is nothing to convert and
+  // exporters and renderer read the same number. Zero means "not set", which is
+  // what the shader's default branch tests for.
+  // TODO roughness and metallic are plain members, so unlike materialName they do
+  // NOT survive the compute worker transport. Move them into the metadata channel
+  // above.
   void setRoughness(float r)
   {
     roughness_ = r;
@@ -92,10 +81,6 @@ public:
   }
   [[nodiscard]] bool hasRoughness() const { return hasRoughness_; }
   [[nodiscard]] float roughness() const { return roughness_; }
-  [[nodiscard]] float shininess() const
-  {
-    return hasRoughness_ ? shininessForRoughness(roughness_) : 64.0f;
-  }
   // Extra POV-Ray finish parameters, carried as a map because only the POV
   // exporter reads them so far. TODO fold these into the metadata channel that
   // materialName uses on the process-isolation branch, so they survive the
@@ -114,9 +99,9 @@ public:
   [[nodiscard]] bool hasBodyColor() const { return hasBodyColor_; }
   [[nodiscard]] const Color4f& bodyColor() const { return bodyColor_; }
   // Body identity only. This deliberately does not repaint the geometry with
-  // the body colour: a geometry that came out of a boolean or a render() node
-  // already carries the per-face colours of the operands it was built from, and
-  // flooding it with one colour is what color()/render() colour preservation
+  // the body color: a geometry that came out of a boolean or a render() node
+  // already carries the per-face colors of the operands it was built from, and
+  // flooding it with one color is what color()/render() color preservation
   // exists to prevent. color() itself paints, in the ColorNode visitor.
   void copyBodyAttributes(const Geometry& other)
   {
@@ -130,7 +115,7 @@ public:
     hasBodyColor_ = other.hasBodyColor_;
   }
   // A body-combining operation consumes its operands and produces one body,
-  // which takes the first operand's colour as well as its name.
+  // which takes the first operand's color as well as its name.
   void takeBodyAttributesFrom(const Geometry& other)
   {
     copyBodyAttributes(other);

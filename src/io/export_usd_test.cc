@@ -4,7 +4,7 @@
 // assertions describe structure rather than comparing against a golden blob, because the
 // facts that matter are the ones Blender's importer was verified to depend on:
 //
-//   - colour must reach Blender as a bound UsdPreviewSurface, NOT as primvars:displayColor
+//   - color must reach Blender as a bound UsdPreviewSurface, NOT as primvars:displayColor
 //     (Blender 3.3.1 silently drops displayColor), and
 //   - opacity must survive, because OpenSCAD's color() carries an alpha.
 //
@@ -32,7 +32,7 @@ std::unique_ptr<PolySet> makeTriangle()
   return ps;
 }
 
-//! Two disjoint triangles carrying different colours, to exercise per-face colour.
+//! Two disjoint triangles carrying different colors, to exercise per-face color.
 std::unique_ptr<PolySet> makeTwoColouredTriangles()
 {
   auto ps = std::make_unique<PolySet>(3);
@@ -63,7 +63,7 @@ std::string exportToString(const std::shared_ptr<const Geometry>& geom)
   return out.str();
 }
 
-//! Count non-overlapping occurrences, so "one material per distinct colour" is checkable.
+//! Count non-overlapping occurrences, so "one material per distinct color" is checkable.
 size_t countOccurrences(const std::string& haystack, const std::string& needle)
 {
   size_t count = 0;
@@ -82,7 +82,7 @@ TEST_CASE("USDA export emits a parseable header", "[export][usd]")
 
   // The magic line is mandatory and must be first: a USD reader rejects the file otherwise.
   REQUIRE(usda.rfind("#usda 1.0", 0) == 0);
-  // OpenSCAD is Z-up and works in millimetres; both must be declared or the model
+  // OpenSCAD is Z-up and works in millimeters; both must be declared or the model
   // arrives rotated and 1000x the wrong size.
   REQUIRE(usda.find("upAxis = \"Z\"") != std::string::npos);
   REQUIRE(usda.find("metersPerUnit = 0.001") != std::string::npos);
@@ -98,11 +98,11 @@ TEST_CASE("USDA export emits mesh topology matching the PolySet", "[export][usd]
   REQUIRE(usda.find("point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]") != std::string::npos);
 }
 
-TEST_CASE("USDA export emits colour as a bound UsdPreviewSurface", "[export][usd]")
+TEST_CASE("USDA export emits color as a bound UsdPreviewSurface", "[export][usd]")
 {
   const std::string usda = exportToString(makeTwoColouredTriangles());
 
-  // Verified on Blender 3.3.1: primvars:displayColor is NOT imported, so colour expressed
+  // Verified on Blender 3.3.1: primvars:displayColor is NOT imported, so color expressed
   // that way is silently lost. It must be a bound material instead.
   REQUIRE(usda.find("primvars:displayColor") == std::string::npos);
 
@@ -118,13 +118,13 @@ TEST_CASE("USDA export emits colour as a bound UsdPreviewSurface", "[export][usd
   REQUIRE(usda.find("MaterialBindingAPI") != std::string::npos);
 }
 
-TEST_CASE("USDA export reuses one material per distinct colour", "[export][usd]")
+TEST_CASE("USDA export reuses one material per distinct color", "[export][usd]")
 {
   auto ps = std::make_unique<PolySet>(3);
   ps->vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {2, 0, 0}, {3, 0, 0}, {2, 1, 0}};
   ps->indices = {{0, 1, 2}, {3, 4, 5}};
   ps->colors = {Color4f(1.0f, 0.0f, 0.0f, 1.0f)};
-  ps->color_indices = {0, 0};  // both faces share a colour
+  ps->color_indices = {0, 0};  // both faces share a color
 
   const std::string usda = exportToString(std::move(ps));
 
@@ -132,7 +132,7 @@ TEST_CASE("USDA export reuses one material per distinct colour", "[export][usd]"
   REQUIRE(countOccurrences(usda, "uniform token info:id = \"UsdPreviewSurface\"") == 1);
 }
 
-TEST_CASE("USDA export falls back to the default colour when the PolySet has none", "[export][usd]")
+TEST_CASE("USDA export falls back to the default color when the PolySet has none", "[export][usd]")
 {
   const std::string usda = exportToString(makeTriangle());
 
@@ -322,7 +322,7 @@ TEST_CASE("Animated USDA keeps overlapping union members on the flattened fallba
   REQUIRE(usda.find("point3f[] points.timeSamples = {") != std::string::npos);
 }
 
-TEST_CASE("Animated USDA keeps per-colour materials across frames", "[export][usd]")
+TEST_CASE("Animated USDA keeps per-color materials across frames", "[export][usd]")
 {
   auto red = std::make_unique<PolySet>(3);
   red->vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
@@ -341,8 +341,8 @@ TEST_CASE("Animated USDA keeps per-colour materials across frames", "[export][us
 
   const std::string usda = exportAnimationToString(frames);
 
-  // A colour that appears in only one frame must still get its own material, or the model
-  // changes colour by losing its material rather than by switching mesh.
+  // A color that appears in only one frame must still get its own material, or the model
+  // changes color by losing its material rather than by switching mesh.
   REQUIRE(countOccurrences(usda, "uniform token info:id = \"UsdPreviewSurface\"") == 2);
   REQUIRE(usda.find("color3f inputs:diffuseColor = (1, 0, 0)") != std::string::npos);
   REQUIRE(usda.find("color3f inputs:diffuseColor = (0, 0, 1)") != std::string::npos);
@@ -393,7 +393,7 @@ TEST_CASE("USD formats are animatable but do not require --animate", "[export][u
   REQUIRE(fileformat::canAnimate(FileFormat::GIF));
 }
 
-TEST_CASE("USDA export honours predictible-output", "[export][usd]")
+TEST_CASE("USDA export honors predictible-output", "[export][usd]")
 {
   // Every other mesh exporter (STL, OBJ, OFF, WRL, POV, 3MF) sorts its PolySet when this
   // feature is on. Without it the emitted vertex order depends on the geometry backend's

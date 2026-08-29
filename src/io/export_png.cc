@@ -42,7 +42,7 @@ void setupCamera(Camera& cam, const BoundingBox& bbox)
 namespace {
 
 //! Renders `root_geom` offscreen and returns the painted view, or null on failure.
-// Shared by the colour and depth exporters: same scene, same camera, only the
+// Shared by the color and depth exporters: same scene, same camera, only the
 // readback differs.
 std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const Geometry>& root_geom,
                                                      const ViewOptions& options, Camera& camera,

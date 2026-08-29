@@ -194,8 +194,8 @@ bool OffscreenView::saveDepth(std::ostream& output, const DepthmapOptions& optio
       double mv[16];
       for (int i = 0; i < 16; ++i) mv[i] = static_cast<double>(this->modelview[i]);
       const Eigen::Vector3d vpt = this->cam.getVpt();
-      const double centre[3] = {vpt.x(), vpt.y(), vpt.z()};
-      const DepthRange r = capped_sphere_range(bmin, bmax, centre, mv);
+      const double center[3] = {vpt.x(), vpt.y(), vpt.z()};
+      const DepthRange r = capped_sphere_range(bmin, bmax, center, mv);
       effective.has_explicit_range = true;
       effective.explicit_near = r.start;
       effective.explicit_far = r.end;
@@ -204,7 +204,7 @@ bool OffscreenView::saveDepth(std::ostream& output, const DepthmapOptions& optio
   }
   const auto image = encode_depthmap(mm, this->ctx->width(), this->ctx->height(), effective);
 
-  // Same as the colour path: buffers read from OpenGL are upside-down.
+  // Same as the color path: buffers read from OpenGL are upside-down.
   std::vector<uint8_t> flipped(image.pixels.size());
   flip_image(image.pixels.data(), flipped.data(), image.bytesPerPixel, this->ctx->width(),
              this->ctx->height());

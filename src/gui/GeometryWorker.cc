@@ -54,17 +54,17 @@ void GeometryWorker::work()
 #ifdef ENABLE_MANIFOLD
     if (auto manifold = std::dynamic_pointer_cast<const ManifoldGeometry>(root_geom)) {
       if (manifold->getManifold().Status() != manifold::Manifold::Error::NoError)
-        LOG(message_group::Error, "Rendering cancelled due to unknown manifold error.");
+        LOG(message_group::Error, "Rendering canceled due to unknown manifold error.");
     }
 #endif
   } catch (const ProgressCancelException&) {
-    LOG("Rendering cancelled.");
+    LOG("Rendering canceled.");
   } catch (const HardWarningException&) {
-    LOG("Rendering cancelled on first warning.");
+    LOG("Rendering canceled on first warning.");
   } catch (const std::exception& e) {
-    LOG(message_group::Error, "Rendering cancelled by exception %1$s", e.what());
+    LOG(message_group::Error, "Rendering canceled by exception %1$s", e.what());
   } catch (...) {
-    LOG(message_group::Error, "Rendering cancelled by unknown exception.");
+    LOG(message_group::Error, "Rendering canceled by unknown exception.");
   }
 #ifdef ENABLE_PYTHON
   python_unlock();

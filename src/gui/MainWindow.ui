@@ -1197,7 +1197,7 @@
     <string>Depth (metric, &amp;1mm)</string>
    </property>
    <property name="toolTip">
-    <string>Preview the metric depth map export: absolute millimetres from the camera, near dark</string>
+    <string>Preview the metric depth map export: absolute millimeters from the camera, near dark</string>
    </property>
   </action>
   <action name="viewActionAnalysisViewDepthMetricFine">

@@ -71,8 +71,8 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
   assert(geom != nullptr);
   // Every conversion below mints a fresh PolySet, which does not inherit the
   // source geometry's body identity. The renderer needs the material name to
-  // look up its display-time default colour, so carry it across. This copies
-  // identity only - it never touches the geometry's own colours.
+  // look up its display-time default color, so carry it across. This copies
+  // identity only - it never touches the geometry's own colors.
   const auto addPolySet = [&](std::shared_ptr<PolySet> ps) {
     ps->copyBodyAttributes(*geom);
     this->polysets_.push_back(std::move(ps));
@@ -142,7 +142,7 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
     getShaderColor(ColorMode::MATERIAL, color, polyset->materialName(), color);
-    vbo_builder.setMaterialParams(polyset->shininess(), polyset->metallic());
+    vbo_builder.setMaterialParams(polyset->roughness(), polyset->metallic());
     add_shader_pointers(vbo_builder, shaderinfo);
 
     vbo_builder.writeSurface();
