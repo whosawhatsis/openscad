@@ -44,7 +44,7 @@ GaugeImage render_gauge_sphere(std::uint32_t size)
   const auto lights = chromatic_lights();
   for (std::uint32_t y = 0; y < size; ++y) {
     for (std::uint32_t x = 0; x < size; ++x) {
-      // Pixel centres, so the disc is symmetric about the image centre.
+      // Pixel centers, so the disc is symmetric about the image center.
       const double u = (2.0 * (x + 0.5) / size) - 1.0;
       // Image rows run top-first while +Y is up, so v is flipped.
       const double v = 1.0 - (2.0 * (y + 0.5) / size);

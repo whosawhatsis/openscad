@@ -625,16 +625,16 @@ public:
   static SettingsEntryEnum<ColorListSortType> colorListSortType;
 };
 
-// Default colour per named material, as "name=colour" pairs separated by ';',
+// Default color per named material, as "name=color" pairs separated by ';',
 // e.g. "PLA=#ffff00ff;PETG=yellow". Any spelling parse_color() accepts works.
-// A material() call with no colour of its own falls back to $material_colors in
+// A material() call with no color of its own falls back to $material_colors in
 // the model first, and to this table second.
 class SettingsMaterials
 {
 public:
   static SettingsEntryString materialColors;
 
-  // Looks up one material's default colour. Returns an empty string when the
+  // Looks up one material's default color. Returns an empty string when the
   // table says nothing about it.
   static std::string defaultColor(const std::string& materialName);
 };

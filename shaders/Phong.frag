@@ -38,7 +38,7 @@ void main(void)
   }
 
   // A metal has no diffuse response and tints its highlight with its own
-  // colour; a dielectric keeps full diffuse and reflects the light's colour.
+  // color; a dielectric keeps full diffuse and reflects the light's color.
   vec3 base = vColor.rgb * (0.18 + 0.55 * min(diffuse, 1.0)) * (1.0 - metallic);
   vec3 highlightTint = mix(vec3(1.0), vColor.rgb, metallic);
   vec3 highlight = highlightTint * (0.35 * min(specular, 1.0));

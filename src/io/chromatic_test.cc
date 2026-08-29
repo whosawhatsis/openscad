@@ -39,23 +39,23 @@ TEST_CASE("each light drives exactly one channel", "[chromatic]")
 
 TEST_CASE("the gauge sphere is lit by the same table as the model", "[chromatic]")
 {
-  // Odd size deliberately: with an even one no pixel centre lands on the disc
-  // centre, so the exact n = (0,0,1) contract below could only be checked to
+  // Odd size deliberately: with an even one no pixel center lands on the disc
+  // center, so the exact n = (0,0,1) contract below could only be checked to
   // within a pixel's worth of tilt.
   const unsigned size = 65;
   const auto gauge = render_gauge_sphere(size);
   REQUIRE(gauge.pixels.size() == static_cast<size_t>(size) * size * 4);
 
-  // Centre of the disc faces the viewer: n = (0,0,1), so each channel is that
+  // Center of the disc faces the viewer: n = (0,0,1), so each channel is that
   // light's own z component. This is the contract a consumer reads the gauge
   // against, so it is pinned exactly rather than eyeballed.
   const auto lights = chromatic_lights();
-  const size_t centre = ((size / 2) * size + (size / 2)) * 4;
+  const size_t center = ((size / 2) * size + (size / 2)) * 4;
   for (int c = 0; c < 3; ++c) {
     const double expected = std::max(0.0, lights[c].dir[2]);
-    CHECK(gauge.pixels[centre + c] / 255.0 == Approx(expected).margin(1.0 / 255.0));
+    CHECK(gauge.pixels[center + c] / 255.0 == Approx(expected).margin(1.0 / 255.0));
   }
-  CHECK(gauge.pixels[centre + 3] == 255);
+  CHECK(gauge.pixels[center + 3] == 255);
 }
 
 TEST_CASE("the gauge is transparent outside the disc", "[chromatic]")

@@ -93,9 +93,9 @@ public:
   [[nodiscard]] bool hasBodyColor() const { return hasBodyColor_; }
   [[nodiscard]] const Color4f& bodyColor() const { return bodyColor_; }
   // Body identity only. This deliberately does not repaint the geometry with
-  // the body colour: a geometry that came out of a boolean or a render() node
-  // already carries the per-face colours of the operands it was built from, and
-  // flooding it with one colour is what color()/render() colour preservation
+  // the body color: a geometry that came out of a boolean or a render() node
+  // already carries the per-face colors of the operands it was built from, and
+  // flooding it with one color is what color()/render() color preservation
   // exists to prevent. color() itself paints, in the ColorNode visitor.
   void copyBodyAttributes(const Geometry& other)
   {
@@ -109,7 +109,7 @@ public:
     hasBodyColor_ = other.hasBodyColor_;
   }
   // A body-combining operation consumes its operands and produces one body,
-  // which takes the first operand's colour as well as its name.
+  // which takes the first operand's color as well as its name.
   void takeBodyAttributesFrom(const Geometry& other)
   {
     copyBodyAttributes(other);

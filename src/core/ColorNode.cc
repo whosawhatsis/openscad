@@ -77,7 +77,7 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
     }
   }
 
-  // Shared by the c argument and by the default-colour table, so a colour
+  // Shared by the c argument and by the default-color table, so a color
   // written in Preferences or in $material_colors is interpreted exactly like
   // one written as an argument.
   const auto colorFromValue = [&](const Value& value, const char *what) -> std::optional<Color4f> {
@@ -248,10 +248,10 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
     node->finishParams[finishName] = v;
   }
 
-  // A material with no colour of its own takes a default: from $material_colors
-  // in the model first, so a shared script carries its own colours, and from the
+  // A material with no color of its own takes a default: from $material_colors
+  // in the model first, so a shared script carries its own colors, and from the
   // Preferences table second, which is personal to this machine. An explicit
-  // colour argument has already won by getting here with rgb set; an explicit
+  // color argument has already won by getting here with rgb set; an explicit
   // alpha survives either way.
   if (isMaterial && !node->materialName.empty() && !node->color.hasRgb()) {
     const float explicitAlpha = node->color.a();
@@ -269,8 +269,8 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
       }
     }
     // The Preferences table is deliberately NOT consulted here. It is an
-    // extension of the colour scheme - a viewport default for a material whose
-    // colour the model never set - so it must stay out of the node tree, and
+    // extension of the color scheme - a viewport default for a material whose
+    // color the model never set - so it must stay out of the node tree, and
     // therefore out of every export. Only what the model says is part of the
     // model. The display-time lookup lives in the renderer.
 
@@ -279,9 +279,9 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
       // An alpha written on the call overrides the one the default carries.
       if (parameters["alpha"].type() == Value::Type::NUMBER) node->color.setAlpha(explicitAlpha);
     }
-    // No warning when nothing resolves: a material with no colour is a legitimate
+    // No warning when nothing resolves: a material with no color is a legitimate
     // declaration, and the viewport still has the Preferences table and then the
-    // colour scheme to fall back on.
+    // color scheme to fall back on.
   }
 
   return children.instantiate(node);
@@ -302,7 +302,7 @@ static std::shared_ptr<AbstractNode> builtin_material(const ModuleInstantiation 
 std::string ColorNode::toString() const
 {
   // Emitted only when set, so dumps of scripts that use none of these stay
-  // byte-identical; bump is normalised to its three-element form so that the
+  // byte-identical; bump is normalized to its three-element form so that the
   // geometry cache key (which is this string) is canonical.
   std::string attrs;
   if (hasBump) {

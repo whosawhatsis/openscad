@@ -151,9 +151,9 @@ bool Renderer::getShaderColor(Renderer::ColorMode colormode, const Color4f& obje
     if (outcolor.isValid()) return true;
   }
 
-  // A named material the model gave no colour takes its default from Preferences.
-  // This sits between the object's own colour and the colour scheme because that
-  // is exactly what it is: an extension of the colour scheme, for display only.
+  // A named material the model gave no color takes its default from Preferences.
+  // This sits between the object's own color and the color scheme because that
+  // is exactly what it is: an extension of the color scheme, for display only.
   // It is deliberately unreachable from any exporter - see State::materialName().
   if (!materialName.empty() && colormode == ColorMode::MATERIAL) {
     const auto preference = Settings::SettingsMaterials::defaultColor(materialName);

@@ -1,7 +1,7 @@
 #version 120
 
-// The model bounding box, so object coordinates can be written as colour.
-// Raw coordinates cannot: GL clamps colour to [0,1] and every model larger than
+// The model bounding box, so object coordinates can be written as color.
+// Raw coordinates cannot: GL clamps color to [0,1] and every model larger than
 // one unit would saturate. coordExtent is never zero - a degenerate axis is
 // passed as 1 and flagged, and pins to 0.5 rather than dividing by zero.
 uniform vec3 coordMin;

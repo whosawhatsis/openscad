@@ -60,17 +60,17 @@ void CGALWorker::work()
       // we should complete evaluation within the worker thread, so computation
       // will not block the GUI.
       if (manifold->getManifold().Status() != manifold::Manifold::Error::NoError)
-        LOG(message_group::Error, "Rendering cancelled due to unknown manifold error.");
+        LOG(message_group::Error, "Rendering canceled due to unknown manifold error.");
     }
 #endif
   } catch (const ProgressCancelException& e) {
-    LOG("Rendering cancelled.");
+    LOG("Rendering canceled.");
   } catch (const HardWarningException& e) {
-    LOG("Rendering cancelled on first warning.");
+    LOG("Rendering canceled on first warning.");
   } catch (const std::exception& e) {
-    LOG(message_group::Error, "Rendering cancelled by exception %1$s", e.what());
+    LOG(message_group::Error, "Rendering canceled by exception %1$s", e.what());
   } catch (...) {
-    LOG(message_group::Error, "Rendering cancelled by unknown exception.");
+    LOG(message_group::Error, "Rendering canceled by unknown exception.");
   }
 #ifdef ENABLE_PYTHON
   python_unlock();

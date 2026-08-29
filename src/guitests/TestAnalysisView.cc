@@ -29,7 +29,7 @@ QImage grabViewport(MainWindow *window)
 }
 
 /*!
-   Compare what was drawn, not how it is labelled.
+   Compare what was drawn, not how it is labeled.
 
    QCOMPARE on QImage checks devicePixelRatio first, and two grabs of the same
    viewport can disagree on it (the first grab of a not-yet-exposed widget

@@ -69,7 +69,7 @@ void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
     // POV's finish vocabulary matches ours closely enough to pass the values
     // straight through: its "roughness" is a highlight width in (0, 1] where
     // small is shiny, its "metallic" tints the highlight with the pigment
-    // colour, and the remaining parameters were chosen to be POV's own so they
+    // color, and the remaining parameters were chosen to be POV's own so they
     // pass by name. A body that sets none of them keeps the shared MATERIAL
     // finish, so an export that sets nothing is byte-identical to before.
     const auto& finishParams = bodyGeom->finishParams();
