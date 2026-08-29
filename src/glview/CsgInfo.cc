@@ -64,6 +64,8 @@ json write_chain(const std::vector<CSGChainObject>& chain, const std::string& fi
                       {"color",
                        {object.leaf->color.r(), object.leaf->color.g(), object.leaf->color.b(),
                         object.leaf->color.a()}},
+                      {"roughness", object.leaf->roughness},
+                      {"metallic", object.leaf->metallic},
                       {"label", object.leaf->label},
                       {"index", object.leaf->index},
                       {"flags", object.flags}});
@@ -138,15 +140,17 @@ std::vector<CSGChainObject> read_chain(const json& input,
       }
     }
     const auto& color = item["color"];
-    // No material name and default shading attributes: this wire format carries
-    // neither, so a leaf rebuilt in a worker process cannot resolve a Preferences
-    // default color and renders with the default roughness and metalness.
-    // Carrying them means extending this format, which belongs to the
-    // process-isolation row.
+    // Absent in payloads written before these were carried; zero is "not set" for
+    // both, which is what the shader's default branch tests for.
+    const float roughness = item.contains("roughness") ? item["roughness"].get<float>() : 0.0f;
+    const float metallic = item.contains("metallic") ? item["metallic"].get<float>() : 0.0f;
+    // The material *name* is still not carried, so a leaf rebuilt here cannot resolve
+    // a Preferences default color. Separate defect from the shading attributes above.
     auto leaf = std::make_shared<CSGLeaf>(geometry->second, matrix,
                                           Color4f(color[0].get<float>(), color[1].get<float>(),
                                                   color[2].get<float>(), color[3].get<float>()),
-                                          "", 64.0f, 0.0f, item["label"].get<std::string>(),
+                                          "", roughness, metallic,
+                                          item["label"].get<std::string>(),
                                           item["index"].get<int>());
     output.emplace_back(leaf, static_cast<CSGNode::Flag>(item["flags"].get<unsigned int>()));
   }

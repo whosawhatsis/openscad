@@ -71,7 +71,7 @@
 std::shared_ptr<CSGNode> CSGNode::createEmptySet()
 {
   return std::shared_ptr<CSGNode>(
-    new CSGLeaf(nullptr, Transform3d(), Color4f(), "", 64.0f, 0.0f, "empty()", 0));
+    new CSGLeaf(nullptr, Transform3d(), Color4f(), "", 0.0f, 0.0f, "empty()", 0));
 }
 
 std::shared_ptr<CSGNode> CSGOperation::createCSGNode(OpenSCADOperator type,

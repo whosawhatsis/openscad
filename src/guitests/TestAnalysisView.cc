@@ -187,6 +187,40 @@ void TestAnalysisView::checkShadedDrawsMaterialGeometry()
            "shaded preview of material() geometry is indistinguishable from the default view");
 }
 
+void TestAnalysisView::checkMetallicChangesTheShadedPreview()
+{
+  restoreWindowInitialState();
+
+  // Reproduces a user report: in Shaded mode, editing metallic= changed nothing.
+  // The OpenCSG product cache is keyed on polyset, matrix and color only, so a
+  // model whose geometry and color are unchanged hits a product whose material
+  // attributes were baked in before the edit. The CLI never sees this because a
+  // fresh process has an empty cache.
+  const auto previewShaded = [this](const QString& source) -> QImage {
+    window->activeEditor->setPlainText(source);
+    window->viewActionAnalysisViewShaded->trigger();
+    if (!QMetaObject::invokeMethod(window, "on_designActionPreview_triggered")) return {};
+    QTest::qWait(600);
+    return grabViewport(window);
+  };
+
+  const QString base = "material(\"m\", c = \"red\", metallic = %1) sphere(10, $fn = 32);\n";
+  const QImage dielectric = previewShaded(base.arg("0"));
+  QVERIFY2(!dielectric.isNull(), "shaded preview produced no image");
+
+  // Control: an edit this harness definitely should see. Without it, a failure
+  // below cannot be told apart from a preview that never re-rendered at all.
+  const QImage bigger = previewShaded("material(\"m\", c = \"red\", metallic = 0) sphere(16, $fn = 32);\n");
+  QVERIFY2(!sameRender(dielectric, bigger),
+           "control failed: editing the geometry did not change the preview either, so this "
+           "test cannot tell a stale material from a stale preview");
+
+  const QImage metal = previewShaded(base.arg("1"));
+
+  QVERIFY2(!sameRender(dielectric, metal),
+           "editing metallic= did not change the shaded preview");
+}
+
 void TestAnalysisView::checkShadedComposesWithEdges()
 {
   restoreWindowInitialState();
