@@ -786,17 +786,17 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
           geom = PolySet::createEmpty();
         }
       } else if (node.hasFillet && node.filletRadius > 0.0) {
-        LOG(message_group::Error, node.modinst->location(), this->tree.getDocumentPath(),
-            "fillet requires the OpenCASCADE 3D backend");
-        geom = PolySet::createEmpty();
+        LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
+            "fillet ignored because the OpenCASCADE 3D backend is not selected");
+        geom = applyToChildren(node, node.type).constptr();
       } else {
         geom = applyToChildren(node, node.type).constptr();
       }
 #else
       if (node.hasFillet && node.filletRadius > 0.0) {
-        LOG(message_group::Error, node.modinst->location(), this->tree.getDocumentPath(),
-            "fillet requires a build with OpenCASCADE support");
-        geom = PolySet::createEmpty();
+        LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
+            "fillet ignored because this build has no OpenCASCADE 3D backend");
+        geom = applyToChildren(node, node.type).constptr();
       } else {
         geom = applyToChildren(node, node.type).constptr();
       }

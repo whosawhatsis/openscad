@@ -107,7 +107,7 @@ TEST_CASE("OpenCASCADE backend retains a primitive as B-Rep", "[brep]")
   REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(result));
 }
 
-TEST_CASE("Fillets require the OpenCASCADE backend", "[brep]")
+TEST_CASE("Non-OpenCASCADE backends warn and ignore fillets", "[brep]")
 {
   ModuleInstantiation differenceInstantiation("difference");
   ModuleInstantiation cubeInstantiation("cube");
@@ -132,7 +132,7 @@ TEST_CASE("Fillets require the OpenCASCADE backend", "[brep]")
   RenderSettings::inst()->backend3D = previousBackend;
 
   REQUIRE(result);
-  REQUIRE(result->isEmpty());
+  REQUIRE_FALSE(result->isEmpty());
 }
 
 #endif
