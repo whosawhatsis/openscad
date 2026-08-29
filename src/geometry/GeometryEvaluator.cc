@@ -121,6 +121,11 @@ GeometryEvaluator::GeometryEvaluator(const Tree& tree) : tree(tree)
 std::shared_ptr<const Geometry> GeometryEvaluator::evaluateGeometry(const AbstractNode& node,
                                                                     bool allownef)
 {
+#ifdef ENABLE_OPENCSCADE
+  if (allownef && RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
+    if (auto brep = createBrepGeometry(node)) return std::shared_ptr<const Geometry>(std::move(brep));
+  }
+#endif
   auto result = smartCacheGet(node, allownef);
   if (!result) {
     // If not found in any caches, we need to evaluate the geometry
@@ -760,14 +765,14 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
     std::shared_ptr<const Geometry> geom;
     if (!isSmartCached(node)) {
 #ifdef ENABLE_OPENCSCADE
-      if (node.hasFillet && node.filletRadius > 0.0) {
+      if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
         if (node.type == OpenSCADOperator::DIFFERENCE && node.children.size() == 2) {
           auto object = createBrepGeometry(*node.children[0]);
           auto tool = createBrepGeometry(*node.children[1]);
           if (object && tool) {
             BrepFilletDiagnostics diagnostics;
-            geom =
-              std::make_shared<BrepGeometry>(object->difference(*tool, node.filletRadius, diagnostics));
+            geom = std::make_shared<BrepGeometry>(
+              object->difference(*tool, node.hasFillet ? node.filletRadius : 0.0, diagnostics));
             if (diagnostics.achievedRadius < node.filletRadius) {
               LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
                   "fillet radius reduced from %1$.17g to %2$.17g", node.filletRadius,
@@ -777,9 +782,13 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
         }
         if (!geom) {
           LOG(message_group::Error, node.modinst->location(), this->tree.getDocumentPath(),
-              "fillet is not supported for this B-Rep subtree");
+              "operation is not supported by the OpenCASCADE 3D backend");
           geom = PolySet::createEmpty();
         }
+      } else if (node.hasFillet && node.filletRadius > 0.0) {
+        LOG(message_group::Error, node.modinst->location(), this->tree.getDocumentPath(),
+            "fillet requires the OpenCASCADE 3D backend");
+        geom = PolySet::createEmpty();
       } else {
         geom = applyToChildren(node, node.type).constptr();
       }

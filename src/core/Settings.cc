@@ -235,9 +235,16 @@ SettingsEntryEnum<std::string> Settings::localAppFileFormat(
 SettingsEntryList<LocalAppParameter> Settings::localAppParameterList("printing",
                                                                      "localAppParameterList");
 
-SettingsEntryEnum<std::string> Settings::renderBackend3D(
-  "advanced", "renderBackend3D",
-  {{"CGAL", "cgal", "CGAL (old/slow)"}, {"Manifold", "manifold", "Manifold (new/fast)"}}, "Manifold");
+SettingsEntryEnum<std::string> Settings::renderBackend3D("advanced", "renderBackend3D",
+                                                         {{"CGAL", "cgal", "CGAL (old/slow)"},
+                                                          {"Manifold", "manifold", "Manifold (new/fast)"}
+#ifdef ENABLE_OPENCSCADE
+                                                          ,
+                                                          {"OpenCASCADE", "opencascade",
+                                                           "OpenCASCADE (experimental B-Rep)"}
+#endif
+                                                         },
+                                                         "Manifold");
 SettingsEntryEnum<std::string> Settings::toolbarExport3D(
   "advanced", "toolbarExport3D", createFileFormatItems(fileformat::all3D()),
   fileformat::info(FileFormat::ASCII_STL).description);

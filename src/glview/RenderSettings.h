@@ -7,6 +7,7 @@ enum class RenderBackend3D {
   UnknownBackend,
   CGALBackend,
   ManifoldBackend,
+  OpenCASCADEBackend,
 };
 
 inline constexpr RenderBackend3D DEFAULT_RENDERING_BACKEND_3D = RenderBackend3D::ManifoldBackend;

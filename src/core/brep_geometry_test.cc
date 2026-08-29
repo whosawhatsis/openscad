@@ -8,6 +8,7 @@
 #include "geometry/PolySet.h"
 #include "geometry/brep/BrepGeometry.h"
 #include "geometry/GeometryEvaluator.h"
+#include "glview/RenderSettings.h"
 #include "core/CsgOpNode.h"
 #include "core/CurveDiscretizer.h"
 #include "core/ModuleInstantiation.h"
@@ -47,6 +48,8 @@ TEST_CASE("BrepGeometry performs an exact filleted difference", "[brep]")
 
 TEST_CASE("GeometryEvaluator routes filleted difference through B-Rep", "[brep]")
 {
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
   ModuleInstantiation differenceInstantiation("difference");
   ModuleInstantiation cubeInstantiation("cube");
   ModuleInstantiation transformInstantiation("translate");
@@ -78,6 +81,58 @@ TEST_CASE("GeometryEvaluator routes filleted difference through B-Rep", "[brep]"
   REQUIRE(brep->surfaceCount(BrepSurfaceType::Cylinder) == 1);
   REQUIRE(brep->surfaceCount(BrepSurfaceType::Torus) == 2);
   REQUIRE(brep->numFacets() == 0);
+
+  RenderSettings::inst()->backend3D = previousBackend;
+}
+
+TEST_CASE("OpenCASCADE is an available 3D backend when compiled in", "[brep]")
+{
+  REQUIRE(renderBackend3DFromString("opencascade") == RenderBackend3D::OpenCASCADEBackend);
+  REQUIRE(renderBackend3DToString(RenderBackend3D::OpenCASCADEBackend) == "OpenCASCADE");
+}
+
+TEST_CASE("OpenCASCADE backend retains a primitive as B-Rep", "[brep]")
+{
+  ModuleInstantiation cubeInstantiation("cube");
+  auto cube = std::make_shared<CubeNode>(&cubeInstantiation);
+  cube->x = cube->y = cube->z = 10.0;
+
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(cube);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*cube, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(result));
+}
+
+TEST_CASE("Fillets require the OpenCASCADE backend", "[brep]")
+{
+  ModuleInstantiation differenceInstantiation("difference");
+  ModuleInstantiation cubeInstantiation("cube");
+  ModuleInstantiation cylinderInstantiation("cylinder");
+
+  auto difference =
+    std::make_shared<CsgOpNode>(&differenceInstantiation, OpenSCADOperator::DIFFERENCE, 2.0, true);
+  auto cube = std::make_shared<CubeNode>(&cubeInstantiation);
+  cube->x = cube->y = cube->z = 10.0;
+  auto cylinder = std::make_shared<CylinderNode>(
+    &cylinderInstantiation,
+    CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  cylinder->r1 = cylinder->r2 = 2.0;
+  cylinder->h = 10.0;
+  difference->children = {cube, cylinder};
+
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::ManifoldBackend;
+  Tree tree(difference);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*difference, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+
+  REQUIRE(result);
+  REQUIRE(result->isEmpty());
 }
 
 #endif

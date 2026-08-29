@@ -7,9 +7,10 @@
 std::string renderBackend3DToString(RenderBackend3D backend)
 {
   switch (backend) {
-  case RenderBackend3D::CGALBackend:     return "CGAL";
-  case RenderBackend3D::ManifoldBackend: return "Manifold";
-  default:                               throw std::runtime_error("Unknown rendering backend");
+  case RenderBackend3D::CGALBackend:        return "CGAL";
+  case RenderBackend3D::ManifoldBackend:    return "Manifold";
+  case RenderBackend3D::OpenCASCADEBackend: return "OpenCASCADE";
+  default:                                  throw std::runtime_error("Unknown rendering backend");
   }
 }
 
@@ -20,6 +21,10 @@ std::optional<RenderBackend3D> renderBackend3DFromString(std::string backend)
     return RenderBackend3D::CGALBackend;
   } else if (backend == "manifold") {
     return RenderBackend3D::ManifoldBackend;
+#ifdef ENABLE_OPENCSCADE
+  } else if (backend == "opencascade" || backend == "occt") {
+    return RenderBackend3D::OpenCASCADEBackend;
+#endif
   } else {
     return {};
   }
