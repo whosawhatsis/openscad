@@ -5,8 +5,9 @@ varying vec3 vEyePosition;
 varying vec4 vColor;
 attribute vec3 barycentric;
 varying vec3 vBC;
-// x = Blinn-Phong specular exponent, y = metalness. Defaults (64, 0) reproduce
-// the fixed values this shader used before material attributes existed.
+// x = roughness, y = metalness. Zero roughness means the model set none, and
+// the fragment shader substitutes the value that reproduces the look this
+// shader had before material attributes existed.
 attribute vec2 material;
 varying vec2 vMaterial;
 

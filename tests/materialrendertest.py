@@ -41,9 +41,10 @@ if not os.path.exists(args.openscad):
     failquit("cant find openscad executable named: " + args.openscad)
 
 
-def brightest_white(png):
-    """Max over pixels of the smallest channel: how close the whitest pixel gets
-    to white. Decoded with zlib rather than PIL, which this suite cannot assume."""
+def min_channels(png):
+    """Per-pixel smallest color channel, in scanline order: how close each pixel
+    gets to white. Decoded with zlib rather than PIL, which this suite cannot
+    assume is installed."""
     import struct
     import zlib
 
@@ -64,7 +65,7 @@ def brightest_white(png):
     raw = zlib.decompress(idat)
     stride = width * bpp
     prev = bytearray(stride)
-    best = 0
+    out = []
     for row in range(0, len(raw), stride + 1):
         f = raw[row]
         line = bytearray(raw[row + 1:row + 1 + stride])
@@ -80,9 +81,16 @@ def brightest_white(png):
                 pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
                 line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xFF
         for i in range(0, stride, bpp):
-            best = max(best, min(line[i], line[i + 1], line[i + 2]))
+            out.append(min(line[i], line[i + 1], line[i + 2]))
         prev = line
-    return best
+    return out
+
+
+def whitening(a, b):
+    """How much whiter than b the whitest-gaining pixel of a gets. The two
+    renders share a camera and a background, so the background cancels and only
+    the material's own response is measured."""
+    return max(x - y for x, y in zip(min_channels(a), min_channels(b)))
 
 
 def render(mode):
@@ -110,11 +118,11 @@ report = [
     "roughness differs from the default: %s" % ("yes" if smooth != bare else "NO"),
     "metallic changes the render: %s" % ("yes" if metal != bare else "NO"),
     # A normalized microfacet lobe concentrates a smooth surface's reflection
-    # into a highlight core that saturates to white. Blinn-Phong's fixed 0.35
-    # highlight weight cannot reach this, so it pins the BRDF, not just that
-    # roughness does something.
+    # into a highlight core that saturates to white, where Blinn-Phong's fixed
+    # 0.35 highlight weight cannot exceed 89/255 whatever the exponent. Pins the
+    # BRDF, not merely that roughness changes something.
     "a smooth surface has a white highlight core: %s"
-    % ("yes" if brightest_white(smooth) > 200 else "NO"),
+    % ("yes" if whitening(smooth, rough) > 150 else "NO"),
 ]
 
 with open(reportfile, "w") as f:

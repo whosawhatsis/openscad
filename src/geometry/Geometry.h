@@ -47,22 +47,10 @@ public:
   void setConvexity(int c) { this->convexity = c; }
   virtual void setColor(const Color4f& c) {}
   void setMaterialName(std::string name) { materialName_ = std::move(name); }
-  // Blinn-Phong specular exponent and metalness. The defaults are exactly what
-  // the shader used before these were configurable, so geometry that sets
-  // neither renders identically to before.
-  // Standard Blinn-Phong mapping: alpha = roughness^2, exponent = 2/alpha^2 - 2.
-  // Note roughness 0.417 reproduces the shader's previous fixed exponent of 64,
-  // which is why that is the default when no roughness is given.
-  static float shininessForRoughness(double roughness)
-  {
-    const double alpha = roughness * roughness;
-    const double a2 = alpha * alpha;
-    if (a2 <= 0.0) return 4096.0f;
-    return static_cast<float>(std::clamp(2.0 / a2 - 2.0, 1.0, 4096.0));
-  }
-  // Roughness is stored as the user wrote it, because that is what exporters
-  // need; the renderer converts to an exponent at draw time. Storing both would
-  // be two sources of truth for one property.
+  // Roughness reaches the shader as the user wrote it: the microfacet BRDF is
+  // parameterized on roughness directly, so there is nothing to convert and
+  // exporters and renderer read the same number. Zero means "not set", which is
+  // what the shader's default branch tests for.
   void setRoughness(float r)
   {
     roughness_ = r;
@@ -70,10 +58,6 @@ public:
   }
   [[nodiscard]] bool hasRoughness() const { return hasRoughness_; }
   [[nodiscard]] float roughness() const { return roughness_; }
-  [[nodiscard]] float shininess() const
-  {
-    return hasRoughness_ ? shininessForRoughness(roughness_) : 64.0f;
-  }
   // Extra POV-Ray finish parameters, carried as a map because only the POV
   // exporter reads them so far. TODO fold these into the metadata channel that
   // materialName uses on the process-isolation branch, so they survive the

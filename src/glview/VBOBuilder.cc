@@ -350,7 +350,7 @@ void VBOBuilder::addShaderData()
   vertex_data->addAttributeData(
     std::make_shared<AttributeData<GLubyte, 4, GL_UNSIGNED_BYTE>>());  // barycentric
   vertex_data->addAttributeData(
-    std::make_shared<AttributeData<GLfloat, 2, GL_FLOAT>>());  // shininess, metallic
+    std::make_shared<AttributeData<GLfloat, 2, GL_FLOAT>>());  // roughness, metallic
 }
 
 void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t primitive_index,
@@ -392,7 +392,7 @@ void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t pri
   // Written here, alongside barycentric, so the two shader attribute arrays get
   // exactly one entry per vertex and stay aligned.
   addAttributeValues(*(vertex_data->attributes()[shader_attributes_index_ + MATERIAL_ATTRIB]),
-                     material_shininess_, material_metallic_);
+                     material_roughness_, material_metallic_);
 }
 
 void VBOBuilder::create_triangle(const Color4f& color, const Vector3d& p0, const Vector3d& p1,
