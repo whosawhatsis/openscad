@@ -14,6 +14,7 @@ private slots:
   void checkModesChangeTheRender();
   //! Show Edges remains an independent overlay on ordinary appearance modes.
   void checkShadedComposesWithEdges();
+  void checkShadedDrawsMaterialGeometry();
   //! Depth shading is one of these modes, not an independent toggle layered on
   //! top of them. While it was a separate bool, selecting it alongside another
   //! mode left the menu item checked and the renderer ignoring it.

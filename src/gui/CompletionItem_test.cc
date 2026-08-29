@@ -321,3 +321,31 @@ TEST_CASE("curated shapes are seeded with neutral values", "[completion]")
   CHECK(argumentShapesFor("color").empty());
   CHECK(argumentShapesFor("no_such_module").empty());
 }
+
+TEST_CASE("material() advertises every surface parameter it honors", "[completion]")
+{
+  Builtins::initialize();
+
+  const auto calltipsFor = [](const char *name) {
+    const auto it = Builtins::keywordList.find(name);
+    REQUIRE(it != Builtins::keywordList.end());
+    std::string joined;
+    for (const auto& tip : it->second) joined += tip + "\n";
+    return joined;
+  };
+
+  // These reach POV-Ray and USD exports and are the parameters a user is most
+  // likely to reach for after roughness and metallic, but nothing advertised
+  // them, so the editor's call tip was the only documentation and it was silent.
+  const std::string material = calltipsFor("material");
+  for (const char *param : {"roughness", "metallic", "bump", "specular", "emission", "ior"}) {
+    INFO("material() call tips do not mention " << param);
+    CHECK(material.find(param) != std::string::npos);
+  }
+
+  const std::string color = calltipsFor("color");
+  for (const char *param : {"roughness", "metallic", "bump", "specular", "emission", "ior"}) {
+    INFO("color() call tips do not mention " << param);
+    CHECK(color.find(param) != std::string::npos);
+  }
+}

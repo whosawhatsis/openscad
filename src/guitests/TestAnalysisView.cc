@@ -163,6 +163,30 @@ void TestAnalysisView::checkDepthIsOneOfTheModes()
   QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Default);
 }
 
+void TestAnalysisView::checkShadedDrawsMaterialGeometry()
+{
+  restoreWindowInitialState();
+
+  // Every other shaded test opens empty.scad, so until now nothing has ever
+  // drawn an actual OpenCSG product through the Phong shader. That is the path
+  // that crashed: the shader declares a "material" attribute, every declared
+  // attribute is enabled for the draw, and a product whose pointer was never
+  // recorded dereferences null inside glDrawElements.
+  const QString filename = fixturePath("basic-ux/material-shaded.scad");
+  window->tabManager->open(filename);
+  window->viewActionAnalysisViewShaded->trigger();
+  window->actionRenderPreview();
+  QTest::qWait(500);
+
+  const QImage shaded = grabViewport(window);
+  QVERIFY2(!shaded.isNull(), "shaded preview of material() geometry produced no image");
+
+  // The model must actually be visible, or a blank viewport would pass.
+  window->viewActionAnalysisViewDefault->trigger();
+  QVERIFY2(!sameRender(grabViewport(window), shaded),
+           "shaded preview of material() geometry is indistinguishable from the default view");
+}
+
 void TestAnalysisView::checkShadedComposesWithEdges()
 {
   restoreWindowInitialState();
