@@ -22,6 +22,8 @@ for index in range(2, MAX_MATERIALS + 1):
     material = base_material.copy()
     material.name = f"OpenSCAD Material {index:04d}"
     materials.append(material)
+for material in materials:
+    material.use_fake_user = True
 
 for obj in (obj for obj in bpy.data.objects if obj.name.startswith("Frame ")):
     obj.data.materials.clear()

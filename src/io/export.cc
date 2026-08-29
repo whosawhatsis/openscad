@@ -244,7 +244,8 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
   case FileFormat::BLEND:      {
     UsdAnimationFrame frame;
     frame.geometry = root_geom;
-    export_blend_animation({std::move(frame)}, 30, output);
+    if (exportInfo.camera) frame.camera = *exportInfo.camera;
+    export_blend_animation({std::move(frame)}, 30, output, {.defaultColor = exportInfo.defaultColor});
     break;
   }
 #ifdef ENABLE_CGAL

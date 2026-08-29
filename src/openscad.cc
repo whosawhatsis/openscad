@@ -546,7 +546,7 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     const std::string input_filename = cmd.is_stdin ? "<stdin>" : cmd.filename;
     const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
-                                             input_filename, &cmd.camera, cmd.exportOptions);
+                                             input_filename, &camera, cmd.exportOptions);
     if (usdFrames != nullptr) {
       /*
          Animated USD: one stage covers every frame, so the geometry is collected here and
