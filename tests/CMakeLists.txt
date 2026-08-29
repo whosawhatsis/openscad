@@ -867,24 +867,24 @@ add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_DIFFERENT_
 endif()
 
 # Depth shading must hold still while the viewport rotates: the sphere sits on
-# the centre of rotation, so its distance from the eye - and therefore its shade -
+# the center of rotation, so its distance from the eye - and therefore its shade -
 # is the same from every angle.
 set(DEPTHMAP_SYMMETRY ${TEST_SCAD_DIR}/misc/depthmap-orbit-symmetry.scad)
-set(DEPTHMAP_OFFCENTRE ${TEST_SCAD_DIR}/misc/depthmap-offcentre.scad)
+set(DEPTHMAP_OFFCENTRE ${TEST_SCAD_DIR}/misc/depthmap-offcenter.scad)
 # Both compare against the SAME expected image on purpose: the scene has four-fold
 # symmetry about Z, so a 90 degree orbit maps it onto itself and the two renders
 # must be the same image rather than merely similar ones.
 add_cmdline_test(export-depthmap-orbit-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_SYMMETRY} EXPECTEDDIR export-depthmap-orbit ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,0,1600)
 add_cmdline_test(export-depthmap-orbit-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_SYMMETRY} EXPECTEDDIR export-depthmap-orbit ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,90,1600)
 
-# The asymmetric case, which is what actually distinguishes a range centred on the
-# rotation centre from one centred on the bounding box. Separate expectations,
+# The asymmetric case, which is what actually distinguishes a range centered on the
+# rotation center from one centered on the bounding box. Separate expectations,
 # because the distant cube really does move between these two angles.
-add_cmdline_test(export-depthmap-offcentre-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,25,300)
-add_cmdline_test(export-depthmap-offcentre-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,20,0,140,300)
+add_cmdline_test(export-depthmap-offcenter-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,25,300)
+add_cmdline_test(export-depthmap-offcenter-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,20,0,140,300)
 
 # Depth map range stability. Depth is normalized across the model's bounding
-# sphere centred on the viewport's centre of rotation (capped_sphere_range() in
+# sphere centered on the viewport's center of rotation (capped_sphere_range() in
 # src/io/depthmap.h), which is orientation invariant - so these two views of one
 # long model must grade against the same range. The side view is deliberately the
 # unflattering one: invariance costs contrast exactly where a model is thin in

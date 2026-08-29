@@ -1,6 +1,6 @@
 #version 120
 
-// Directions toward each light, eye space, one per colour channel. Supplied
+// Directions toward each light, eye space, one per color channel. Supplied
 // from chromatic_lights() so the model and the analytic gauge sphere are lit by
 // one table rather than two that can drift apart.
 uniform vec3 lightRed;

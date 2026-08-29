@@ -316,7 +316,7 @@ bool export_pfm(std::ostream& out, const std::vector<float>& depths, std::uint32
 DepthRange capped_sphere_range(const double bboxMin[3], const double bboxMax[3],
                                const double rotationCentre[3], const double modelview[16])
 {
-  // The sphere sits on the rotation centre and is grown until it contains every
+  // The sphere sits on the rotation center and is grown until it contains every
   // corner of the box, rather than being the box's own bounding sphere.
   double radius2 = 0.0;
   for (int c = 0; c < 8; ++c) {
@@ -329,11 +329,11 @@ DepthRange capped_sphere_range(const double bboxMin[3], const double bboxMax[3],
     radius2 = std::max(radius2, d2);
   }
   const double radius = std::sqrt(radius2);
-  const double *centre = rotationCentre;
+  const double *center = rotationCentre;
 
-  // Distance from the eye to the sphere centre; -z is in front of the eye.
+  // Distance from the eye to the sphere center; -z is in front of the eye.
   const double dist =
-    -(modelview[2] * centre[0] + modelview[6] * centre[1] + modelview[10] * centre[2] + modelview[14]);
+    -(modelview[2] * center[0] + modelview[6] * center[1] + modelview[10] * center[2] + modelview[14]);
 
   // Cap the radius so the near end stays in front of the eye however large the
   // model is relative to the camera.

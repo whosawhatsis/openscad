@@ -7,7 +7,7 @@
 
    The coordinate map answers "which point of the model is this pixel?", the
    companion question to the depth map's "how far away is it?". Raw object
-   coordinates cannot be written to a colour channel directly: GL clamps colour
+   coordinates cannot be written to a color channel directly: GL clamps color
    to [0,1], so every model larger than one unit - which is nearly all of them -
    saturates into flat blocks. So the model's own bounding box is normalized
    into the unit cube, and the box is written alongside the image, exactly as

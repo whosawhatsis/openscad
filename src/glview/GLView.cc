@@ -172,7 +172,7 @@ void GLView::drawChromaticGauge()
 {
   // Sized as a fraction of the shorter side so it stays legible at any export
   // resolution, and always in the same corner so a consumer knows where to crop
-  // it out. Drawn last, straight into the colour buffer: it is a reference
+  // it out. Drawn last, straight into the color buffer: it is a reference
   // overlay, not part of the scene, and must not be lit, projected or depth
   // tested along with the model.
   // Framebuffer pixels, not cam.pixel_width: glWindowPos2i and glDrawPixels work
@@ -337,9 +337,9 @@ void GLView::setupCamera()
    Shade the model by distance instead of by lighting, so the viewport shows what
    a depth map export will contain.
 
-   This is GL_LINEAR fog with a black fog colour over white geometry: fog blends
+   This is GL_LINEAR fog with a black fog color over white geometry: fog blends
    f*white + (1-f)*black where f is linear in eye-space distance, so the fragment
-   colour *is* the depth. Nothing is read back and no shader is involved.
+   color *is* the depth. Nothing is read back and no shader is involved.
 
    Fog distance is eye-space and already linear, so unlike the export path this
    needs none of linearize_depth()'s unprojection - and none of its precision
@@ -362,8 +362,8 @@ void GLView::setupDepthShading()
     const double bmin[3] = {bbox.min().x(), bbox.min().y(), bbox.min().z()};
     const double bmax[3] = {bbox.max().x(), bbox.max().y(), bbox.max().z()};
     const Eigen::Vector3d vpt = cam.getVpt();
-    const double centre[3] = {vpt.x(), vpt.y(), vpt.z()};
-    range = capped_sphere_range(bmin, bmax, centre, this->modelview);
+    const double center[3] = {vpt.x(), vpt.y(), vpt.z()};
+    range = capped_sphere_range(bmin, bmax, center, this->modelview);
   }
   if (this->depthoptions.has_explicit_range) {
     range = resolve_depth_range(this->depthoptions, range.start, range.end);
@@ -389,8 +389,8 @@ void GLView::setupDepthShading()
 
   // Fog blends f*C + (1-f)*fogcolour, so the result is only depth if C is
   // constant. glColor3f is not enough: the VBO renderers supply per-vertex
-  // colours, which win with lighting off. Instead keep lighting on, take
-  // GL_COLOR_MATERIAL out (so vertex colours stop feeding the material), and
+  // colors, which win with lighting off. Instead keep lighting on, take
+  // GL_COLOR_MATERIAL out (so vertex colors stop feeding the material), and
   // make the material purely emissive - emission ignores normals, so every
   // fragment gets the profile's constant geometry value regardless of orientation.
   const GLfloat geometry[4] = {polarity.geometry, polarity.geometry, polarity.geometry, 1.0f};
@@ -418,7 +418,7 @@ void GLView::paintGL()
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
   if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Shaded) {
-    // An analysis image is data, so its background must not depend on which colour
+    // An analysis image is data, so its background must not depend on which color
     // scheme the user happens to have selected, and must not be a gradient - both
     // would decode as varying "surface" values where there is no surface. Flat,
     // Black, flat, and documented as the no-geometry marker.
@@ -497,7 +497,7 @@ void GLView::paintGL()
     }
 
     // The shaded mode always needs the barycentric attribute bound; its uniform decides
-    // whether those coordinates affect the final colour.
+    // whether those coordinates affect the final color.
     bool active_showedges = showedges || analysis_mode == AnalysisMode::Shaded;
     if (analysis_mode != AnalysisMode::Default && analysis_mode != AnalysisMode::Shaded) {
       active_showedges = false;

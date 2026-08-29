@@ -99,7 +99,7 @@ public:
      The absolute scale the viewport is previewing, or 0 for the normalized
      depth view. A metric preview shows what the exported file contains rather
      than what is easiest to look at: near dark, far bright, background at the
-     maximum, and the same fixed millimetre mapping the file uses. At 1mm units
+     maximum, and the same fixed millimeter mapping the file uses. At 1mm units
      that is a nearly black screen for any desktop-scale model - which is the
      honest picture of what 8 bits of a 65.5m range looks like.
    */
