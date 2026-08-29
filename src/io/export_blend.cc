@@ -40,7 +40,7 @@ namespace {
 
 // ponytail: patch a frozen, dependency-closed Blender scene instead of reimplementing Blender's
 // scene defaults. Blender authored every ID; the writer only clones owner-adjacent mesh data.
-constexpr std::string_view BLEND_HEADER = "BLENDER17-01v0500";
+constexpr std::string_view BLEND_HEADER_PREFIX = "BLENDER17-01v05";
 constexpr uint64_t GENERATED_ADDRESS_BASE = 0x0100000000000000ULL;
 constexpr size_t MAX_BLEND_FRAMES = 256;
 constexpr size_t MAX_BLEND_OBJECTS = 1024;
@@ -266,17 +266,19 @@ struct Block {
 class BlendScene
 {
 public:
-  BlendScene(const fs::path& templatePath, const Color4f& defaultColor) : defaultColor_(defaultColor)
+  BlendScene(const fs::path& templatePath, const Color4f& defaultColor, double smoothAngle = 24.0)
+    : defaultColor_(defaultColor), smoothAngle_(smoothAngle)
   {
     std::ifstream input(templatePath, std::ios::binary);
     if (!input) throw std::runtime_error("Can't open Blender export template: " + templatePath.string());
     bytes_ = std::vector<uint8_t>(std::istreambuf_iterator<char>(input), {});
-    if (bytes_.size() < BLEND_HEADER.size() ||
-        std::memcmp(bytes_.data(), BLEND_HEADER.data(), BLEND_HEADER.size()) != 0) {
+    if (bytes_.size() < 17 ||
+        std::memcmp(bytes_.data(), BLEND_HEADER_PREFIX.data(), BLEND_HEADER_PREFIX.size()) != 0) {
       throw std::runtime_error("Unsupported Blender export template");
     }
+    header_.assign(reinterpret_cast<const char *>(bytes_.data()), 17);
 
-    size_t offset = BLEND_HEADER.size();
+    size_t offset = 17;
     while (offset + 32 <= bytes_.size()) {
       Block block;
       std::memcpy(block.code.data(), bytes_.data() + offset, 4);
@@ -484,7 +486,7 @@ public:
 
   void write(std::ostream& output) const
   {
-    output.write(BLEND_HEADER.data(), BLEND_HEADER.size());
+    output.write(header_.data(), header_.size());
     for (const auto& block : blocks_) {
       output.write(block.code.data(), block.code.size());
       output.write(reinterpret_cast<const char *>(&block.dna), sizeof(block.dna));
@@ -874,17 +876,57 @@ private:
     std::vector<int32_t> cornerVertices;
     std::vector<int32_t> cornerEdges;
     std::vector<int32_t> offsets{0};
-    for (const auto& face : faces) {
+    std::vector<std::vector<size_t>> edgeFaces;
+    for (size_t faceIdx = 0; faceIdx < faces.size(); ++faceIdx) {
+      const auto& face = faces[faceIdx];
       for (size_t i = 0; i < face.size(); ++i) {
         const int32_t a = face[i];
         const int32_t b = face[(i + 1) % face.size()];
         const std::pair<int32_t, int32_t> key{std::min(a, b), std::max(a, b)};
         auto [found, inserted] = edgeIndex.emplace(key, int32_t(edges.size()));
-        if (inserted) edges.push_back({a, b});
+        if (inserted) {
+          edges.push_back({a, b});
+          edgeFaces.push_back({});
+        }
+        edgeFaces[found->second].push_back(faceIdx);
         cornerVertices.push_back(a);
         cornerEdges.push_back(found->second);
       }
       offsets.push_back(int32_t(cornerVertices.size()));
+    }
+
+    std::vector<Vector3d> faceNormals;
+    faceNormals.reserve(faces.size());
+    for (const auto& face : faces) {
+      Vector3d normal(0, 0, 0);
+      for (size_t i = 0; i < face.size(); ++i) {
+        const int a = face[i];
+        const int b = face[(i + 1) % face.size()];
+        if (a >= 0 && size_t(a) < vertices.size() && b >= 0 && size_t(b) < vertices.size()) {
+          const auto& p1 = vertices[a];
+          const auto& p2 = vertices[b];
+          normal.x() += (p1.y() - p2.y()) * (p1.z() + p2.z());
+          normal.y() += (p1.z() - p2.z()) * (p1.x() + p2.x());
+          normal.z() += (p1.x() - p2.x()) * (p1.y() + p2.y());
+        }
+      }
+      const double len = normal.norm();
+      if (len > 1e-12) normal /= len;
+      faceNormals.push_back(normal);
+    }
+
+    const double cosThreshold = std::cos(smoothAngle_ * (M_PI / 180.0));
+    std::vector<int8_t> sharpEdges(edges.size(), 0);
+    for (size_t e = 0; e < edges.size(); ++e) {
+      const auto& fList = edgeFaces[e];
+      if (fList.size() == 2) {
+        const double dot = faceNormals[fList[0]].dot(faceNormals[fList[1]]);
+        if (dot < cosThreshold) {
+          sharpEdges[e] = 1;
+        }
+      } else {
+        sharpEdges[e] = 1;
+      }
     }
 
     writeScalar<int32_t>(mesh.data, dna_->fieldOffset(mesh.dna, "totvert"), int32_t(vertices.size()));
@@ -941,6 +983,9 @@ private:
       } else if (name == ".select_edge") {
         payload.data.assign(edges.size() * 8, 0);
         setArraySize(array, edges.size());
+      } else if (name == "sharp_edge" || name == ".sharp_edge") {
+        setRaw(payload, sharpEdges);
+        setArraySize(array, sharpEdges.size());
       } else if (name == ".select_poly" || name == "sharp_face") {
         payload.data.assign(faces.size(), 0);
         setArraySize(array, faces.size());
@@ -969,11 +1014,13 @@ private:
     return std::string(data, std::find(data, data + block.data.size(), '\0'));
   }
 
+  std::string header_;
   std::vector<uint8_t> bytes_;
   std::vector<Block> blocks_;
   std::unordered_map<uint64_t, size_t> indexByAddress_;
   std::map<std::tuple<float, float, float, float>, uint64_t> materials_;
   Color4f defaultColor_;
+  double smoothAngle_ = 24.0;
   std::unique_ptr<Dna> dna_;
   uint64_t nextGeneratedAddress_ = 1;
 };
@@ -987,7 +1034,7 @@ void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsign
     throw std::runtime_error("Blender remesh samples must be in range 1..256");
   }
   const fs::path templatePath = PlatformUtils::resourcePath("templates") / "blender-5.0.1.blend";
-  BlendScene scene(templatePath, options.defaultColor);
+  BlendScene scene(templatePath, options.defaultColor, options.smoothAngle);
   scene.setCamera(frames);
   if (!frames.empty() && frames[0].objects.size() <= MAX_BLEND_OBJECTS &&
       canExportObjectAnimation(frames)) {

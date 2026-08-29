@@ -8,6 +8,8 @@ MAX_MATERIALS = 1024
 output = sys.argv[sys.argv.index("--") + 1]
 scene = bpy.context.scene
 source = bpy.data.objects["Frame 0001"]
+if "sharp_edge" not in source.data.attributes:
+    source.data.attributes.new(name="sharp_edge", type="BOOLEAN", domain="EDGE")
 
 base_material = source.data.materials[0]
 for action in list(bpy.data.actions):
@@ -26,6 +28,8 @@ for material in materials:
     material.use_fake_user = True
 
 for obj in (obj for obj in bpy.data.objects if obj.name.startswith("Frame ")):
+    if "sharp_edge" not in obj.data.attributes:
+        obj.data.attributes.new(name="sharp_edge", type="BOOLEAN", domain="EDGE")
     obj.data.materials.clear()
     obj.data.materials.append(materials[0])
     obj.data.materials.append(materials[1])
@@ -43,7 +47,8 @@ for index in range(1, MAX_OBJECTS + 1):
     obj = source.copy()
     obj.name = name
     mesh = bpy.data.meshes.new(name)
-    mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+    mesh.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [(0, 1), (1, 2), (2, 0)], [(0, 1, 2)])
+    mesh.attributes.new(name="sharp_edge", type="BOOLEAN", domain="EDGE")
     mesh.materials.append(materials[0])
     mesh.materials.append(materials[1])
     mesh.polygons[0].material_index = 1

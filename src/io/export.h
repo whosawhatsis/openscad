@@ -42,6 +42,7 @@ struct UsdAnimationFrame {
 struct BlendExportOptions {
   size_t remeshSamples = 256;
   Color4f defaultColor{0.8f, 0.8f, 0.8f, 1.0f};
+  double smoothAngle = 24.0;
 };
 
 bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames);
