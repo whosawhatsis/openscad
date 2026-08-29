@@ -11,6 +11,7 @@
 #include "core/Tree.h"
 #include "core/progress.h"
 #include "geometry/GeometryEvaluator.h"
+#include "glview/RenderSettings.h"
 #include "utils/exceptions.h"
 #include "utils/printutils.h"
 
@@ -52,7 +53,9 @@ void CGALWorker::work()
   std::shared_ptr<const Geometry> root_geom;
   try {
     GeometryEvaluator evaluator(*this->tree);
-    root_geom = evaluator.evaluateGeometry(*this->tree->root(), true);
+    const bool retainBackendGeometry =
+      RenderSettings::inst()->backend3D != RenderBackend3D::OpenCASCADEBackend;
+    root_geom = evaluator.evaluateGeometry(*this->tree->root(), retainBackendGeometry);
 
 #ifdef ENABLE_MANIFOLD
     if (auto manifold = std::dynamic_pointer_cast<const ManifoldGeometry>(root_geom)) {

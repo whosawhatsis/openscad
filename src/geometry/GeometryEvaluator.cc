@@ -102,6 +102,28 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node)
   return {};
 }
 
+std::pair<double, double> brepFacetSettings(const AbstractNode& node, const BrepGeometry& geometry)
+{
+  double fa = 12.0;
+  double fs = 2.0;
+  if (const auto *csg = dynamic_cast<const CsgOpNode *>(&node)) {
+    fa = csg->fa;
+    fs = csg->fs;
+  } else if (const auto *cylinder = dynamic_cast<const CylinderNode *>(&node)) {
+    fa = cylinder->discretizer.getFa();
+    fs = cylinder->discretizer.getFs();
+  } else if (const auto *transform = dynamic_cast<const TransformNode *>(&node);
+             transform && transform->children.size() == 1) {
+    return brepFacetSettings(*transform->children.front(), geometry);
+  }
+
+  const double radius = std::max(geometry.getBoundingBox().diagonal().norm() / 2.0, 0.01);
+  const double halfSegment = std::min(fs / 2.0, radius);
+  const double linearDeflection =
+    std::max(radius - std::sqrt(radius * radius - halfSegment * halfSegment), 0.001);
+  return {linearDeflection, fa * M_DEG2RAD};
+}
+
 }  // namespace
 #endif
 
@@ -121,12 +143,13 @@ GeometryEvaluator::GeometryEvaluator(const Tree& tree) : tree(tree)
 std::shared_ptr<const Geometry> GeometryEvaluator::evaluateGeometry(const AbstractNode& node,
                                                                     bool allownef)
 {
+  std::shared_ptr<const Geometry> result;
 #ifdef ENABLE_OPENCSCADE
-  if (allownef && RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
-    if (auto brep = createBrepGeometry(node)) return std::shared_ptr<const Geometry>(std::move(brep));
+  if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
+    if (auto brep = createBrepGeometry(node)) result = std::shared_ptr<const Geometry>(std::move(brep));
   }
 #endif
-  auto result = smartCacheGet(node, allownef);
+  if (!result) result = smartCacheGet(node, allownef);
   if (!result) {
     // If not found in any caches, we need to evaluate the geometry
     // traverse() will set this->root to a geometry, which can be any geometry
@@ -142,6 +165,12 @@ std::shared_ptr<const Geometry> GeometryEvaluator::evaluateGeometry(const Abstra
   // Note: we don't store the converted into the cache as it would conflict with subsequent calls where
   // allownef is true.
   if (!allownef) {
+#ifdef ENABLE_OPENCSCADE
+    if (auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result)) {
+      const auto [linearDeflection, angularDeflection] = brepFacetSettings(node, *brep);
+      return std::shared_ptr<const PolySet>(brep->toPolySet(linearDeflection, angularDeflection));
+    }
+#endif
     if (auto ps = PolySetUtils::getGeometryAsPolySet(result)) {
       assert(ps->getDimension() == 3);
       // We cannot render concave polygons, so tessellate any PolySets

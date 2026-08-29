@@ -488,7 +488,7 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       // FIXME: Consider adding MANIFOLD as a valid --render argument and ViewOption, to be able to
       // distinguish from CGAL
 
-      constexpr bool allownef = true;
+      const bool allownef = RenderSettings::inst()->backend3D != RenderBackend3D::OpenCASCADEBackend;
       root_geom = geomevaluator.evaluateGeometry(*tree.root(), allownef);
       if (!root_geom) root_geom = std::make_shared<PolySet>(3);
       if (cmd.viewOptions.renderer == RenderType::BACKEND_SPECIFIC && root_geom->getDimension() == 3) {

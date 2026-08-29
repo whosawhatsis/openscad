@@ -37,6 +37,8 @@ public:
    */
   std::optional<int> getCircularSegmentCount(double r, double angle_degrees = 360.0) const;
   bool isFnSpecified() const { return fn > 0; }
+  double getFa() const { return fa; }
+  double getFs() const { return fs; }
 
   /**
    * @brief Calculate segments for a path.

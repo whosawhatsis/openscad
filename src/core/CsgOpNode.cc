@@ -34,6 +34,7 @@
 
 #include "core/Builtins.h"
 #include "core/Children.h"
+#include "core/CurveDiscretizer.h"
 #include "core/ModuleInstantiation.h"
 #include "core/Parameters.h"
 #include "core/enums.h"
@@ -46,11 +47,12 @@ std::shared_ptr<CsgOpNode> createCsgOpNode(const ModuleInstantiation *inst, Argu
                                            OpenSCADOperator type)
 {
   const Parameters parameters = Parameters::parse(std::move(arguments), inst->location(), {"fillet"});
+  const CurveDiscretizer discretizer(parameters, inst->location());
   const Value& fillet = parameters["fillet"];
   double radius = 0.0;
 
   if (!fillet.isDefined()) {
-    return std::make_shared<CsgOpNode>(inst, type);
+    return std::make_shared<CsgOpNode>(inst, type, 0.0, false, discretizer.getFa(), discretizer.getFs());
   }
   if (!fillet.getFiniteDouble(radius)) {
     LOG(message_group::Error, inst->location(), parameters.documentRoot(),
@@ -62,7 +64,7 @@ std::shared_ptr<CsgOpNode> createCsgOpNode(const ModuleInstantiation *inst, Argu
     radius = 0.0;
   }
 
-  return std::make_shared<CsgOpNode>(inst, type, radius, true);
+  return std::make_shared<CsgOpNode>(inst, type, radius, true, discretizer.getFa(), discretizer.getFs());
 }
 
 }  // namespace

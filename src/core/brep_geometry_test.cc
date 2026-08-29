@@ -82,6 +82,18 @@ TEST_CASE("GeometryEvaluator routes filleted difference through B-Rep", "[brep]"
   REQUIRE(brep->surfaceCount(BrepSurfaceType::Torus) == 2);
   REQUIRE(brep->numFacets() == 0);
 
+  const auto meshResult = evaluator.evaluateGeometry(*difference, false);
+  const auto mesh = std::dynamic_pointer_cast<const PolySet>(meshResult);
+  REQUIRE(mesh);
+  REQUIRE(mesh->numFacets() > 0);
+
+  difference->fa = 4.0;
+  difference->fs = 0.25;
+  const auto fineMeshResult = evaluator.evaluateGeometry(*difference, false);
+  const auto fineMesh = std::dynamic_pointer_cast<const PolySet>(fineMeshResult);
+  REQUIRE(fineMesh);
+  REQUIRE(fineMesh->numFacets() > mesh->numFacets());
+
   RenderSettings::inst()->backend3D = previousBackend;
 }
 

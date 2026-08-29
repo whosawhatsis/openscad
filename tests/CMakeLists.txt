@@ -841,6 +841,13 @@ add_cmdline_test(echo         OPENSCAD SUFFIX echo FILES ${TEST_SCAD_DIR}/issues
 
 add_cmdline_test(dump           OPENSCAD FILES ${FEATURES_2D_FILES} ${FEATURES_3D_FILES} ${DEPRECATED_3D_FILES} ${MISC_FILES} SUFFIX csg ARGS)
 add_cmdline_test(dump-csg-fillet OPENSCAD FILES ${TEST_SCAD_DIR}/misc/csg-fillet.scad SUFFIX csg ARGS)
+if(ENABLE_OPENCSCADE)
+  add_test(NAME export-stl-brep-fillet
+    COMMAND $<TARGET_FILE:OpenSCADExe> --backend=opencascade --render
+      -o ${CMAKE_CURRENT_BINARY_DIR}/brep-fillet-export.stl
+      ${TEST_SCAD_DIR}/misc/brep-fillet-export.scad)
+  set_tests_properties(export-stl-brep-fillet PROPERTIES PASS_REGULAR_EXPRESSION "Triangles: +[1-9]")
+endif()
 if(EXAMPLES_DIR)
   add_cmdline_test(dump-examples  OPENSCAD FILES ${EXAMPLE_FILES} SUFFIX csg ARGS)
 endif(EXAMPLES_DIR)
