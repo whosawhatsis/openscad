@@ -174,6 +174,51 @@ TEST_CASE("OpenCASCADE is an available 3D backend when compiled in", "[brep]")
   REQUIRE(renderBackend3DToString(RenderBackend3D::OpenCASCADEBackend) == "OpenCASCADE");
 }
 
+TEST_CASE("B-Rep wrappers preserve grouping and list semantics", "[brep]")
+{
+  ModuleInstantiation inst("group");
+  ModuleInstantiation backgroundInst("cube");
+  backgroundInst.tag_background = true;
+  const auto box = [&](double size, double x) {
+    auto cube = std::make_shared<CubeNode>(&inst);
+    cube->x = cube->y = cube->z = size;
+    auto translated = std::make_shared<TransformNode>(&inst, "translate");
+    translated->matrix.translate(Vector3d(x, 0.0, 0.0));
+    translated->children = {cube};
+    return translated;
+  };
+  auto group = std::make_shared<GroupNode>(&inst, "user_module");
+  group->children = {box(10.0, 0.0), box(10.0, 15.0)};
+  auto transform = std::make_shared<TransformNode>(&inst, "translate");
+  transform->matrix.translate(Vector3d(100.0, 0.0, 0.0));
+  transform->children = {group, box(3.0, 30.0)};
+  auto background = std::make_shared<CubeNode>(&backgroundInst);
+  background->x = background->y = background->z = 500.0;
+  auto root = std::make_shared<RootNode>();
+  root->children = {transform, background};
+
+  auto list = std::make_shared<ListNode>(&inst);
+  list->children = {box(10.0, 0.0), box(10.0, 5.0)};
+  auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+  difference->children = {list};
+
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree rootTree(root);
+  GeometryEvaluator rootEvaluator(rootTree);
+  const auto result = rootEvaluator.evaluateGeometry(*root, true);
+  Tree differenceTree(difference);
+  GeometryEvaluator differenceEvaluator(differenceTree);
+  const auto differenceResult = differenceEvaluator.evaluateGeometry(*difference, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(result));
+  REQUIRE(result->getBoundingBox().min().x() == Catch::Approx(100.0).margin(0.001));
+  REQUIRE(result->getBoundingBox().max().x() == Catch::Approx(133.0).margin(0.001));
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(differenceResult));
+  REQUIRE(differenceResult->getBoundingBox().max().x() == Catch::Approx(5.0).margin(0.001));
+}
+
 TEST_CASE("OpenCASCADE backend retains a primitive as B-Rep", "[brep]")
 {
   ModuleInstantiation cubeInstantiation("cube");

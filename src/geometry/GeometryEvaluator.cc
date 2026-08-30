@@ -94,26 +94,36 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
     }
     return result;
   }
-  if (const auto *transform = dynamic_cast<const TransformNode *>(&node)) {
-    if (transform->children.size() != 1) return {};
-    auto result = createBrepGeometry(*transform->children.front(), diagnostics);
-    if (result) result->transform(transform->matrix);
-    return result;
-  }
-  if (const auto *csg = dynamic_cast<const CsgOpNode *>(&node)) {
+  const auto *transform = dynamic_cast<const TransformNode *>(&node);
+  const auto *csg = dynamic_cast<const CsgOpNode *>(&node);
+  if (transform || csg || dynamic_cast<const GroupNode *>(&node) ||
+      dynamic_cast<const ListNode *>(&node)) {
     std::vector<BrepGeometry> operands;
-    operands.reserve(csg->children.size());
-    for (const auto& child : csg->children) {
-      auto operand = createBrepGeometry(*child);
-      if (!operand) return {};
+    operands.reserve(node.children.size());
+    const auto appendOperand = [&](const auto& append, const AbstractNode& child) -> bool {
+      if (child.modinst->isBackground()) return true;
+      // Lists (e.g. for loops) unpack into the parent; groups remain one unioned operand.
+      if (dynamic_cast<const ListNode *>(&child)) {
+        for (const auto& item : child.children) {
+          if (!append(append, *item)) return false;
+        }
+        return true;
+      }
+      auto operand = createBrepGeometry(child);
+      if (!operand) return false;
       operands.push_back(std::move(*operand));
+      return true;
+    };
+    for (const auto& child : node.children) {
+      if (!appendOperand(appendOperand, *child)) return {};
     }
-    const auto operation = csg->type == OpenSCADOperator::UNION        ? BrepOperation::Union
-                           : csg->type == OpenSCADOperator::DIFFERENCE ? BrepOperation::Difference
-                                                                       : BrepOperation::Intersection;
+    const auto operation = !csg || csg->type == OpenSCADOperator::UNION ? BrepOperation::Union
+                           : csg->type == OpenSCADOperator::DIFFERENCE  ? BrepOperation::Difference
+                                                                        : BrepOperation::Intersection;
     BrepFilletDiagnostics resultDiagnostics;
     auto result = std::make_unique<BrepGeometry>(BrepGeometry::boolean(
-      operands, operation, csg->hasFillet ? csg->filletRadius : 0.0, resultDiagnostics));
+      operands, operation, csg && csg->hasFillet ? csg->filletRadius : 0.0, resultDiagnostics));
+    if (transform && !result->isEmpty()) result->transform(transform->matrix);
     if (diagnostics) *diagnostics = resultDiagnostics;
     return result;
   }

@@ -855,6 +855,12 @@ if(ENABLE_OPENCSCADE)
       -o ${CMAKE_CURRENT_BINARY_DIR}/brep-fillet-export.stl
       ${TEST_SCAD_DIR}/misc/brep-fillet-export.scad)
   set_tests_properties(export-stl-brep-fillet PROPERTIES PASS_REGULAR_EXPRESSION "Triangles: +[1-9]")
+  add_test(NAME export-stl-brep-wrappers
+    COMMAND $<TARGET_FILE:OpenSCADExe> --backend=opencascade --render
+      -o ${CMAKE_CURRENT_BINARY_DIR}/brep-wrappers.stl
+      ${TEST_SCAD_DIR}/misc/brep-wrappers.scad)
+  set_tests_properties(export-stl-brep-wrappers PROPERTIES
+    PASS_REGULAR_EXPRESSION "Triangles: +[1-9]" FAIL_REGULAR_EXPRESSION "ERROR:")
 endif()
 if(EXAMPLES_DIR)
   add_cmdline_test(dump-examples  OPENSCAD FILES ${EXAMPLE_FILES} SUFFIX csg ARGS)
