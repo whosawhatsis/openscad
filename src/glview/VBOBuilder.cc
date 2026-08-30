@@ -1,5 +1,7 @@
 #include "glview/VBOBuilder.h"
 
+#include "geometry/smooth_normals.h"
+
 #include <algorithm>
 
 #include <cmath>
@@ -397,7 +399,8 @@ void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t pri
 
 void VBOBuilder::create_triangle(const Color4f& color, const Vector3d& p0, const Vector3d& p1,
                                  const Vector3d& p2, size_t primitive_index, size_t shape_size,
-                                 bool outlines, bool enable_barycentric, bool mirror)
+                                 bool outlines, bool enable_barycentric, bool mirror,
+                                 const Vector3d *smooth_normals)
 {
   const double ax = p1[0] - p0[0], bx = p1[0] - p2[0];
   const double ay = p1[1] - p0[1], by = p1[1] - p2[1];
@@ -408,28 +411,46 @@ void VBOBuilder::create_triangle(const Color4f& color, const Vector3d& p0, const
   const double nl = sqrt(nx * nx + ny * ny + nz * nz);
   const Vector3d n = Vector3d(nx / nl, ny / nl, nz / nl);
 
+  // Reconcile the supplied normals against the flat one rather than trusting their
+  // orientation. VBOBuilder's normals face inward (Phong.vert negates them) and a
+  // mirroring transform flips the winding, so a smoothed normal computed in object
+  // space can arrive pointing the wrong way. Smoothing only ever averages faces
+  // within the angle threshold, so a corner normal is never more than 90 degrees
+  // from its own face and this cannot flip a legitimately smoothed normal.
+  Vector3d n0 = n, n1 = n, n2 = n;
+  if (smooth_normals) {
+    const auto orient = [&n](const Vector3d& s) {
+      if (s.squaredNorm() < 1e-24) return n;
+      const Vector3d u = s.normalized();
+      return u.dot(n) < 0.0 ? Vector3d(-u) : u;
+    };
+    n0 = orient(smooth_normals[0]);
+    n1 = orient(smooth_normals[1]);
+    n2 = orient(smooth_normals[2]);
+  }
+
   if (!data()) return;
 
   if (enable_barycentric) {
     add_barycentric_attribute(0, primitive_index, shape_size, outlines);
   }
-  createVertex({p0, p1, p2}, {n, n, n}, color, 0, primitive_index, shape_size, outlines, mirror);
+  createVertex({p0, p1, p2}, {n0, n1, n2}, color, 0, primitive_index, shape_size, outlines, mirror);
 
   if (!mirror) {
     if (enable_barycentric) {
       add_barycentric_attribute(1, primitive_index, shape_size, outlines);
     }
-    createVertex({p0, p1, p2}, {n, n, n}, color, 1, primitive_index, shape_size, outlines, mirror);
+    createVertex({p0, p1, p2}, {n0, n1, n2}, color, 1, primitive_index, shape_size, outlines, mirror);
   }
   if (enable_barycentric) {
     add_barycentric_attribute(2, primitive_index, shape_size, outlines);
   }
-  createVertex({p0, p1, p2}, {n, n, n}, color, 2, primitive_index, shape_size, outlines, mirror);
+  createVertex({p0, p1, p2}, {n0, n1, n2}, color, 2, primitive_index, shape_size, outlines, mirror);
   if (mirror) {
     if (enable_barycentric) {
       add_barycentric_attribute(1, primitive_index, shape_size, outlines);
     }
-    createVertex({p0, p1, p2}, {n, n, n}, color, 1, primitive_index, shape_size, outlines, mirror);
+    createVertex({p0, p1, p2}, {n0, n1, n2}, color, 1, primitive_index, shape_size, outlines, mirror);
   }
 }
 
@@ -437,7 +458,7 @@ void VBOBuilder::create_triangle(const Color4f& color, const Vector3d& p0, const
 // This will usually create a new VertexState and append it to our
 // vertex states
 void VBOBuilder::create_surface(const PolySet& ps, const Transform3d& m, const Color4f& default_color,
-                                bool enable_barycentric, bool force_default_color)
+                                bool enable_barycentric, bool force_default_color, double smooth_angle)
 {
   const std::shared_ptr<VertexData> vertex_data = data();
 
@@ -459,6 +480,21 @@ void VBOBuilder::create_surface(const PolySet& ps, const Transform3d& m, const C
 
   auto has_colors = !ps.color_indices.empty();
 
+  // One pass over the whole PolySet, not per facet: the corner normals depend on
+  // neighbouring faces, so they cannot be derived inside the loop below.
+  std::vector<Vector3d> corner_normals;
+  if (smooth_angle > 0.0) {
+    corner_normals = computeSmoothNormals(ps, smooth_angle);
+    // Normals transform by the inverse transpose, not by the matrix; under a
+    // non-uniform scale the two differ and shading goes visibly wrong.
+    const Matrix3d normal_matrix = m.linear().inverse().transpose();
+    for (auto& normal : corner_normals) normal = normal_matrix * normal;
+  }
+  size_t corner_base = 0;
+  const auto corner_at = [&](size_t offset) -> const Vector3d * {
+    return corner_normals.empty() ? nullptr : &corner_normals[corner_base + offset];
+  };
+
   for (size_t i = 0, n = ps.indices.size(); i < n; i++) {
     const auto& poly = ps.indices[i];
     const size_t color_index = has_colors && i < ps.color_indices.size() ? ps.color_indices[i] : -1;
@@ -471,7 +507,11 @@ void VBOBuilder::create_surface(const PolySet& ps, const Transform3d& m, const C
       const Vector3d p1 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(1)], m);
       const Vector3d p2 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(2)], m);
 
-      create_triangle(color, p0, p1, p2, 0, poly.size(), false, enable_barycentric, mirrored);
+      const Vector3d tri_normals[3] = {corner_at(0) ? *corner_at(0) : Vector3d::Zero(),
+                                       corner_at(1) ? *corner_at(1) : Vector3d::Zero(),
+                                       corner_at(2) ? *corner_at(2) : Vector3d::Zero()};
+      create_triangle(color, p0, p1, p2, 0, poly.size(), false, enable_barycentric, mirrored,
+                      corner_normals.empty() ? nullptr : tri_normals);
       triangle_count++;
     } else if (poly.size() == 4) {
       const Vector3d p0 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(0)], m);
@@ -479,8 +519,16 @@ void VBOBuilder::create_surface(const PolySet& ps, const Transform3d& m, const C
       const Vector3d p2 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(2)], m);
       const Vector3d p3 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(3)], m);
 
-      create_triangle(color, p0, p1, p3, 0, poly.size(), false, enable_barycentric, mirrored);
-      create_triangle(color, p2, p3, p1, 1, poly.size(), false, enable_barycentric, mirrored);
+      const Vector3d *c0 = corner_at(0), *c1 = corner_at(1), *c2 = corner_at(2), *c3 = corner_at(3);
+      const bool smooth = !corner_normals.empty();
+      const Vector3d quad_a[3] = {smooth ? *c0 : Vector3d::Zero(), smooth ? *c1 : Vector3d::Zero(),
+                                  smooth ? *c3 : Vector3d::Zero()};
+      const Vector3d quad_b[3] = {smooth ? *c2 : Vector3d::Zero(), smooth ? *c3 : Vector3d::Zero(),
+                                  smooth ? *c1 : Vector3d::Zero()};
+      create_triangle(color, p0, p1, p3, 0, poly.size(), false, enable_barycentric, mirrored,
+                      smooth ? quad_a : nullptr);
+      create_triangle(color, p2, p3, p1, 1, poly.size(), false, enable_barycentric, mirrored,
+                      smooth ? quad_b : nullptr);
       triangle_count += 2;
     } else {
       Vector3d center = Vector3d::Zero();
@@ -493,10 +541,22 @@ void VBOBuilder::create_surface(const PolySet& ps, const Transform3d& m, const C
         const Vector3d p1 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(i % poly.size())], m);
         const Vector3d p2 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(i - 1)], m);
 
-        create_triangle(color, p0, p2, p1, i - 1, poly.size(), false, enable_barycentric, mirrored);
+        // The centre vertex is synthesized and has no corner of its own, so it takes
+        // the mean of the face's corners - which is the face normal for a planar face.
+        const bool smooth = !corner_normals.empty();
+        Vector3d centre_normal = Vector3d::Zero();
+        if (smooth) {
+          for (size_t c = 0; c < poly.size(); ++c) centre_normal += *corner_at(c);
+          if (centre_normal.squaredNorm() > 1e-24) centre_normal.normalize();
+        }
+        const Vector3d fan_normals[3] = {centre_normal, smooth ? *corner_at(i - 1) : Vector3d::Zero(),
+                                         smooth ? *corner_at(i % poly.size()) : Vector3d::Zero()};
+        create_triangle(color, p0, p2, p1, i - 1, poly.size(), false, enable_barycentric, mirrored,
+                        smooth ? fan_normals : nullptr);
         triangle_count++;
       }
     }
+    corner_base += poly.size();
   }
 
   GLenum elements_type = 0;
