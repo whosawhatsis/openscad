@@ -1109,6 +1109,7 @@ set(CORE_SOURCES
   src/io/import_off.cc
   src/io/import_stl.cc
   src/io/import_svg.cc
+  src/io/ipc_endpoint.cc
   src/io/ipc_geometry.cc
   src/platform/PlatformUtils.cc
   src/utils/StackCheck.h
