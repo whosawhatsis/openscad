@@ -2,14 +2,7 @@
 
 #include <array>
 #include <memory>
-#include <vector>
-
 #include "geometry/brep/BrepGeometry.h"
-
-struct BrepMeshData {
-  std::vector<std::array<double, 3>> vertices;
-  std::vector<std::array<int, 3>> triangles;
-};
 
 struct BrepDifferenceData {
   std::shared_ptr<void> shape;

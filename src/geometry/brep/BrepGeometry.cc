@@ -77,7 +77,7 @@ BrepGeometry BrepGeometry::difference(const BrepGeometry& tool, double filletRad
 
 std::unique_ptr<PolySet> BrepGeometry::toPolySet(double linearDeflection, double angularDeflection) const
 {
-  const BrepMeshData mesh = brepMesh(shape_, linearDeflection, angularDeflection);
+  const BrepMeshData mesh = toDisplayMesh(linearDeflection, angularDeflection);
   PolySetBuilder builder(mesh.vertices.size(), mesh.triangles.size());
   for (const auto& triangle : mesh.triangles) {
     builder.beginPolygon(3);
@@ -88,4 +88,9 @@ std::unique_ptr<PolySet> BrepGeometry::toPolySet(double linearDeflection, double
     builder.endPolygon();
   }
   return builder.build();
+}
+
+BrepMeshData BrepGeometry::toDisplayMesh(double linearDeflection, double angularDeflection) const
+{
+  return brepMesh(shape_, linearDeflection, angularDeflection);
 }

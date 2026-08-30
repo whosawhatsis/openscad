@@ -1,5 +1,7 @@
 #ifdef ENABLE_OPENCSCADE
 
+#include <algorithm>
+#include <cmath>
 #include <optional>
 
 #include <catch2/catch_test_macros.hpp>
@@ -25,6 +27,19 @@ TEST_CASE("BrepGeometry retains analytic surfaces until tessellation", "[brep]")
   REQUIRE(geometry.surfaceCount(BrepSurfaceType::Cylinder) == 1);
   REQUIRE(mesh->numFacets() > 0);
   REQUIRE(geometry.numFacets() == 0);
+}
+
+TEST_CASE("BrepGeometry display mesh carries analytic normals and boundary edges", "[brep]")
+{
+  BrepGeometry geometry = BrepGeometry::cylinder(4.0, 10.0);
+
+  const auto display = geometry.toDisplayMesh(0.2, 0.35);
+
+  REQUIRE(display.vertices.size() == display.normals.size());
+  REQUIRE_FALSE(display.triangles.empty());
+  REQUIRE_FALSE(display.edges.empty());
+  REQUIRE(std::any_of(display.normals.begin(), display.normals.end(),
+                      [](const auto& normal) { return std::abs(normal[2]) < 0.1; }));
 }
 
 TEST_CASE("BrepGeometry performs an exact filleted difference", "[brep]")

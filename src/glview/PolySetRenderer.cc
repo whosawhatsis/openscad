@@ -59,6 +59,9 @@
 #ifdef ENABLE_MANIFOLD
 #include "geometry/manifold/ManifoldGeometry.h"
 #endif
+#ifdef ENABLE_OPENCSCADE
+#include "geometry/brep/BrepGeometry.h"
+#endif
 
 // This renderer is used in Manifold mode (F6 with Manifold as geometry engine)
 PolySetRenderer::PolySetRenderer(const std::shared_ptr<const class Geometry>& geom)
@@ -80,6 +83,10 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
     this->polysets_.push_back(PolySetUtils::tessellate_faces(*ps));
   } else if (const auto poly = std::dynamic_pointer_cast<const Polygon2d>(geom)) {
     this->polygons_.emplace_back(poly, std::shared_ptr<const PolySet>(poly->tessellate()));
+#ifdef ENABLE_OPENCSCADE
+  } else if (const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(geom)) {
+    this->breps_.push_back(brep);
+#endif
 #ifdef ENABLE_MANIFOLD
   } else if (const auto mani = std::dynamic_pointer_cast<const ManifoldGeometry>(geom)) {
     this->polysets_.push_back(mani->toPolySet());
@@ -102,6 +109,75 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
     assert(false && "Unsupported geom in PolySetRenderer");
   }
 }
+
+#ifdef ENABLE_OPENCSCADE
+void PolySetRenderer::createBrepStates(const ShaderUtils::ShaderInfo *shaderinfo)
+{
+  std::vector<BrepMeshData> meshes;
+  size_t triangleVertices = 0;
+  size_t edgeVertices = 0;
+  for (const auto& brep : breps_) {
+    const BoundingBox bounds = brep->getBoundingBox();
+    const double linearDeflection = std::max(1e-4, bounds.diagonal().norm() * 0.001);
+    meshes.push_back(brep->toDisplayMesh(linearDeflection, 20.0 * M_PI / 180.0));
+    triangleVertices += meshes.back().triangles.size() * 3;
+    edgeVertices += meshes.back().edges.size() * 2;
+  }
+
+  VertexStateContainer& surfaceContainer = brep_surface_vertex_state_containers_.emplace_back();
+  VBOBuilder surfaceBuilder(std::make_unique<VertexStateFactory>(), surfaceContainer);
+  surfaceBuilder.addSurfaceData();
+  surfaceBuilder.addShaderData();
+  surfaceBuilder.allocateBuffers(triangleVertices);
+  add_shader_pointers(surfaceBuilder, shaderinfo);
+  surfaceBuilder.writeSurface();
+  Color4f surfaceColor;
+  getShaderColor(ColorMode::MATERIAL, {}, surfaceColor);
+  for (const auto& mesh : meshes) {
+    for (const auto& triangle : mesh.triangles) {
+      std::array<Vector3d, 3> points;
+      std::array<Vector3d, 3> normals;
+      for (int corner = 0; corner < 3; ++corner) {
+        const auto& point = mesh.vertices[triangle[corner]];
+        const auto& normal = mesh.normals[triangle[corner]];
+        points[corner] = Vector3d(point[0], point[1], point[2]);
+        normals[corner] = Vector3d(normal[0], normal[1], normal[2]);
+      }
+      for (int corner = 0; corner < 3; ++corner) {
+        surfaceBuilder.add_barycentric_attribute(corner, 0, 3, false);
+        surfaceBuilder.createVertex(points, normals, surfaceColor, corner);
+      }
+    }
+  }
+  GLenum surfaceElementsType =
+    surfaceBuilder.useElements() ? surfaceBuilder.elementsData()->glType() : 0;
+  surfaceBuilder.states().push_back(surfaceBuilder.createVertexState(
+    GL_TRIANGLES, triangleVertices, surfaceElementsType, surfaceBuilder.writeIndex(), 0));
+  surfaceBuilder.addAttributePointers();
+  surfaceBuilder.createInterleavedVBOs();
+
+  VertexStateContainer& edgeContainer = brep_edge_vertex_state_containers_.emplace_back();
+  VBOBuilder edgeBuilder(std::make_unique<VertexStateFactory>(), edgeContainer);
+  edgeBuilder.addEdgeData();
+  edgeBuilder.allocateBuffers(edgeVertices);
+  edgeBuilder.writeEdge();
+  Color4f edgeColor;
+  getShaderColor(ColorMode::MATERIAL_EDGES, {}, edgeColor);
+  for (const auto& mesh : meshes) {
+    for (const auto& edge : mesh.edges) {
+      for (int endpoint = 0; endpoint < 2; ++endpoint) {
+        const auto& point = mesh.vertices[edge[endpoint]];
+        edgeBuilder.createVertex({Vector3d(point[0], point[1], point[2])}, {}, edgeColor);
+      }
+    }
+  }
+  GLenum edgeElementsType = edgeBuilder.useElements() ? edgeBuilder.elementsData()->glType() : 0;
+  edgeBuilder.states().push_back(edgeBuilder.createVertexState(GL_LINES, edgeVertices, edgeElementsType,
+                                                               edgeBuilder.writeIndex(), 0));
+  edgeBuilder.addAttributePointers();
+  edgeBuilder.createInterleavedVBOs();
+}
+#endif
 
 // Overridden from Renderer
 void PolySetRenderer::setColorScheme(const ColorScheme& cs)
@@ -225,11 +301,24 @@ void PolySetRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
       createPolygonStates();
     }
   }
+#ifdef ENABLE_OPENCSCADE
+  if (brep_surface_vertex_state_containers_.empty() && !breps_.empty()) createBrepStates(shaderinfo);
+#endif
 }
 
 void PolySetRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shaderinfo) const
 {
   drawPolySets(showedges, shaderinfo);
+#ifdef ENABLE_OPENCSCADE
+  for (const auto& container : brep_surface_vertex_state_containers_) {
+    for (const auto& vertexState : container.states()) vertexState->draw();
+  }
+  if (showedges) {
+    for (const auto& container : brep_edge_vertex_state_containers_) {
+      for (const auto& vertexState : container.states()) vertexState->draw();
+    }
+  }
+#endif
   drawPolygons();
 }
 
@@ -295,6 +384,9 @@ BoundingBox PolySetRenderer::getBoundingBox() const
   for (const auto& ps : this->polysets_) {
     bbox.extend(ps->getBoundingBox());
   }
+#ifdef ENABLE_OPENCSCADE
+  for (const auto& brep : this->breps_) bbox.extend(brep->getBoundingBox());
+#endif
   for (const auto& [polygon, polyset] : this->polygons_) {
     bbox.extend(polygon->getBoundingBox());
   }

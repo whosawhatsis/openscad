@@ -53,9 +53,7 @@ void CGALWorker::work()
   std::shared_ptr<const Geometry> root_geom;
   try {
     GeometryEvaluator evaluator(*this->tree);
-    const bool retainBackendGeometry =
-      RenderSettings::inst()->backend3D != RenderBackend3D::OpenCASCADEBackend;
-    root_geom = evaluator.evaluateGeometry(*this->tree->root(), retainBackendGeometry);
+    root_geom = evaluator.evaluateGeometry(*this->tree->root(), true);
 
 #ifdef ENABLE_MANIFOLD
     if (auto manifold = std::dynamic_pointer_cast<const ManifoldGeometry>(root_geom)) {

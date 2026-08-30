@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <memory>
+#include <vector>
 
 #include "geometry/Geometry.h"
 
@@ -12,6 +14,13 @@ struct BrepFilletDiagnostics {
   size_t filletedEdgeCount{0};
   double achievedRadius{0.0};
   double radiusUpperBound{0.0};
+};
+
+struct BrepMeshData {
+  std::vector<std::array<double, 3>> vertices;
+  std::vector<std::array<double, 3>> normals;
+  std::vector<std::array<int, 3>> triangles;
+  std::vector<std::array<int, 2>> edges;
 };
 
 class BrepGeometry : public Geometry
@@ -38,6 +47,7 @@ public:
 
   [[nodiscard]] std::unique_ptr<PolySet> toPolySet(double linearDeflection,
                                                    double angularDeflection) const;
+  [[nodiscard]] BrepMeshData toDisplayMesh(double linearDeflection, double angularDeflection) const;
 
   [[nodiscard]] const std::shared_ptr<void>& opaqueShape() const { return shape_; }
 

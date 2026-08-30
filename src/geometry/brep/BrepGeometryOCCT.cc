@@ -11,11 +11,13 @@
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
+#include <Poly_PolygonOnTriangulation.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
@@ -114,11 +116,17 @@ BrepMeshData brepMesh(const std::shared_ptr<void>& shape, double linearDeflectio
     const Handle(Poly_Triangulation) triangulation = BRep_Tool::Triangulation(face, location);
     if (triangulation.IsNull()) continue;
 
+    BRepLib_ToolTriangulatedShape::ComputeNormals(face, triangulation);
+
     const int vertexOffset = result.vertices.size();
     const gp_Trsf transform = location.Transformation();
     for (int nodeIndex = 1; nodeIndex <= triangulation->NbNodes(); ++nodeIndex) {
       const gp_Pnt point = triangulation->Node(nodeIndex).Transformed(transform);
+      gp_Dir normal(triangulation->Normal(nodeIndex));
+      normal.Transform(transform);
+      if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
       result.vertices.push_back({point.X(), point.Y(), point.Z()});
+      result.normals.push_back({normal.X(), normal.Y(), normal.Z()});
     }
     for (int triangleIndex = 1; triangleIndex <= triangulation->NbTriangles(); ++triangleIndex) {
       int first, second, third;
@@ -126,6 +134,16 @@ BrepMeshData brepMesh(const std::shared_ptr<void>& shape, double linearDeflectio
       if (face.Orientation() == TopAbs_REVERSED) std::swap(second, third);
       result.triangles.push_back(
         {vertexOffset + first - 1, vertexOffset + second - 1, vertexOffset + third - 1});
+    }
+    for (TopExp_Explorer edgeExplorer(face, TopAbs_EDGE); edgeExplorer.More(); edgeExplorer.Next()) {
+      const TopoDS_Edge edge = TopoDS::Edge(edgeExplorer.Current());
+      const Handle(Poly_PolygonOnTriangulation) polygon =
+        BRep_Tool::PolygonOnTriangulation(edge, triangulation, location);
+      if (polygon.IsNull()) continue;
+      const TColStd_Array1OfInteger& nodes = polygon->Nodes();
+      for (int index = nodes.Lower() + 1; index <= nodes.Upper(); ++index) {
+        result.edges.push_back({vertexOffset + nodes(index - 1) - 1, vertexOffset + nodes(index) - 1});
+      }
     }
   }
   return result;

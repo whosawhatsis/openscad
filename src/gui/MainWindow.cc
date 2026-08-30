@@ -110,6 +110,9 @@
 #include "geometry/Geometry.h"
 #include "geometry/GeometryCache.h"
 #include "geometry/GeometryEvaluator.h"
+#ifdef ENABLE_OPENCSCADE
+#include "geometry/brep/BrepGeometry.h"
+#endif
 #include "glview/PolySetRenderer.h"
 #include "glview/RenderSettings.h"
 #if not defined(USE_POLYSET_FOR_CGAL)
@@ -2036,6 +2039,9 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
     // Choose PolySetRenderer for PolySet and Polygon2d, and for Manifold since we
     // know that all geometries are convertible to PolySet.
     if (RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
+#ifdef ENABLE_OPENCSCADE
+        std::dynamic_pointer_cast<const BrepGeometry>(this->rootGeom) ||
+#endif
         std::dynamic_pointer_cast<const PolySet>(this->rootGeom) ||
         std::dynamic_pointer_cast<const Polygon2d>(this->rootGeom)) {
       this->geomRenderer = std::make_shared<PolySetRenderer>(this->rootGeom);
