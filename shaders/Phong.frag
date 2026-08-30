@@ -51,14 +51,20 @@ vec3 fresnelSchlick(float VdotH, vec3 F0)
 // stand-in for prefiltering: a rough metal must not mirror a crisp pattern.
 vec3 environmentColor(vec3 dir, float roughness)
 {
-  // Studio gradient: bright above, dark below, horizon in between. Z is up in
+  // A studio: a solid floor and a solid ceiling meeting at a hard horizon. The sharp
+  // edge is the point - a narrow transition reads as polished metal, where a wide one
+  // reads as a soft grey wash and a repeating pattern reads as flat. Z is up in
   // OpenSCAD, so the vertical axis of the reflection direction drives it.
-  float h = dir.z * 0.5 + 0.5;
+  //
+  // Roughness widens the band rather than fading the whole environment toward grey:
+  // that is what a rough surface does to a reflected edge, and it keeps the contrast a
+  // polished one needs. It widens by roughness squared, which is GGX's own alpha - the
+  // linear version was tried first and washed out a roughness 0.18 surface completely,
+  // because the band had already opened to a fifth of the sphere by then.
   vec3 ground = vec3(0.28, 0.28, 0.30);
-  vec3 horizon = vec3(0.62, 0.63, 0.66);
   vec3 sky = vec3(1.05, 1.06, 1.10);
-  vec3 env = h < 0.5 ? mix(ground, horizon, h * 2.0) : mix(horizon, sky, (h - 0.5) * 2.0);
-  return mix(env, vec3(0.55, 0.56, 0.58), roughness);
+  float width = mix(0.03, 0.9, roughness * roughness);
+  return mix(ground, sky, smoothstep(-width, width, dir.z));
 }
 
 void main(void)
