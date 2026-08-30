@@ -64,10 +64,14 @@ public:
   // compute worker transport too.
   void setFinishParams(std::map<std::string, double> params) { finishParams_ = std::move(params); }
   [[nodiscard]] const std::map<std::string, double>& finishParams() const { return finishParams_; }
-  // Twice the $fa that produced this geometry, which is the smoothing tolerance the
-  // .blend export decision settled on: facets meeting at less than that are meant to
-  // read as one curved surface. The default is 2 x the default $fa of 12, so geometry
-  // that never records one behaves as it always did.
+  // The smoothing tolerance this geometry was generated for, in degrees: facets meeting
+  // at less than this are meant to read as one curved surface rather than as distinct
+  // planes. Primitives record twice the $fa they were tessellated at. The default is
+  // twice the default $fa of 12, so geometry that records nothing behaves as before.
+  //
+  // Read by the viewport's smooth shading and by the .blend exporter's sharp-edge
+  // marking, which must use the same number or a model shades one way in OpenSCAD and
+  // another in Blender.
   void setSmoothAngle(double degrees) { smooth_angle_ = degrees; }
   [[nodiscard]] double smoothAngle() const { return smooth_angle_; }
   void setMetallic(float m) { metallic_ = m; }
