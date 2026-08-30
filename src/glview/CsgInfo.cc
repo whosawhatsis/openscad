@@ -65,6 +65,10 @@ json write_chain(const std::vector<CSGChainObject>& chain, const std::string& fi
                        {object.leaf->color.r(), object.leaf->color.g(), object.leaf->color.b(),
                         object.leaf->color.a()}},
                       {"roughness", object.leaf->roughness},
+                      // A property of the mesh rather than the leaf: it says how coarsely
+                      // this geometry was allowed to be tessellated, so the far side can
+                      // decide which of its edges were meant to read as curved.
+                      {"smoothAngle", object.leaf->polyset ? object.leaf->polyset->smoothAngle() : 0.0},
                       {"metallic", object.leaf->metallic},
                       {"label", object.leaf->label},
                       {"index", object.leaf->index},
@@ -129,6 +133,13 @@ std::vector<CSGChainObject> read_chain(const json& input,
       if (!continue_to_placement) {
         if (item.contains("convexity")) {
           imported->setConvexity(item["convexity"].get<int>());
+        }
+        // Set here rather than on the leaf: the tolerance belongs to the mesh, and the
+        // mesh is shared between every leaf that references this payload. Absent in
+        // payloads written before it was carried, where the default is what those
+        // leaves had anyway.
+        if (item.contains("smoothAngle")) {
+          imported->setSmoothAngle(item["smoothAngle"].get<double>());
         }
         geometry = geometries.emplace(path, std::shared_ptr<const PolySet>(std::move(imported))).first;
       }
