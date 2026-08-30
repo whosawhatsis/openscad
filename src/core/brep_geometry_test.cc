@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <stdexcept>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -312,6 +313,116 @@ TEST_CASE("Non-OpenCASCADE backends warn and ignore fillets", "[brep]")
 
   REQUIRE(result);
   REQUIRE_FALSE(result->isEmpty());
+}
+
+TEST_CASE("Intentional polygonal primitives remain planar B-Rep solids", "[brep]")
+{
+  ModuleInstantiation inst("primitive");
+  std::shared_ptr<AbstractNode> primitive;
+  SECTION("explicit fn cylinder")
+  {
+    auto cylinder = std::make_shared<CylinderNode>(&inst, CurveDiscretizer(6.0));
+    cylinder->r1 = cylinder->r2 = 4.0;
+    cylinder->h = 8.0;
+    primitive = cylinder;
+  }
+  SECTION("explicit fn cone")
+  {
+    auto cone = std::make_shared<CylinderNode>(&inst, CurveDiscretizer(6.0));
+    cone->r1 = 4.0;
+    cone->r2 = 2.0;
+    SECTION("frustum")
+    {
+    }
+    SECTION("upper apex")
+    {
+      cone->r2 = 0.0;
+    }
+    SECTION("lower apex")
+    {
+      cone->r1 = 0.0;
+    }
+    cone->h = 8.0;
+    primitive = cone;
+  }
+  SECTION("explicit fn sphere")
+  {
+    auto sphere = std::make_shared<SphereNode>(&inst, CurveDiscretizer(6.0));
+    sphere->r = 4.0;
+    primitive = sphere;
+  }
+  SECTION("polyhedron")
+  {
+    auto tetrahedron = std::make_shared<PolyhedronNode>(&inst);
+    tetrahedron->points = {{0, 0, 0}, {10, 0, 0}, {0, 10, 0}, {0, 0, 10}};
+    tetrahedron->faces = {{0, 1, 2}, {0, 3, 1}, {0, 2, 3}, {1, 3, 2}};
+    primitive = tetrahedron;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(primitive);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*primitive, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE(brep->surfaceCount(BrepSurfaceType::Plane) >= 4);
+  REQUIRE(brep->surfaceCount(BrepSurfaceType::Cylinder) == 0);
+  REQUIRE(brep->surfaceCount(BrepSurfaceType::Cone) == 0);
+  REQUIRE(brep->surfaceCount(BrepSurfaceType::Sphere) == 0);
+  if (const auto *cylinder = dynamic_cast<const CylinderNode *>(primitive.get())) {
+    REQUIRE(brep->surfaceCount(BrepSurfaceType::Plane) ==
+            6 + (cylinder->r1 > 0.0) + (cylinder->r2 > 0.0));
+  }
+  BrepFilletDiagnostics diagnostics;
+  const auto clipped = BrepGeometry::boolean({*brep, BrepGeometry::cube(2.0, 2.0, 2.0)},
+                                             BrepOperation::Intersection, 0.0, diagnostics);
+  REQUIRE_FALSE(clipped.isEmpty());
+  REQUIRE_FALSE(clipped.toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
+TEST_CASE("Polygon-to-B-Rep conversion rejects invalid and multi-shell inputs", "[brep]")
+{
+  PolySet mesh(3);
+  mesh.vertices = {{0, 0, 0}, {10, 0, 0}, {0, 10, 0}, {0, 0, 10}};
+  mesh.indices = {{0, 1, 2}, {0, 3, 1}, {0, 2, 3}, {1, 3, 2}};
+  SECTION("open shell")
+  {
+    mesh.indices.pop_back();
+    REQUIRE_THROWS_AS(BrepGeometry::fromPolySet(mesh), std::runtime_error);
+  }
+  SECTION("invalid index")
+  {
+    mesh.indices[0][0] = 20;
+    REQUIRE_THROWS_AS(BrepGeometry::fromPolySet(mesh), std::invalid_argument);
+  }
+  SECTION("disconnected shells")
+  {
+    for (int index = 0; index < 4; ++index) {
+      mesh.vertices.push_back(mesh.vertices[index] + Vector3d(20, 0, 0));
+      auto face = mesh.indices[index];
+      for (auto& vertex : face) vertex += 4;
+      mesh.indices.push_back(face);
+    }
+    REQUIRE_THROWS_AS(BrepGeometry::fromPolySet(mesh), std::runtime_error);
+  }
+}
+
+TEST_CASE("B-Rep evaluator reports open polyhedra without throwing", "[brep]")
+{
+  ModuleInstantiation inst("polyhedron");
+  auto open = std::make_shared<PolyhedronNode>(&inst);
+  open->points = {{0, 0, 0}, {10, 0, 0}, {0, 10, 0}};
+  open->faces = {{0, 1, 2}};
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(open);
+  GeometryEvaluator evaluator(tree);
+  std::shared_ptr<const Geometry> result;
+  CHECK_NOTHROW(result = evaluator.evaluateGeometry(*open, true));
+  RenderSettings::inst()->backend3D = previousBackend;
+  REQUIRE(result);
+  REQUIRE(result->isEmpty());
 }
 
 #endif

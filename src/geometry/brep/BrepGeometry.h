@@ -34,6 +34,7 @@ public:
   static BrepGeometry cylinder(double radius, double height);
   static BrepGeometry sphere(double radius);
   static BrepGeometry cone(double radius1, double radius2, double height);
+  static BrepGeometry fromPolySet(const PolySet& mesh);
 
   [[nodiscard]] size_t memsize() const override;
   [[nodiscard]] BoundingBox getBoundingBox() const override;

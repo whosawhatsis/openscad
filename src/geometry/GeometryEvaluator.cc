@@ -72,6 +72,20 @@ namespace {
 std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
                                                  BrepFilletDiagnostics *diagnostics = nullptr)
 {
+  const auto *sphere = dynamic_cast<const SphereNode *>(&node);
+  const auto *cylinder = dynamic_cast<const CylinderNode *>(&node);
+  if (dynamic_cast<const PolyhedronNode *>(&node) || (sphere && sphere->discretizer.isFnSpecified()) ||
+      (cylinder && cylinder->discretizer.isFnSpecified())) {
+    const auto geometry = static_cast<const LeafNode&>(node).createGeometry();
+    const auto *mesh = dynamic_cast<const PolySet *>(geometry.get());
+    if (!mesh) return {};
+    try {
+      return std::make_unique<BrepGeometry>(BrepGeometry::fromPolySet(*mesh));
+    } catch (const std::exception& error) {
+      LOG(message_group::Error, "OpenCASCADE polygon conversion failed: %1$s", error.what());
+      return std::make_unique<BrepGeometry>(nullptr);
+    }
+  }
   if (const auto *cube = dynamic_cast<const CubeNode *>(&node)) {
     if (cube->x <= 0.0 || cube->y <= 0.0 || cube->z <= 0.0) return {};
     auto result = std::make_unique<BrepGeometry>(BrepGeometry::cube(cube->x, cube->y, cube->z));
@@ -82,11 +96,11 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
     }
     return result;
   }
-  if (const auto *sphere = dynamic_cast<const SphereNode *>(&node)) {
-    if (sphere->r <= 0.0 || sphere->discretizer.isFnSpecified()) return {};
+  if (sphere) {
+    if (sphere->r <= 0.0) return {};
     return std::make_unique<BrepGeometry>(BrepGeometry::sphere(sphere->r));
   }
-  if (const auto *cylinder = dynamic_cast<const CylinderNode *>(&node)) {
+  if (cylinder) {
     if (cylinder->r1 < 0.0 || cylinder->r2 < 0.0 || (cylinder->r1 == 0.0 && cylinder->r2 == 0.0) ||
         cylinder->h <= 0.0 || cylinder->discretizer.isFnSpecified())
       return {};

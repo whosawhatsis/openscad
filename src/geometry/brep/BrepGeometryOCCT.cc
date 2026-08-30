@@ -9,6 +9,12 @@
 #include <BRepBndLib.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepLib.hxx>
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepLib_ToolTriangulatedShape.hxx>
@@ -20,6 +26,8 @@
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Poly_PolygonOnTriangulation.hxx>
+#include <Precision.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
@@ -59,6 +67,37 @@ std::shared_ptr<void> brepMakeSphere(double radius)
 std::shared_ptr<void> brepMakeCone(double radius1, double radius2, double height)
 {
   return std::make_shared<TopoDS_Shape>(BRepPrimAPI_MakeCone(radius1, radius2, height).Shape());
+}
+
+std::shared_ptr<void> brepFromMesh(const BrepMeshData& mesh)
+{
+  BRepBuilderAPI_Sewing sewing(Precision::Confusion());
+  for (const auto& triangle : mesh.triangles) {
+    BRepBuilderAPI_MakePolygon polygon;
+    for (const auto index : triangle) {
+      const auto& vertex = mesh.vertices.at(index);
+      polygon.Add(gp_Pnt(vertex[0], vertex[1], vertex[2]));
+    }
+    polygon.Close();
+    if (!polygon.IsDone()) throw std::runtime_error("B-Rep mesh contains a degenerate triangle");
+    BRepBuilderAPI_MakeFace face(polygon.Wire(), true);
+    if (!face.IsDone()) throw std::runtime_error("B-Rep mesh face construction failed");
+    sewing.Add(face.Face());
+  }
+  sewing.Perform();
+  if (sewing.NbFreeEdges() || sewing.NbMultipleEdges())
+    throw std::runtime_error("B-Rep mesh must be closed and manifold");
+  TopExp_Explorer shells(sewing.SewedShape(), TopAbs_SHELL);
+  if (!shells.More()) throw std::runtime_error("B-Rep mesh has no closed shell");
+  TopoDS_Solid solid = BRepBuilderAPI_MakeSolid(TopoDS::Shell(shells.Current())).Solid();
+  shells.Next();
+  if (shells.More()) throw std::runtime_error("B-Rep mesh currently requires a single shell");
+  if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+    throw std::runtime_error("B-Rep mesh does not form a valid solid");
+  // Merge coplanar triangles, without smoothing intentionally faceted surfaces.
+  ShapeUpgrade_UnifySameDomain unify(solid, true, true, false);
+  unify.Build();
+  return std::make_shared<TopoDS_Shape>(unify.Shape());
 }
 
 size_t brepSurfaceCount(const std::shared_ptr<void>& shape, BrepSurfaceType type)

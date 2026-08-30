@@ -2,11 +2,13 @@
 
 #include <array>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
 #include "geometry/PolySet.h"
 #include "geometry/PolySetBuilder.h"
+#include "geometry/PolySetUtils.h"
 #include "geometry/brep/BrepGeometryData.h"
 
 BrepGeometry::BrepGeometry(std::shared_ptr<void> shape) : shape_(std::move(shape))
@@ -31,6 +33,31 @@ BrepGeometry BrepGeometry::sphere(double radius)
 BrepGeometry BrepGeometry::cone(double radius1, double radius2, double height)
 {
   return BrepGeometry(brepMakeCone(radius1, radius2, height));
+}
+
+BrepGeometry BrepGeometry::fromPolySet(const PolySet& mesh)
+{
+  if (mesh.isEmpty()) return BrepGeometry(nullptr);
+  for (const auto& vertex : mesh.vertices) {
+    if (!vertex.allFinite()) throw std::invalid_argument("B-Rep mesh vertices must be finite");
+  }
+  for (const auto& face : mesh.indices) {
+    if (face.size() < 3) throw std::invalid_argument("B-Rep mesh faces require three vertices");
+    for (const auto index : face) {
+      if (index < 0 || static_cast<size_t>(index) >= mesh.vertices.size())
+        throw std::invalid_argument("B-Rep mesh face index is out of range");
+    }
+  }
+  const auto triangles = PolySetUtils::tessellate_faces(mesh);
+  BrepMeshData data;
+  for (const auto& vertex : triangles->vertices) {
+    data.vertices.push_back({vertex.x(), vertex.y(), vertex.z()});
+  }
+  for (const auto& face : triangles->indices) {
+    if (face.size() != 3) throw std::runtime_error("B-Rep mesh triangulation failed");
+    data.triangles.push_back({face[0], face[1], face[2]});
+  }
+  return BrepGeometry(brepFromMesh(data));
 }
 
 size_t BrepGeometry::memsize() const
