@@ -1,19 +1,19 @@
 // The connected channel a window and its private compute worker talk over (row 59).
 //
-// ipc_channel.h is the framing and knows nothing about transports. This is the other half: opening
-// a real endpoint, accepting one connection on it, and connecting to it by name. The name is what
-// the parent hands the child on its command line, which is why it has to be a plain string and why
-// two windows must never produce the same one.
+// io/ipc_channel.h is the framing and knows nothing about transports. This is the other half: a
+// pre-connected pair of ends, one of which the parent keeps and one of which it hands to the child
+// it spawns. The child's end is identified by a plain string -- a file descriptor number on POSIX,
+// a handle value on Windows -- which is what goes on its command line.
 //
-// The platform difference lives here and nowhere else. POSIX uses a path-based AF_UNIX socket;
-// Windows uses a named pipe through asio::windows::stream_handle, because AF_UNIX there compiles
-// (BOOST_ASIO_HAS_LOCAL_SOCKETS is defined from Boost 1.80) but fails at runtime under Asio's IOCP
-// backend with WSAEOPNOTSUPP. These tests are written against the wrapper so they do not care which
-// one is underneath.
+// There is deliberately no listener, no endpoint name and no accept(). Two reasons. It is less
+// machinery: nothing to name uniquely, nothing to clean up, and no window between spawning the
+// child and it connecting. And Asio's accept() is unusable for AF_UNIX on macOS -- it fails with
+// EINVAL while succeeding for TCP in the identical pattern, on Boost 1.74 and 1.90 alike, while a
+// raw ::accept() on Asio's own descriptor works. A pre-connected pair never goes near that path.
 //
 // The peer here is a thread rather than a child process: this is a unit test, and what needs
-// proving is that a second party can find the endpoint by name and exchange framed bytes over it.
-// Whether the peer was forked is the process layer's problem, not the channel's.
+// proving is that the far end of the pair can be adopted from its string and exchange framed bytes.
+// Whether it was forked is the process layer's problem, not the channel's.
 //
 // NOTE: Catch2 assertion state is not thread-safe, so the peer thread never uses REQUIRE or CHECK.
 // It records what happened in a plain variable and the main thread asserts on it after join().
@@ -43,67 +43,67 @@ std::string hostilePayload(std::size_t bytes)
 
 }  // namespace
 
-TEST_CASE("A worker connects to its parent's endpoint by name", "[io][IPC][IPC-Endpoint]")
+TEST_CASE("A channel pair is connected the moment it is made", "[io][IPC][IPC-Endpoint]")
 {
-  IpcListener listener;
-  REQUIRE_FALSE(listener.endpoint().empty());
+  IpcChannelPair pair;
+  REQUIRE(pair.valid());
+  REQUIRE_FALSE(pair.childArgument().empty());
 
   const std::string payload = hostilePayload(1 << 16);
-  bool workerConnected = false;
-  std::thread worker([endpoint = listener.endpoint(), &payload, &workerConnected] {
-    const auto channel = IpcChannel::connect(endpoint);
-    workerConnected = channel != nullptr;
+  bool childAdopted = false;
+  std::thread child([argument = pair.childArgument(), &payload, &childAdopted] {
+    const auto channel = ipc_channel_from_argument(argument);
+    childAdopted = channel != nullptr;
     if (channel) channel->write("leaf/0.osig", payload);
   });
 
-  const auto channel = listener.accept();
-  REQUIRE(channel);
   IpcMessage message;
-  REQUIRE(channel->read(message));
+  REQUIRE(pair.parent().read(message));
   CHECK(message.name == "leaf/0.osig");
   CHECK(message.payload == payload);
 
-  worker.join();
-  CHECK(workerConnected);
+  child.join();
+  CHECK(childAdopted);
 }
 
 TEST_CASE("The channel carries messages in both directions", "[io][IPC][IPC-Endpoint]")
 {
   // The worker sends payloads and the parent sends requests over the same connection, so this is
   // not a one-way pipe.
-  IpcListener listener;
-  bool workerEchoed = false;
-  std::thread worker([endpoint = listener.endpoint(), &workerEchoed] {
-    const auto channel = IpcChannel::connect(endpoint);
+  IpcChannelPair pair;
+  REQUIRE(pair.valid());
+
+  bool childEchoed = false;
+  std::thread child([argument = pair.childArgument(), &childEchoed] {
+    const auto channel = ipc_channel_from_argument(argument);
     if (!channel) return;
     IpcMessage request;
     if (!channel->read(request)) return;
     channel->write(request.name + ".done", request.payload);
-    workerEchoed = true;
+    childEchoed = true;
   });
 
-  const auto channel = listener.accept();
-  REQUIRE(channel);
-  channel->write("render", hostilePayload(4096));
-
+  pair.parent().write("render", hostilePayload(4096));
   IpcMessage reply;
-  REQUIRE(channel->read(reply));
+  REQUIRE(pair.parent().read(reply));
   CHECK(reply.name == "render.done");
   CHECK(reply.payload == hostilePayload(4096));
 
-  worker.join();
-  CHECK(workerEchoed);
+  child.join();
+  CHECK(childEchoed);
 }
 
-TEST_CASE("Several payloads cross one connection in order", "[io][IPC][IPC-Endpoint]")
+TEST_CASE("Several payloads cross one channel in order", "[io][IPC][IPC-Endpoint]")
 {
   // A single preview sends products.json plus one payload per distinct leaf, and products.json
   // refers to the leaves by name -- so both the order and the names have to survive.
-  IpcListener listener;
-  bool workerConnected = false;
-  std::thread worker([endpoint = listener.endpoint(), &workerConnected] {
-    const auto channel = IpcChannel::connect(endpoint);
-    workerConnected = channel != nullptr;
+  IpcChannelPair pair;
+  REQUIRE(pair.valid());
+
+  bool childAdopted = false;
+  std::thread child([argument = pair.childArgument(), &childAdopted] {
+    const auto channel = ipc_channel_from_argument(argument);
+    childAdopted = channel != nullptr;
     if (!channel) return;
     for (int i = 0; i < 8; ++i) {
       channel->write("leaf/" + std::to_string(i) + ".osig", hostilePayload(i * 1024));
@@ -111,87 +111,84 @@ TEST_CASE("Several payloads cross one connection in order", "[io][IPC][IPC-Endpo
     channel->write("products.json", "{}");
   });
 
-  const auto channel = listener.accept();
-  REQUIRE(channel);
   for (int i = 0; i < 8; ++i) {
     IpcMessage message;
-    REQUIRE(channel->read(message));
+    REQUIRE(pair.parent().read(message));
     CHECK(message.name == "leaf/" + std::to_string(i) + ".osig");
     CHECK(message.payload.size() == static_cast<std::size_t>(i) * 1024);
   }
   IpcMessage products;
-  REQUIRE(channel->read(products));
+  REQUIRE(pair.parent().read(products));
   CHECK(products.name == "products.json");
 
-  worker.join();
-  CHECK(workerConnected);
+  child.join();
+  CHECK(childAdopted);
 }
 
-TEST_CASE("Two listeners never share an endpoint name", "[io][IPC][IPC-Endpoint]")
+TEST_CASE("Two pairs are independent", "[io][IPC][IPC-Endpoint]")
 {
-  // Every window owns a private worker. Two windows colliding on one endpoint would cross their
-  // geometry, which is the kind of bug that looks like a cache problem for a week.
-  IpcListener first;
-  IpcListener second;
-  CHECK(first.endpoint() != second.endpoint());
+  // Every window owns a private worker. Two windows sharing a channel would cross their geometry,
+  // which is the kind of bug that looks like a cache problem for a week.
+  IpcChannelPair first;
+  IpcChannelPair second;
+  REQUIRE(first.valid());
+  REQUIRE(second.valid());
+  CHECK(first.childArgument() != second.childArgument());
 
-  bool workerConnected = false;
-  std::thread worker([endpoint = second.endpoint(), &workerConnected] {
-    const auto channel = IpcChannel::connect(endpoint);
-    workerConnected = channel != nullptr;
-    if (channel) channel->write("second", "");
+  bool bothAdopted = false;
+  std::thread children([a = first.childArgument(), b = second.childArgument(), &bothAdopted] {
+    const auto one = ipc_channel_from_argument(a);
+    const auto two = ipc_channel_from_argument(b);
+    bothAdopted = one && two;
+    if (!bothAdopted) return;
+    two->write("to-second", "");
+    one->write("to-first", "");
   });
 
-  const auto channel = second.accept();
-  REQUIRE(channel);
-  IpcMessage message;
-  REQUIRE(channel->read(message));
-  CHECK(message.name == "second");
+  IpcMessage onFirst;
+  IpcMessage onSecond;
+  REQUIRE(first.parent().read(onFirst));
+  REQUIRE(second.parent().read(onSecond));
+  CHECK(onFirst.name == "to-first");
+  CHECK(onSecond.name == "to-second");
 
-  worker.join();
-  CHECK(workerConnected);
+  children.join();
+  CHECK(bothAdopted);
 }
 
-TEST_CASE("Connecting to an endpoint that is not there fails", "[io][IPC][IPC-Endpoint]")
+TEST_CASE("An argument that names nothing is refused", "[io][IPC][IPC-Endpoint]")
 {
-  // A worker whose parent died between spawn and connect must not block forever holding a process
-  // open; it has to be told there is nothing to talk to.
-  CHECK(IpcChannel::connect("openscad-ipc-endpoint-that-does-not-exist") == nullptr);
-}
-
-TEST_CASE("A listener releases its endpoint when it is destroyed", "[io][IPC][IPC-Endpoint]")
-{
-  // On POSIX the endpoint is a filesystem path; leaking one per window per session would litter
-  // the temporary directory. Reconnecting after the listener is gone must fail.
-  std::string endpoint;
-  {
-    IpcListener listener;
-    endpoint = listener.endpoint();
-  }
-  CHECK(IpcChannel::connect(endpoint) == nullptr);
+  // A worker handed a descriptor its parent never opened must be told, not left blocking on a
+  // channel that will never carry anything.
+  CHECK(ipc_channel_from_argument("") == nullptr);
+  CHECK(ipc_channel_from_argument("not-a-number") == nullptr);
+  CHECK(ipc_channel_from_argument("-1") == nullptr);
 }
 
 TEST_CASE("A closed peer ends the channel rather than hanging", "[io][IPC][IPC-Endpoint]")
 {
-  // What a crashed worker looks like from the parent: the connection closes mid-conversation.
-  // read() has to report that, so a crash surfaces as a diagnostic instead of a frozen window.
-  IpcListener listener;
-  bool workerConnected = false;
-  std::thread worker([endpoint = listener.endpoint(), &workerConnected] {
-    const auto channel = IpcChannel::connect(endpoint);
-    workerConnected = channel != nullptr;
+  // What a crashed worker looks like from the parent: the far end closes mid-conversation. read()
+  // has to report that, so a crash surfaces as a diagnostic instead of a frozen window.
+  IpcChannelPair pair;
+  REQUIRE(pair.valid());
+
+  bool childAdopted = false;
+  std::thread child([argument = pair.childArgument(), &childAdopted] {
+    const auto channel = ipc_channel_from_argument(argument);
+    childAdopted = channel != nullptr;
     if (channel) channel->write("only", "one");
     // and then goes away without saying goodbye
   });
 
-  const auto channel = listener.accept();
-  REQUIRE(channel);
   IpcMessage message;
-  REQUIRE(channel->read(message));
+  REQUIRE(pair.parent().read(message));
   CHECK(message.name == "only");
 
-  worker.join();
-  CHECK(workerConnected);
+  child.join();
+  CHECK(childAdopted);
+  // The parent's own copy of the child end has to be gone as well, or the channel never reports
+  // end-of-stream: the descriptor would still be open in this process.
+  pair.releaseChildEnd();
   IpcMessage nothing;
-  CHECK_FALSE(channel->read(nothing));
+  CHECK_FALSE(pair.parent().read(nothing));
 }
