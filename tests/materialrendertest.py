@@ -111,6 +111,7 @@ bare = render(1)           # material() with no attributes
 smooth = render(2)         # roughness 0.05
 rough = render(3)          # roughness 0.9
 metal = render(4)          # metallic 1
+mirror = render(5)         # roughness 0
 
 report = [
     "material() with no attributes matches plain color(): %s" % ("yes" if bare == plain else "NO"),
@@ -123,6 +124,11 @@ report = [
     # BRDF, not merely that roughness changes something.
     "a smooth surface has a white highlight core: %s"
     % ("yes" if whitening(smooth, rough) > 150 else "NO"),
+    # Zero is a meaningful roughness - a mirror - so it must not be read as "the model
+    # set nothing". It was, because zero doubled as the not-set sentinel all the way
+    # from the node to the shader, and a mirror silently rendered as the default finish.
+    "roughness = 0 is a mirror rather than the default: %s"
+    % ("yes" if mirror != bare else "NO"),
 ]
 
 with open(reportfile, "w") as f:

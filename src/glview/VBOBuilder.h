@@ -369,7 +369,8 @@ public:
   inline ElementsMap& elementsMap() { return elements_map_; }
 
   size_t shader_attributes_index_{0};
-  float material_roughness_{0.0f};
+  // Negative means "not set"; see Geometry::shaderRoughness().
+  float material_roughness_{-1.0f};
   float material_metallic_{0.0f};
   void addShaderData();
   // Shading attributes for the vertices written from here on. They ride in the

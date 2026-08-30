@@ -58,6 +58,10 @@ public:
   }
   [[nodiscard]] bool hasRoughness() const { return hasRoughness_; }
   [[nodiscard]] float roughness() const { return roughness_; }
+  //! Roughness as the shader wants it: a negative value means the model set none, so
+  //! that an explicit roughness = 0 (a mirror) stays distinguishable from "not set".
+  //! Zero cannot be the sentinel, because zero is a meaningful roughness.
+  [[nodiscard]] float shaderRoughness() const { return hasRoughness_ ? roughness_ : -1.0f; }
   // Extra POV-Ray finish parameters, carried as a map because only the POV
   // exporter reads them so far. TODO fold these into the metadata channel that
   // materialName uses on the process-isolation branch, so they survive the

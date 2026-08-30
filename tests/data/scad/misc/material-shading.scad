@@ -10,3 +10,4 @@ else if (mode == 1) material("m", c = "red") body();                 // material
 else if (mode == 2) material("m", c = "red", roughness = 0.05) body();  // tight highlight
 else if (mode == 3) material("m", c = "red", roughness = 0.9) body();   // broad highlight
 else if (mode == 4) material("m", c = "red", metallic = 1) body();      // metal
+else if (mode == 5) material("m", c = "red", roughness = 0) body();     // mirror, not "unset"

@@ -99,7 +99,7 @@ public:
   Color4f color;
   // Carried for the renderers only - see State::materialName().
   std::string materialName;
-  float roughness{0.0f};
+  float roughness{-1.0f};
   float metallic{0.0f};
 
   const int index;
