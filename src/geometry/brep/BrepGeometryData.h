@@ -20,3 +20,5 @@ BrepMeshData brepMesh(const std::shared_ptr<void>& shape, double linearDeflectio
                       double angularDeflection);
 BrepDifferenceData brepDifference(const std::shared_ptr<void>& object, const std::shared_ptr<void>& tool,
                                   double filletRadius);
+BrepDifferenceData brepBoolean(const std::vector<std::shared_ptr<void>>& operands,
+                               BrepOperation operation, double filletRadius);

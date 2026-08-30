@@ -112,6 +112,62 @@ TEST_CASE("GeometryEvaluator routes filleted difference through B-Rep", "[brep]"
   RenderSettings::inst()->backend3D = previousBackend;
 }
 
+TEST_CASE("GeometryEvaluator composes recursive and n-ary B-Rep booleans", "[brep]")
+{
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  ModuleInstantiation unionInstantiation("union");
+  ModuleInstantiation intersectionInstantiation("intersection");
+  ModuleInstantiation differenceInstantiation("difference");
+  ModuleInstantiation cubeInstantiation("cube");
+  ModuleInstantiation transformInstantiation("translate");
+
+  const auto cube = [&](double size, double x) {
+    auto transform = std::make_shared<TransformNode>(&transformInstantiation, "translate");
+    transform->matrix.translate(Vector3d(x, 0.0, 0.0));
+    auto node = std::make_shared<CubeNode>(&cubeInstantiation);
+    node->x = node->y = node->z = size;
+    transform->children.push_back(node);
+    return transform;
+  };
+
+  auto unionNode = std::make_shared<CsgOpNode>(&unionInstantiation, OpenSCADOperator::UNION);
+  unionNode->children = {cube(10.0, 0.0), cube(10.0, 5.0)};
+  auto intersection =
+    std::make_shared<CsgOpNode>(&intersectionInstantiation, OpenSCADOperator::INTERSECTION);
+  intersection->children = {unionNode, cube(10.0, 7.0), cube(10.0, 9.0)};
+
+  Tree intersectionTree(intersection);
+  GeometryEvaluator intersectionEvaluator(intersectionTree);
+  const auto intersectionResult = intersectionEvaluator.evaluateGeometry(*intersection, true);
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(intersectionResult));
+  REQUIRE_FALSE(intersectionResult->isEmpty());
+  REQUIRE(intersectionResult->getBoundingBox().min().x() == Catch::Approx(9.0).margin(0.001));
+
+  auto difference = std::make_shared<CsgOpNode>(&differenceInstantiation, OpenSCADOperator::DIFFERENCE);
+  difference->children = {cube(20.0, 0.0), cube(4.0, 3.0), cube(4.0, 13.0)};
+  Tree differenceTree(difference);
+  GeometryEvaluator differenceEvaluator(differenceTree);
+  const auto differenceResult = differenceEvaluator.evaluateGeometry(*difference, true);
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(differenceResult));
+  REQUIRE_FALSE(differenceResult->isEmpty());
+
+  BrepFilletDiagnostics diagnostics;
+  auto shifted = BrepGeometry::cube(2.0, 2.0, 2.0);
+  Transform3d translation = Transform3d::Identity();
+  translation.translate(Vector3d(10.0, 0.0, 0.0));
+  shifted.transform(translation);
+  const auto empty = BrepGeometry::boolean({BrepGeometry::cube(2.0, 2.0, 2.0), shifted},
+                                           BrepOperation::Intersection, 0.0, diagnostics);
+  REQUIRE(empty.isEmpty());
+  REQUIRE(BrepGeometry::boolean({}, BrepOperation::Union, 0.0, diagnostics).isEmpty());
+  REQUIRE_FALSE(
+    BrepGeometry::boolean({BrepGeometry(nullptr), shifted}, BrepOperation::Union, 0.0, diagnostics)
+      .isEmpty());
+
+  RenderSettings::inst()->backend3D = previousBackend;
+}
+
 TEST_CASE("OpenCASCADE is an available 3D backend when compiled in", "[brep]")
 {
   REQUIRE(renderBackend3DFromString("opencascade") == RenderBackend3D::OpenCASCADEBackend);

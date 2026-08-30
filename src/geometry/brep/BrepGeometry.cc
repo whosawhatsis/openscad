@@ -75,6 +75,28 @@ BrepGeometry BrepGeometry::difference(const BrepGeometry& tool, double filletRad
   return BrepGeometry(std::move(result.shape));
 }
 
+BrepGeometry BrepGeometry::boolean(const std::vector<BrepGeometry>& operands, BrepOperation operation,
+                                   double filletRadius, BrepFilletDiagnostics& diagnostics)
+{
+  diagnostics = {};
+  std::vector<std::shared_ptr<void>> shapes;
+  shapes.reserve(operands.size());
+  for (const auto& operand : operands) {
+    if (operand.isEmpty()) {
+      if (operation == BrepOperation::Intersection ||
+          (operation == BrepOperation::Difference && &operand == &operands.front()))
+        return BrepGeometry(nullptr);
+      continue;
+    }
+    shapes.push_back(operand.shape_);
+  }
+  if (shapes.empty()) return BrepGeometry(nullptr);
+  if (shapes.size() == 1) return BrepGeometry(shapes.front());
+  BrepDifferenceData result = brepBoolean(shapes, operation, filletRadius);
+  diagnostics = result.diagnostics;
+  return BrepGeometry(std::move(result.shape));
+}
+
 std::unique_ptr<PolySet> BrepGeometry::toPolySet(double linearDeflection, double angularDeflection) const
 {
   const BrepMeshData mesh = toDisplayMesh(linearDeflection, angularDeflection);
@@ -92,5 +114,6 @@ std::unique_ptr<PolySet> BrepGeometry::toPolySet(double linearDeflection, double
 
 BrepMeshData BrepGeometry::toDisplayMesh(double linearDeflection, double angularDeflection) const
 {
+  if (isEmpty()) return {};
   return brepMesh(shape_, linearDeflection, angularDeflection);
 }

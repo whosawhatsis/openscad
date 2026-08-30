@@ -69,7 +69,8 @@ class Tree;
 #ifdef ENABLE_OPENCSCADE
 namespace {
 
-std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node)
+std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
+                                                 BrepFilletDiagnostics *diagnostics = nullptr)
 {
   if (const auto *cube = dynamic_cast<const CubeNode *>(&node)) {
     if (cube->x <= 0.0 || cube->y <= 0.0 || cube->z <= 0.0) return {};
@@ -95,8 +96,25 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node)
   }
   if (const auto *transform = dynamic_cast<const TransformNode *>(&node)) {
     if (transform->children.size() != 1) return {};
-    auto result = createBrepGeometry(*transform->children.front());
+    auto result = createBrepGeometry(*transform->children.front(), diagnostics);
     if (result) result->transform(transform->matrix);
+    return result;
+  }
+  if (const auto *csg = dynamic_cast<const CsgOpNode *>(&node)) {
+    std::vector<BrepGeometry> operands;
+    operands.reserve(csg->children.size());
+    for (const auto& child : csg->children) {
+      auto operand = createBrepGeometry(*child);
+      if (!operand) return {};
+      operands.push_back(std::move(*operand));
+    }
+    const auto operation = csg->type == OpenSCADOperator::UNION        ? BrepOperation::Union
+                           : csg->type == OpenSCADOperator::DIFFERENCE ? BrepOperation::Difference
+                                                                       : BrepOperation::Intersection;
+    BrepFilletDiagnostics resultDiagnostics;
+    auto result = std::make_unique<BrepGeometry>(BrepGeometry::boolean(
+      operands, operation, csg->hasFillet ? csg->filletRadius : 0.0, resultDiagnostics));
+    if (diagnostics) *diagnostics = resultDiagnostics;
     return result;
   }
   return {};
@@ -146,7 +164,16 @@ std::shared_ptr<const Geometry> GeometryEvaluator::evaluateGeometry(const Abstra
   std::shared_ptr<const Geometry> result;
 #ifdef ENABLE_OPENCSCADE
   if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
-    if (auto brep = createBrepGeometry(node)) result = std::shared_ptr<const Geometry>(std::move(brep));
+    BrepFilletDiagnostics diagnostics;
+    if (auto brep = createBrepGeometry(node, &diagnostics)) {
+      result = std::shared_ptr<const Geometry>(std::move(brep));
+      if (const auto *csg = dynamic_cast<const CsgOpNode *>(&node);
+          csg && diagnostics.achievedRadius < csg->filletRadius) {
+        LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
+            "fillet radius reduced from %1$.17g to %2$.17g", csg->filletRadius,
+            diagnostics.achievedRadius);
+      }
+    }
   }
 #endif
   if (!result) result = smartCacheGet(node, allownef);
@@ -795,18 +822,13 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
     if (!isSmartCached(node)) {
 #ifdef ENABLE_OPENCSCADE
       if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
-        if (node.type == OpenSCADOperator::DIFFERENCE && node.children.size() == 2) {
-          auto object = createBrepGeometry(*node.children[0]);
-          auto tool = createBrepGeometry(*node.children[1]);
-          if (object && tool) {
-            BrepFilletDiagnostics diagnostics;
-            geom = std::make_shared<BrepGeometry>(
-              object->difference(*tool, node.hasFillet ? node.filletRadius : 0.0, diagnostics));
-            if (diagnostics.achievedRadius < node.filletRadius) {
-              LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
-                  "fillet radius reduced from %1$.17g to %2$.17g", node.filletRadius,
-                  diagnostics.achievedRadius);
-            }
+        BrepFilletDiagnostics diagnostics;
+        if (auto brep = createBrepGeometry(node, &diagnostics)) {
+          geom = std::shared_ptr<BrepGeometry>(std::move(brep));
+          if (diagnostics.achievedRadius < node.filletRadius) {
+            LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
+                "fillet radius reduced from %1$.17g to %2$.17g", node.filletRadius,
+                diagnostics.achievedRadius);
           }
         }
         if (!geom) {

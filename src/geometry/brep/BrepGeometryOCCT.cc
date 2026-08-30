@@ -36,7 +36,7 @@ const TopoDS_Shape& shapeFrom(const std::shared_ptr<void>& shape)
 
 bool brepIsEmpty(const std::shared_ptr<void>& shape)
 {
-  return !shape || shapeFrom(shape).IsNull();
+  return !shape || shapeFrom(shape).IsNull() || !TopExp_Explorer(shapeFrom(shape), TopAbs_FACE).More();
 }
 
 std::shared_ptr<void> brepMakeCube(double x, double y, double z)
@@ -153,6 +153,21 @@ BrepDifferenceData brepDifference(const std::shared_ptr<void>& object, const std
                                   double filletRadius)
 {
   BrepBooleanResult result = applyBrepDifference({shapeFrom(object), shapeFrom(tool)}, filletRadius);
+  return {std::make_shared<TopoDS_Shape>(std::move(result.shape)),
+          {result.filletedEdgeCount, result.achievedFilletRadius, result.clearanceRadiusUpperBound}};
+}
+
+BrepDifferenceData brepBoolean(const std::vector<std::shared_ptr<void>>& operands,
+                               BrepOperation operation, double filletRadius)
+{
+  std::vector<TopoDS_Shape> shapes;
+  shapes.reserve(operands.size());
+  for (const auto& operand : operands) shapes.push_back(shapeFrom(operand));
+  const auto booleanOperation = operation == BrepOperation::Union ? BrepBooleanOperation::Union
+                                : operation == BrepOperation::Difference
+                                  ? BrepBooleanOperation::Difference
+                                  : BrepBooleanOperation::Intersection;
+  BrepBooleanResult result = applyBrepBoolean(shapes, booleanOperation, filletRadius);
   return {std::make_shared<TopoDS_Shape>(std::move(result.shape)),
           {result.filletedEdgeCount, result.achievedFilletRadius, result.clearanceRadiusUpperBound}};
 }

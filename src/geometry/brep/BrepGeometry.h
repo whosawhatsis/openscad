@@ -9,6 +9,7 @@
 class PolySet;
 
 enum class BrepSurfaceType { Plane, Cylinder, Cone, Sphere, Torus, Bezier, BSpline, Other };
+enum class BrepOperation { Union, Difference, Intersection };
 
 struct BrepFilletDiagnostics {
   size_t filletedEdgeCount{0};
@@ -44,6 +45,9 @@ public:
   void transform(const Transform3d& matrix) override;
   [[nodiscard]] BrepGeometry difference(const BrepGeometry& tool, double filletRadius,
                                         BrepFilletDiagnostics& diagnostics) const;
+  [[nodiscard]] static BrepGeometry boolean(const std::vector<BrepGeometry>& operands,
+                                            BrepOperation operation, double filletRadius,
+                                            BrepFilletDiagnostics& diagnostics);
 
   [[nodiscard]] std::unique_ptr<PolySet> toPolySet(double linearDeflection,
                                                    double angularDeflection) const;
