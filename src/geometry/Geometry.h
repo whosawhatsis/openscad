@@ -87,6 +87,12 @@ public:
   // compute worker transport too.
   void setFinishParams(std::map<std::string, double> params) { finishParams_ = std::move(params); }
   [[nodiscard]] const std::map<std::string, double>& finishParams() const { return finishParams_; }
+  // Twice the $fa that produced this geometry, which is the smoothing tolerance the
+  // .blend export decision settled on: facets meeting at less than that are meant to
+  // read as one curved surface. The default is 2 x the default $fa of 12, so geometry
+  // that never records one behaves as it always did.
+  void setSmoothAngle(double degrees) { smooth_angle_ = degrees; }
+  [[nodiscard]] double smoothAngle() const { return smooth_angle_; }
   void setMetallic(float m) { metallic_ = m; }
   [[nodiscard]] float metallic() const { return metallic_; }
   void setBodyBoundary(bool boundary = true) { bodyBoundary_ = boundary; }
@@ -135,6 +141,7 @@ protected:
   float roughness_{0.0f};
   bool hasRoughness_{false};
   float metallic_{0.0f};
+  double smooth_angle_{24.0};
   std::map<std::string, double> finishParams_;
   bool bodyBoundary_{false};
   Color4f bodyColor_;

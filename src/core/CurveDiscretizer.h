@@ -91,6 +91,10 @@ public:
 
   friend std::ostream& operator<<(std::ostream& stream, const CurveDiscretizer& f);
   bool isFnSpecifiedAndOdd() const { return static_cast<int>(fn) & 1; }
+  //! The minimum fragment angle in degrees, for consumers that need to know how
+  //! coarsely a curve was allowed to be tessellated rather than how many segments
+  //! it actually got - smooth shading picks its tolerance from this.
+  [[nodiscard]] double minimumFragmentAngle() const { return fa; }
 
 private:
   CurveDiscretizer(double fn, double fs, double fa) : fn(fn), fs(fs), fa(fa) {}

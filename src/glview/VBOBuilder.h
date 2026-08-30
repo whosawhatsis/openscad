@@ -383,11 +383,18 @@ public:
 
   void add_barycentric_attribute(size_t active_point_index, size_t primitive_index, size_t shape_size,
                                  bool outlines);
+  //! `smooth_normals`, when given, supplies one shading normal per corner in place of
+  //! the flat one this derives from the winding. Only their direction is taken; the
+  //! sign is reconciled against the flat normal, so callers need not know which way
+  //! VBOBuilder faces or whether the transform mirrored.
   void create_triangle(const Color4f& color, const Vector3d& p0, const Vector3d& p1, const Vector3d& p2,
                        size_t primitive_index, size_t shape_size, bool outlines, bool enable_barycentric,
-                       bool mirror);
+                       bool mirror, const Vector3d *smooth_normals = nullptr);
+  //! `smooth_angle` in degrees enables angle-based smooth shading; 0 keeps one flat
+  //! normal per facet, which is the behaviour every caller had before it existed.
   void create_surface(const PolySet& ps, const Transform3d& m, const Color4f& default_color,
-                      bool enable_barycentric, bool force_default_color = false);
+                      bool enable_barycentric, bool force_default_color = false,
+                      double smooth_angle = 0.0);
   void create_edges(const Polygon2d& polygon, const Transform3d& m, const Color4f& color);
   void create_polygons(const PolySet& ps, const Transform3d& m, const Color4f& color);
 
