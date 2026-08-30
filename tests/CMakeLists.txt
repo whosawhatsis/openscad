@@ -870,7 +870,7 @@ endif()
 # the center of rotation, so its distance from the eye - and therefore its shade -
 # is the same from every angle.
 set(DEPTHMAP_SYMMETRY ${TEST_SCAD_DIR}/misc/depthmap-orbit-symmetry.scad)
-set(DEPTHMAP_OFFCENTRE ${TEST_SCAD_DIR}/misc/depthmap-offcenter.scad)
+set(DEPTHMAP_OFFCENTER ${TEST_SCAD_DIR}/misc/depthmap-offcenter.scad)
 # Both compare against the SAME expected image on purpose: the scene has four-fold
 # symmetry about Z, so a 90 degree orbit maps it onto itself and the two renders
 # must be the same image rather than merely similar ones.
@@ -880,8 +880,8 @@ add_cmdline_test(export-depthmap-orbit-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_SY
 # The asymmetric case, which is what actually distinguishes a range centered on the
 # rotation center from one centered on the bounding box. Separate expectations,
 # because the distant cube really does move between these two angles.
-add_cmdline_test(export-depthmap-offcenter-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,25,300)
-add_cmdline_test(export-depthmap-offcenter-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTRE} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,20,0,140,300)
+add_cmdline_test(export-depthmap-offcenter-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTER} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,25,300)
+add_cmdline_test(export-depthmap-offcenter-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTER} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,20,0,140,300)
 
 # Depth map range stability. Depth is normalized across the model's bounding
 # sphere centered on the viewport's center of rotation (capped_sphere_range() in
