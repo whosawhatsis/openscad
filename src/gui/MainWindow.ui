@@ -342,6 +342,7 @@
     <addaction name="viewActionPreview"/>
     <addaction name="viewActionThrownTogether"/>
     <addaction name="separator"/>
+    <addaction name="viewActionCadShaded"/>
     <addaction name="viewActionShowEdges"/>
     <addaction name="viewActionShowAxes"/>
     <addaction name="viewActionShowScaleProportional"/>
@@ -1160,6 +1161,20 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+1</string>
+   </property>
+  </action>
+  <action name="viewActionCadShaded">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>CAD Shaded</string>
+   </property>
+   <property name="toolTip">
+    <string>Smoothly shade exact B-Rep surfaces</string>
    </property>
   </action>
   <action name="viewActionShowAxes">

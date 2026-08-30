@@ -22,6 +22,7 @@ public:
   void prepare(const ShaderUtils::ShaderInfo *shaderinfo) override;
   void draw(bool showedges, const ShaderUtils::ShaderInfo *shaderinfo) const override;
   void setColorScheme(const ColorScheme& cs) override;
+  void setBrepSmoothShading(bool enabled) { brep_smooth_shading_ = enabled; }
   BoundingBox getBoundingBox() const override;
 
   /**
@@ -57,5 +58,6 @@ private:
   std::vector<VertexStateContainer> brep_surface_vertex_state_containers_;
   std::vector<VertexStateContainer> brep_edge_vertex_state_containers_;
 #endif
+  bool brep_smooth_shading_{true};
   std::vector<VertexStateContainer> polygon_vertex_state_containers_;
 };

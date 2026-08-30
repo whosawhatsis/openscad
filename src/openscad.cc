@@ -479,7 +479,8 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     std::shared_ptr<const Geometry> root_geom;
     if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG) &&
         (cmd.viewOptions.renderer == RenderType::OPENCSG ||
-         cmd.viewOptions.renderer == RenderType::THROWNTOGETHER)) {
+         cmd.viewOptions.renderer == RenderType::THROWNTOGETHER) &&
+        !useBackendPreview(RenderSettings::inst()->backend3D)) {
       // OpenCSG or throwntogether png -> just render a preview
       glview = prepare_preview(tree, cmd.viewOptions, camera);
       if (!glview) return 1;
@@ -523,7 +524,8 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
         cmd.is_stdout, filename_str,
         [&success, &root_geom, &cmd, &camera, &glview](std::ostream& stream) {
           if (cmd.viewOptions.renderer == RenderType::BACKEND_SPECIFIC ||
-              cmd.viewOptions.renderer == RenderType::GEOMETRY) {
+              cmd.viewOptions.renderer == RenderType::GEOMETRY ||
+              useBackendPreview(RenderSettings::inst()->backend3D)) {
             success = export_png(root_geom, cmd.viewOptions, camera, stream);
           } else {
             success = export_png(*glview, stream);

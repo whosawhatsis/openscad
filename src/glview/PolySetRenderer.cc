@@ -310,6 +310,9 @@ void PolySetRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shader
 {
   drawPolySets(showedges, shaderinfo);
 #ifdef ENABLE_OPENCSCADE
+  GLint previousShadeModel;
+  GL_CHECKD(glGetIntegerv(GL_SHADE_MODEL, &previousShadeModel));
+  GL_CHECKD(glShadeModel(brep_smooth_shading_ ? GL_SMOOTH : GL_FLAT));
   for (const auto& container : brep_surface_vertex_state_containers_) {
     for (const auto& vertexState : container.states()) vertexState->draw();
   }
@@ -318,6 +321,7 @@ void PolySetRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shader
       for (const auto& vertexState : container.states()) vertexState->draw();
     }
   }
+  GL_CHECKD(glShadeModel(previousShadeModel));
 #endif
   drawPolygons();
 }

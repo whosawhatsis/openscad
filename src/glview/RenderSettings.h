@@ -14,6 +14,10 @@ inline constexpr RenderBackend3D DEFAULT_RENDERING_BACKEND_3D = RenderBackend3D:
 
 std::string renderBackend3DToString(RenderBackend3D backend);
 std::optional<RenderBackend3D> renderBackend3DFromString(std::string backend);
+constexpr bool useBackendPreview(RenderBackend3D backend)
+{
+  return backend == RenderBackend3D::OpenCASCADEBackend;
+}
 
 class RenderSettings
 {

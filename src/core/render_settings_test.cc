@@ -10,3 +10,10 @@ TEST_CASE("OpenCASCADE backend availability follows the build", "[render-setting
   REQUIRE_FALSE(renderBackend3DFromString("opencascade"));
 #endif
 }
+
+TEST_CASE("OpenCASCADE uses exact backend evaluation for preview", "[render-settings]")
+{
+  REQUIRE(useBackendPreview(RenderBackend3D::OpenCASCADEBackend));
+  REQUIRE_FALSE(useBackendPreview(RenderBackend3D::CGALBackend));
+  REQUIRE_FALSE(useBackendPreview(RenderBackend3D::ManifoldBackend));
+}

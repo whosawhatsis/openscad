@@ -512,6 +512,11 @@ void MainWindow::loadViewSettings()
   if (settings.value("view/showEdges").toBool()) {
     viewActionShowEdges->setChecked(true);
   }
+#ifdef ENABLE_OPENCSCADE
+  viewActionCadShaded->setChecked(settings.value("view/cadShaded", true).toBool());
+#else
+  viewActionCadShaded->setVisible(false);
+#endif
   if (settings.value("view/showAxes", true).toBool()) {
     viewActionShowAxes->setChecked(true);
   }
@@ -1051,6 +1056,23 @@ void MainWindow::compileCSG()
     connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
 
     GeometryEvaluator geomevaluator(this->tree);
+#ifdef ENABLE_OPENCSCADE
+    if (useBackendPreview(RenderSettings::inst()->backend3D)) {
+      if (!isClosing) progress_report_prep(this->rootNode, report_func, this);
+      else return;
+      auto geometry = geomevaluator.evaluateGeometry(*rootNode, true);
+      if (!geometry) geometry = std::make_shared<PolySet>(3);
+      auto renderer = std::make_shared<PolySetRenderer>(geometry);
+      renderer->setBrepSmoothShading(viewActionCadShaded->isChecked());
+      this->previewRenderer = std::move(renderer);
+      progress_report_fin();
+      updateStatusBar(nullptr);
+      LOG("Compile and exact B-Rep preview finished.");
+      renderStatistic.printRenderingTime();
+      this->processEvents();
+      return;
+    }
+#endif
 #ifdef ENABLE_OPENCSG
     CSGTreeEvaluator csgrenderer(this->tree, &geomevaluator);
 #endif
@@ -2049,6 +2071,11 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
       this->geomRenderer = std::make_shared<CGALRenderer>(this->rootGeom);
     }
 #endif
+#ifdef ENABLE_OPENCSCADE
+    if (auto renderer = std::dynamic_pointer_cast<PolySetRenderer>(this->geomRenderer)) {
+      renderer->setBrepSmoothShading(viewActionCadShaded->isChecked());
+    }
+#endif
 
     // Go to CGAL view mode
     viewModeRender();
@@ -2715,7 +2742,7 @@ void MainWindow::on_viewActionPreview_triggered()
 void MainWindow::viewModePreview()
 {
   previewModeGroup->setEnabled(true);
-  if (this->qglview->hasOpenCSGSupport()) {
+  if (useBackendPreview(RenderSettings::inst()->backend3D) || this->qglview->hasOpenCSGSupport()) {
     viewActionPreview->setChecked(true);
     this->qglview->setRenderer(this->previewRenderer ? this->previewRenderer
                                                      : this->thrownTogetherRenderer);
@@ -2757,6 +2784,19 @@ void MainWindow::on_viewActionShowEdges_toggled(bool checked)
   QSettingsCached settings;
   settings.setValue("view/showEdges", checked);
   this->qglview->setShowEdges(checked);
+  this->qglview->update();
+}
+
+void MainWindow::on_viewActionCadShaded_toggled(bool checked)
+{
+  QSettingsCached settings;
+  settings.setValue("view/cadShaded", checked);
+  if (auto renderer = std::dynamic_pointer_cast<PolySetRenderer>(this->previewRenderer)) {
+    renderer->setBrepSmoothShading(checked);
+  }
+  if (auto renderer = std::dynamic_pointer_cast<PolySetRenderer>(this->geomRenderer)) {
+    renderer->setBrepSmoothShading(checked);
+  }
   this->qglview->update();
 }
 
