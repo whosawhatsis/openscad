@@ -40,6 +40,27 @@ vec3 fresnelSchlick(float VdotH, vec3 F0)
   return F0 + (1.0 - F0) * pow(clamp(1.0 - VdotH, 0.0, 1.0), 5.0);
 }
 
+
+// A stand-in environment for the reflection term. There is no scene to reflect, so a
+// mirror would otherwise show a flat wash: its lobe is narrow enough to miss both
+// point lights entirely. Sampled along the reflection direction in world space, so
+// the reflection slides across a surface as the model is orbited, which is the cue
+// that reads as "reflective" rather than "pale".
+//
+// Roughness blurs it by fading toward the environment's mean, which is the cheapest
+// stand-in for prefiltering: a rough metal must not mirror a crisp pattern.
+vec3 environmentColor(vec3 dir, float roughness)
+{
+  // Studio gradient: bright above, dark below, horizon in between. Z is up in
+  // OpenSCAD, so the vertical axis of the reflection direction drives it.
+  float h = dir.z * 0.5 + 0.5;
+  vec3 ground = vec3(0.28, 0.28, 0.30);
+  vec3 horizon = vec3(0.62, 0.63, 0.66);
+  vec3 sky = vec3(1.05, 1.06, 1.10);
+  vec3 env = h < 0.5 ? mix(ground, horizon, h * 2.0) : mix(horizon, sky, (h - 0.5) * 2.0);
+  return mix(env, vec3(0.55, 0.56, 0.58), roughness);
+}
+
 void main(void)
 {
   vec3 normal = normalize(vNormal);
@@ -61,17 +82,19 @@ void main(void)
   vec3 F0 = mix(vec3(0.04), vColor.rgb, metallic);
   float NdotV = max(dot(normal, viewDirection), 1e-4);
 
-  // Ambient stands in for an environment this viewport does not have. Without
-  // the specular half a metal has no diffuse response and nothing to reflect,
-  // so it renders near black. A uniform environment of radiance L integrates to
-  // roughly L * F0, which is the whole approximation here.
-  //
-  // The environment is deliberately brighter than the ambient diffuse. It is the
-  // only thing a metal reflects, and because a dielectric's F0 is 0.04 raising it
-  // brightens metals while leaving everything else alone: measured over a scene of
-  // plain colored solids, it is set well above the ambient diffuse for that reason.
+  // A metal has no diffuse response, so the environment is the only thing it
+  // reflects and the only thing that can describe its shape.
   vec3 diffuse = albedo * 0.21;
-  vec3 specular = F0 * 0.25;
+  vec3 reflection = reflect(-viewDirection, normal);
+  vec3 reflectionWorld = normalize(mat3(gl_ModelViewMatrixInverse) * reflection);
+  vec3 environment = environmentColor(reflectionWorld, roughness);
+  // F0 rather than a Fresnel term. Schlick against the view direction is the more
+  // correct ambient reflectance, but it approaches 1 at grazing angles for *every*
+  // material, so it lifts plain dielectrics along with the metals it is there for -
+  // measured, it put a scene of plain solids 16% above the shader this replaced.
+  // F0 keeps a dielectric's contribution at its 0.04 and lets the environment be
+  // bright enough for metals to read.
+  vec3 specular = F0 * environment;
 
   for (int i = 0; i < 2; ++i) {
     vec3 lightDirection = normalize(gl_LightSource[i].position.xyz);
