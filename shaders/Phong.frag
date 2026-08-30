@@ -51,17 +51,21 @@ vec3 fresnelSchlick(float VdotH, vec3 F0)
 // stand-in for prefiltering: a rough metal must not mirror a crisp pattern.
 vec3 environmentColor(vec3 dir, float roughness)
 {
-  // A studio: a solid floor and ceiling meeting at a hard horizon, plus a full-length
-  // ramp over the top of it. Z is up in OpenSCAD, so the vertical axis of the
-  // reflection direction drives both.
+  // A studio, with all of its contrast collected at the horizon. Z is up in OpenSCAD,
+  // so the vertical axis of the reflection direction drives it.
   //
-  // The two do different jobs, which is why both are here. The hard horizon is the
-  // edge that reads as polished metal - a soft ramp alone reads as a grey wash, and a
-  // repeating pattern reads as flat because it carries no orientation. The ramp under
-  // it is what keeps the parts of a surface facing away from the horizon from going
-  // black, and it is what gives the shape depth. Rendered as a matrix over both dials:
-  // without the ramp an upright body is a black slab, and past about 0.6 of it the
-  // horizon washes out and the metal cue goes with it.
+  // The hard horizon is the edge that reads as polished metal: a soft ramp alone reads
+  // as a grey wash, and a repeating pattern reads as flat because it carries no
+  // orientation. Away from the horizon both halves fall back toward mid - the floor
+  // lightens going down, the ceiling darkens going up - which is what a real studio
+  // does and what puts a bright band around a curved surface with falloff either side.
+  // That band is what gives a sphere its roundness back.
+  //
+  // 0.6 rather than more: rendered as a matrix, a full reversal darkens the crown of a
+  // part enough to hide the face a CAD user is usually looking at, and a monotonic ramp
+  // in the other direction leaves a sphere flat-topped. Non-metals are untouched by
+  // this dial either way, measured at 77.0 mean against 76.9 for the monotonic version,
+  // because a dielectric's F0 is 0.04.
   //
   // Roughness widens the band rather than fading the environment toward grey - that is
   // what a rough surface does to a reflected edge, and it keeps the contrast a polished
@@ -71,8 +75,7 @@ vec3 environmentColor(vec3 dir, float roughness)
   vec3 sky = vec3(1.05, 1.06, 1.10);
   float width = mix(0.02, 0.9, roughness * roughness);
   float horizon = smoothstep(-width, width, dir.z);
-  float ramp = dir.z * 0.5 + 0.5;
-  return mix(ground, sky, mix(horizon, ramp, 0.6));
+  return mix(ground, sky, mix(horizon, 0.5, 0.6 * abs(dir.z)));
 }
 
 void main(void)
