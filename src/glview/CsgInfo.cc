@@ -140,9 +140,10 @@ std::vector<CSGChainObject> read_chain(const json& input,
       }
     }
     const auto& color = item["color"];
-    // Absent in payloads written before these were carried; zero is "not set" for
-    // both, which is what the shader's default branch tests for.
-    const float roughness = item.contains("roughness") ? item["roughness"].get<float>() : 0.0f;
+    // Absent in payloads written before these were carried. Roughness's "not set" is
+    // negative, not zero: zero means a mirror, so defaulting to it would render every
+    // old payload as one.
+    const float roughness = item.contains("roughness") ? item["roughness"].get<float>() : -1.0f;
     const float metallic = item.contains("metallic") ? item["metallic"].get<float>() : 0.0f;
     // The material *name* is still not carried, so a leaf rebuilt here cannot resolve
     // a Preferences default color. Separate defect from the shading attributes above.
