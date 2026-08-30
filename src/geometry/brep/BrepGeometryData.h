@@ -12,6 +12,8 @@ struct BrepDifferenceData {
 bool brepIsEmpty(const std::shared_ptr<void>& shape);
 std::shared_ptr<void> brepMakeCube(double x, double y, double z);
 std::shared_ptr<void> brepMakeCylinder(double radius, double height);
+std::shared_ptr<void> brepMakeSphere(double radius);
+std::shared_ptr<void> brepMakeCone(double radius1, double radius2, double height);
 size_t brepSurfaceCount(const std::shared_ptr<void>& shape, BrepSurfaceType type);
 std::array<double, 6> brepBounds(const std::shared_ptr<void>& shape);
 std::shared_ptr<void> brepTransform(const std::shared_ptr<void>& shape,

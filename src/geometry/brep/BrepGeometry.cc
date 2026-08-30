@@ -23,6 +23,16 @@ BrepGeometry BrepGeometry::cylinder(double radius, double height)
   return BrepGeometry(brepMakeCylinder(radius, height));
 }
 
+BrepGeometry BrepGeometry::sphere(double radius)
+{
+  return BrepGeometry(brepMakeSphere(radius));
+}
+
+BrepGeometry BrepGeometry::cone(double radius1, double radius2, double height)
+{
+  return BrepGeometry(brepMakeCone(radius1, radius2, height));
+}
+
 size_t BrepGeometry::memsize() const
 {
   return sizeof(*this);

@@ -14,6 +14,8 @@
 #include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCone.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
@@ -47,6 +49,16 @@ std::shared_ptr<void> brepMakeCube(double x, double y, double z)
 std::shared_ptr<void> brepMakeCylinder(double radius, double height)
 {
   return std::make_shared<TopoDS_Shape>(BRepPrimAPI_MakeCylinder(radius, height).Shape());
+}
+
+std::shared_ptr<void> brepMakeSphere(double radius)
+{
+  return std::make_shared<TopoDS_Shape>(BRepPrimAPI_MakeSphere(radius).Shape());
+}
+
+std::shared_ptr<void> brepMakeCone(double radius1, double radius2, double height)
+{
+  return std::make_shared<TopoDS_Shape>(BRepPrimAPI_MakeCone(radius1, radius2, height).Shape());
 }
 
 size_t brepSurfaceCount(const std::shared_ptr<void>& shape, BrepSurfaceType type)

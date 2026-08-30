@@ -32,6 +32,8 @@ public:
   explicit BrepGeometry(std::shared_ptr<void> shape);
   static BrepGeometry cube(double x, double y, double z);
   static BrepGeometry cylinder(double radius, double height);
+  static BrepGeometry sphere(double radius);
+  static BrepGeometry cone(double radius1, double radius2, double height);
 
   [[nodiscard]] size_t memsize() const override;
   [[nodiscard]] BoundingBox getBoundingBox() const override;

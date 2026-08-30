@@ -235,6 +235,57 @@ TEST_CASE("OpenCASCADE backend retains a primitive as B-Rep", "[brep]")
   REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(result));
 }
 
+TEST_CASE("OpenCASCADE retains analytic spheres and tapered cylinders", "[brep]")
+{
+  ModuleInstantiation inst("primitive");
+  const auto discretizer = [] {
+    return CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; });
+  };
+  std::shared_ptr<AbstractNode> primitive;
+  BrepSurfaceType surface;
+  SECTION("sphere")
+  {
+    auto sphere = std::make_shared<SphereNode>(&inst, discretizer());
+    sphere->r = 4.0;
+    primitive = sphere;
+    surface = BrepSurfaceType::Sphere;
+  }
+  SECTION("tapered cylinder")
+  {
+    auto cone = std::make_shared<CylinderNode>(&inst, discretizer());
+    cone->r1 = 4.0;
+    cone->r2 = 2.0;
+    SECTION("frustum")
+    {
+    }
+    SECTION("upper apex")
+    {
+      cone->r2 = 0.0;
+    }
+    SECTION("lower apex")
+    {
+      cone->r1 = 0.0;
+    }
+    cone->h = 8.0;
+    cone->center = true;
+    primitive = cone;
+    surface = BrepSurfaceType::Cone;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(primitive);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*primitive, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE(brep->surfaceCount(surface) == 1);
+  REQUIRE(brep->numFacets() == 0);
+  REQUIRE(brep->getBoundingBox().min().z() == Catch::Approx(-4.0).margin(0.001));
+  REQUIRE(brep->getBoundingBox().max().z() == Catch::Approx(4.0).margin(0.001));
+  REQUIRE_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
 TEST_CASE("Non-OpenCASCADE backends warn and ignore fillets", "[brep]")
 {
   ModuleInstantiation differenceInstantiation("difference");

@@ -82,11 +82,17 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
     }
     return result;
   }
+  if (const auto *sphere = dynamic_cast<const SphereNode *>(&node)) {
+    if (sphere->r <= 0.0 || sphere->discretizer.isFnSpecified()) return {};
+    return std::make_unique<BrepGeometry>(BrepGeometry::sphere(sphere->r));
+  }
   if (const auto *cylinder = dynamic_cast<const CylinderNode *>(&node)) {
-    if (cylinder->r1 <= 0.0 || cylinder->r1 != cylinder->r2 || cylinder->h <= 0.0 ||
-        cylinder->discretizer.isFnSpecified())
+    if (cylinder->r1 < 0.0 || cylinder->r2 < 0.0 || (cylinder->r1 == 0.0 && cylinder->r2 == 0.0) ||
+        cylinder->h <= 0.0 || cylinder->discretizer.isFnSpecified())
       return {};
-    auto result = std::make_unique<BrepGeometry>(BrepGeometry::cylinder(cylinder->r1, cylinder->h));
+    auto result = std::make_unique<BrepGeometry>(
+      cylinder->r1 == cylinder->r2 ? BrepGeometry::cylinder(cylinder->r1, cylinder->h)
+                                   : BrepGeometry::cone(cylinder->r1, cylinder->r2, cylinder->h));
     if (cylinder->center) {
       Transform3d transform = Transform3d::Identity();
       transform.translate(Vector3d(0.0, 0.0, -cylinder->h / 2.0));
@@ -140,6 +146,9 @@ std::pair<double, double> brepFacetSettings(const AbstractNode& node, const Brep
   } else if (const auto *cylinder = dynamic_cast<const CylinderNode *>(&node)) {
     fa = cylinder->discretizer.getFa();
     fs = cylinder->discretizer.getFs();
+  } else if (const auto *sphere = dynamic_cast<const SphereNode *>(&node)) {
+    fa = sphere->discretizer.getFa();
+    fs = sphere->discretizer.getFs();
   } else if (const auto *transform = dynamic_cast<const TransformNode *>(&node);
              transform && transform->children.size() == 1) {
     return brepFacetSettings(*transform->children.front(), geometry);
