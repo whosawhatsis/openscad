@@ -51,20 +51,28 @@ vec3 fresnelSchlick(float VdotH, vec3 F0)
 // stand-in for prefiltering: a rough metal must not mirror a crisp pattern.
 vec3 environmentColor(vec3 dir, float roughness)
 {
-  // A studio: a solid floor and a solid ceiling meeting at a hard horizon. The sharp
-  // edge is the point - a narrow transition reads as polished metal, where a wide one
-  // reads as a soft grey wash and a repeating pattern reads as flat. Z is up in
-  // OpenSCAD, so the vertical axis of the reflection direction drives it.
+  // A studio: a solid floor and ceiling meeting at a hard horizon, plus a full-length
+  // ramp over the top of it. Z is up in OpenSCAD, so the vertical axis of the
+  // reflection direction drives both.
   //
-  // Roughness widens the band rather than fading the whole environment toward grey:
-  // that is what a rough surface does to a reflected edge, and it keeps the contrast a
-  // polished one needs. It widens by roughness squared, which is GGX's own alpha - the
-  // linear version was tried first and washed out a roughness 0.18 surface completely,
-  // because the band had already opened to a fifth of the sphere by then.
+  // The two do different jobs, which is why both are here. The hard horizon is the
+  // edge that reads as polished metal - a soft ramp alone reads as a grey wash, and a
+  // repeating pattern reads as flat because it carries no orientation. The ramp under
+  // it is what keeps the parts of a surface facing away from the horizon from going
+  // black, and it is what gives the shape depth. Rendered as a matrix over both dials:
+  // without the ramp an upright body is a black slab, and past about 0.6 of it the
+  // horizon washes out and the metal cue goes with it.
+  //
+  // Roughness widens the band rather than fading the environment toward grey - that is
+  // what a rough surface does to a reflected edge, and it keeps the contrast a polished
+  // one needs. It widens by roughness squared, GGX's own alpha; linear was tried and
+  // washed out a roughness 0.18 surface completely.
   vec3 ground = vec3(0.28, 0.28, 0.30);
   vec3 sky = vec3(1.05, 1.06, 1.10);
-  float width = mix(0.03, 0.9, roughness * roughness);
-  return mix(ground, sky, smoothstep(-width, width, dir.z));
+  float width = mix(0.02, 0.9, roughness * roughness);
+  float horizon = smoothstep(-width, width, dir.z);
+  float ramp = dir.z * 0.5 + 0.5;
+  return mix(ground, sky, mix(horizon, ramp, 0.6));
 }
 
 void main(void)
