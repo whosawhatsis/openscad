@@ -98,6 +98,7 @@ public:
     hasRoughness_ = other.hasRoughness_;
     metallic_ = other.metallic_;
     finishParams_ = other.finishParams_;
+    smooth_angle_ = other.smooth_angle_;
     bodyBoundary_ = other.bodyBoundary_;
     bodyColor_ = other.bodyColor_;
     hasBodyColor_ = other.hasBodyColor_;
