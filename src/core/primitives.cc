@@ -131,6 +131,11 @@ std::unique_ptr<const Geometry> CubeNode::createGeometry() const
     {2, 0, 4, 6},  // left
   };
 
+  // A cube has no curvature, so it contributes no smoothing tolerance. Leaving it at
+  // the default would poison the maximum taken across a boolean's children: every
+  // model containing a cube would fall back to the default tolerance no matter how
+  // finely its curved parts were tessellated.
+  ps->setSmoothAngle(0.0);
   return ps;
 }
 
@@ -418,6 +423,8 @@ std::unique_ptr<const Geometry> PolyhedronNode::createGeometry() const
     }
   }
   p->setTriangular(is_triangular);
+  // Author-supplied faces, with no tessellation tolerance of their own; see cube().
+  p->setSmoothAngle(0.0);
   return p;
 }
 
