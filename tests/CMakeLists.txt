@@ -1137,6 +1137,7 @@ add_cmdline_test(export-stl-sanitytest  SCRIPT ${STLEXPORTSANITYTEST_PY} SUFFIX 
 add_cmdline_test(export-multi-stl       EXPERIMENTAL SCRIPT ${MULTISTLEXPORTTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/multi-stl-bodies.scad ARGS ${OPENSCAD_EXE_ARG} --enable=predictible-output --enable=multi-material --export-format asciistl --render)
 add_cmdline_test(material-shading       EXPERIMENTAL SCRIPT ${MATERIALRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 add_cmdline_test(smooth-shading         EXPERIMENTAL SCRIPT ${SMOOTHRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/smooth-shading.scad ARGS ${OPENSCAD_EXE_ARG} --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
+add_cmdline_test(smooth-shading-boolean EXPERIMENTAL SCRIPT ${SMOOTHRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/smooth-shading-boolean.scad ARGS ${OPENSCAD_EXE_ARG} --render --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 
 # Export/import color support
 add_cmdline_test(offcolorpngtest EXPERIMENTAL SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX png FILES ${COLOR_3D_TEST_FILES} EXPECTEDDIR render-manifold ARGS ${OPENSCAD_EXE_ARG} --format=OFF --backend=manifold --render)

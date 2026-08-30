@@ -82,7 +82,15 @@ std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
   glview->setTransparentBackground(options["transparent"]);
-  if (options["depth"]) glview->setAnalysisMode(AnalysisMode::Depth);
+  // The same decision the preview path makes. This branch handled only depth, so every
+  // other analysis mode was silently dropped whenever the rendered geometry was being
+  // exported - --view=shaded with --render produced an ordinary default-shaded image.
+  AnalysisMode mode = AnalysisMode::Default;
+  if (options["shaded"]) mode = AnalysisMode::Shaded;
+  else if (options["depth-metric"]) mode = AnalysisMode::DepthMetric;
+  else if (options["depth-metric10um"]) mode = AnalysisMode::DepthMetricFine;
+  else if (options["depth"]) mode = AnalysisMode::Depth;
+  glview->setAnalysisMode(mode);
   glview->setDepthOptions(depthOptions);
   glview->paintGL();
   return glview;
