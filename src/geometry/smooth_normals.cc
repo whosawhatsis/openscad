@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <map>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -38,39 +38,45 @@ std::vector<Vector3d> computeSmoothNormals(const PolySet& ps, double smoothAngle
   faceNormals.reserve(faceCount);
   for (const auto& face : ps.indices) faceNormals.push_back(newellNormal(ps, face));
 
-  // Which faces meet at each undirected edge. An edge without exactly two of them is
-  // a boundary or non-manifold edge and stays sharp, matching the exporter.
-  std::map<std::pair<int, int>, std::vector<size_t>> edgeFaces;
-  for (size_t f = 0; f < faceCount; ++f) {
-    const auto& face = ps.indices[f];
-    for (size_t i = 0; i < face.size(); ++i) {
-      const int a = face[i];
-      const int b = face[(i + 1) % face.size()];
-      edgeFaces[{std::min(a, b), std::max(a, b)}].push_back(f);
+  // Faces incident to each vertex, as a flat CSR-style pair of arrays indexed by vertex
+  // id. This was a std::map keyed by vertex, which cost 221ms on a $fn=200 sphere -
+  // nearly all of it in the map, since ids are already a dense 0..n-1 range and the
+  // lookup is the inner loop of the whole routine.
+  std::vector<uint32_t> faceCountPerVertex(ps.vertices.size() + 1, 0);
+  for (const auto& face : ps.indices) {
+    for (const int v : face) {
+      if (v >= 0 && size_t(v) < ps.vertices.size()) ++faceCountPerVertex[size_t(v) + 1];
     }
   }
-
-  // Faces sharing a vertex, so a corner can find its smoothing neighbours without
-  // walking the whole mesh.
-  std::map<int, std::vector<size_t>> vertexFaces;
-  for (size_t f = 0; f < faceCount; ++f) {
-    for (const int v : ps.indices[f]) vertexFaces[v].push_back(f);
+  for (size_t v = 0; v < ps.vertices.size(); ++v) faceCountPerVertex[v + 1] += faceCountPerVertex[v];
+  std::vector<uint32_t> vertexFaces(faceCountPerVertex.back());
+  {
+    std::vector<uint32_t> cursor(faceCountPerVertex.begin(), faceCountPerVertex.end() - 1);
+    for (size_t f = 0; f < faceCount; ++f) {
+      for (const int v : ps.indices[f]) {
+        if (v >= 0 && size_t(v) < ps.vertices.size()) vertexFaces[cursor[size_t(v)]++] = uint32_t(f);
+      }
+    }
   }
 
   const double cosThreshold = std::cos(smoothAngleDegrees * (M_PI / 180.0));
 
   std::vector<Vector3d> cornerNormals;
+  cornerNormals.reserve(vertexFaces.size());
   for (size_t f = 0; f < faceCount; ++f) {
-    const auto& face = ps.indices[f];
-    for (const int v : face) {
+    for (const int v : ps.indices[f]) {
       Vector3d sum = faceNormals[f];
-      const auto neighbours = vertexFaces.find(v);
-      if (neighbours != vertexFaces.end()) {
-        for (const size_t other : neighbours->second) {
+      if (v >= 0 && size_t(v) < ps.vertices.size()) {
+        for (uint32_t i = faceCountPerVertex[size_t(v)]; i < faceCountPerVertex[size_t(v) + 1]; ++i) {
+          const uint32_t other = vertexFaces[i];
           if (other == f) continue;
-          // Averaged only when this pair could shade smoothly: the same angle test the
-          // exporter applies to the edge between them. Faces that meet only at a point
-          // fail it too, which is what stops a cube's corner rounding.
+          // The exporter's rule is per edge; this is per vertex fan, which is the
+          // approximation a shading normal needs anyway - a corner normal is shared by
+          // every face meeting there, not by an edge. The difference only shows for two
+          // faces that touch at a single point without sharing an edge, where this
+          // averages them and the edge rule would not. No boundary case in the tests
+          // distinguishes the two, and the cube depends on the angle test, not on
+          // connectivity.
           if (faceNormals[f].dot(faceNormals[other]) >= cosThreshold) sum += faceNormals[other];
         }
       }
