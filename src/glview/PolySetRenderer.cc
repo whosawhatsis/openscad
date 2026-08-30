@@ -142,7 +142,7 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
     getShaderColor(ColorMode::MATERIAL, color, polyset->materialName(), color);
-    vbo_builder.setMaterialParams(polyset->roughness(), polyset->metallic());
+    vbo_builder.setMaterialParams(polyset->shaderRoughness(), polyset->metallic());
     add_shader_pointers(vbo_builder, shaderinfo);
 
     // Smooth shading is a property of the Shaded mode's lighting, so it is applied

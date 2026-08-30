@@ -3,3 +3,4 @@ roughness changes the render: yes
 roughness differs from the default: yes
 metallic changes the render: yes
 a smooth surface has a white highlight core: yes
+roughness = 0 is a mirror rather than the default: yes

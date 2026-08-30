@@ -239,7 +239,7 @@ std::shared_ptr<CSGNode> CSGTreeEvaluator::evaluateCSGNodeFromGeometry(
   if (this->leafCallback && ps) this->leafCallback(ps);
 
   std::shared_ptr<CSGNode> t(new CSGLeaf(ps, state.matrix(), state.color(), state.materialName(),
-                                         state.hasRoughness() ? state.roughness() : 0.0f,
+                                         state.hasRoughness() ? state.roughness() : -1.0f,
                                          state.metallic(), STR(node.name(), node.index()),
                                          node.index()));
   if (modinst->isHighlight() || state.isHighlight()) t->setHighlight(true);

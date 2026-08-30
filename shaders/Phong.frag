@@ -44,10 +44,15 @@ void main(void)
 {
   vec3 normal = normalize(vNormal);
   vec3 viewDirection = normalize(-vEyePosition);
-  // An unbound attribute reads 0, which is not a meaningful roughness. The
-  // fallback is the value whose old Blinn-Phong exponent was 64, so a render
-  // that supplies no material keeps the look it had before.
-  float roughness = clamp(vMaterial.x > 0.0 ? vMaterial.x : 0.417, 0.04, 1.0);
+  // Negative means the model set no roughness - an unbound attribute reads 0, and 0
+  // is a meaningful roughness (a mirror), so it cannot be the sentinel. The fallback
+  // is the value whose old Blinn-Phong exponent was 64, so a render that supplies no
+  // material keeps the look it had before.
+  //
+  // The floor is not 0: alpha = roughness^2 divides the GGX denominator, so a true
+  // zero is a division by zero and a delta lobe no raster sampling can resolve. 0.02
+  // is the shiniest value that stays numerically stable.
+  float roughness = clamp(vMaterial.x >= 0.0 ? vMaterial.x : 0.417, 0.02, 1.0);
   float metallic = clamp(vMaterial.y, 0.0, 1.0);
   float a = roughness * roughness;
   // A metal has no diffuse response and reflects its own color; a dielectric
@@ -64,9 +69,9 @@ void main(void)
   // The environment is deliberately brighter than the ambient diffuse. It is the
   // only thing a metal reflects, and because a dielectric's F0 is 0.04 raising it
   // brightens metals while leaving everything else alone: measured over a scene of
-  // plain colored solids, taking it from 0.21 to 0.5 moved mean luminance by 2%.
+  // plain colored solids, it is set well above the ambient diffuse for that reason.
   vec3 diffuse = albedo * 0.21;
-  vec3 specular = F0 * 0.5;
+  vec3 specular = F0 * 0.25;
 
   for (int i = 0; i < 2; ++i) {
     vec3 lightDirection = normalize(gl_LightSource[i].position.xyz);
