@@ -110,6 +110,7 @@ Containers& containers()
     add_item(*containers, {FileFormat::POV, "pov", "pov", "POV"});
     add_item(*containers, {FileFormat::USDA, "usda", "usda", "USDA"});
     add_item(*containers, {FileFormat::USDZ, "usdz", "usdz", "USDZ"});
+    add_item(*containers, {FileFormat::BLEND, "blend", "blend", "Blender"});
 
     // Alias
     containers->identifierToInfo["stl"] = containers->identifierToInfo["asciistl"];
@@ -187,7 +188,8 @@ bool isAnimation(FileFormat format)
 
 bool canAnimate(FileFormat format)
 {
-  return isAnimation(format) || format == FileFormat::USDA || format == FileFormat::USDZ;
+  return isAnimation(format) || format == FileFormat::USDA || format == FileFormat::USDZ ||
+         format == FileFormat::BLEND;
 }
 
 bool is3D(FileFormat format)
@@ -198,7 +200,8 @@ bool is3D(FileFormat format)
          format == FileFormat::NEF3 || format == FileFormat::POV ||
          // Internal worker transport: 3D for dispatch purposes, but absent from the identifier
          // table, so all3D() (which iterates that table) still never offers it to a user.
-         format == FileFormat::IPC_GEOMETRY || format == FileFormat::USDA || format == FileFormat::USDZ;
+         format == FileFormat::IPC_GEOMETRY || format == FileFormat::USDA ||
+         format == FileFormat::USDZ || format == FileFormat::BLEND;
 }
 
 bool is2D(FileFormat format)
@@ -261,6 +264,13 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
   case FileFormat::IPC_GEOMETRY: export_ipc_geometry(root_geom, output); break;
   case FileFormat::USDA:         export_usda(root_geom, output, exportInfo); break;
   case FileFormat::USDZ:         export_usdz(root_geom, output, exportInfo); break;
+  case FileFormat::BLEND:        {
+    UsdAnimationFrame frame;
+    frame.geometry = root_geom;
+    if (exportInfo.camera) frame.camera = *exportInfo.camera;
+    export_blend_animation({std::move(frame)}, 30, output, {.defaultColor = exportInfo.defaultColor});
+    break;
+  }
 #ifdef ENABLE_CGAL
   case FileFormat::NEFDBG: export_nefdbg(root_geom, output); break;
   case FileFormat::NEF3:   export_nef3(root_geom, output); break;

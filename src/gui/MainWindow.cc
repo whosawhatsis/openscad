@@ -2240,19 +2240,25 @@ UsdAnimationFrame MainWindow::usdAnimationFrame()
   GeometryEvaluator evaluator(this->tree);
   std::vector<UsdAnimationObject> objects;
   if (!collectUsdAnimationObjects(this->csgRoot, objects)) objects.clear();
-  return {evaluator.evaluateGeometry(*this->rootNode, true), std::move(objects)};
+  return {evaluator.evaluateGeometry(*this->rootNode, true), std::move(objects), qglview->cam};
 }
 
 bool MainWindow::writeUsdAnimation(const QString& path, const std::vector<UsdAnimationFrame>& frames,
-                                   unsigned fps)
+                                   unsigned fps, size_t blendRemeshSamples)
 {
   const auto suffix = outputSuffix(path.toStdString());
-  const auto format = suffix == "usdz" ? FileFormat::USDZ : FileFormat::USDA;
+  const auto format = suffix == "blend"  ? FileFormat::BLEND
+                      : suffix == "usdz" ? FileFormat::USDZ
+                                         : FileFormat::USDA;
   const auto exportInfo = createExportInfo(format, fileformat::info(format),
                                            activeEditor->filepath.toStdString(), &qglview->cam, {});
   std::ofstream stream(std::filesystem::u8path(path.toStdString()), std::ios::out | std::ios::binary);
   if (!stream) return false;
-  if (format == FileFormat::USDZ) export_usdz_animation(frames, fps, stream, exportInfo);
+  if (format == FileFormat::BLEND) {
+    export_blend_animation(
+      frames, fps, stream,
+      {.remeshSamples = blendRemeshSamples, .defaultColor = exportInfo.defaultColor});
+  } else if (format == FileFormat::USDZ) export_usdz_animation(frames, fps, stream, exportInfo);
   else export_usda_animation(frames, fps, stream, exportInfo);
   return stream.good();
 }

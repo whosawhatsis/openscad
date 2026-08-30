@@ -9,6 +9,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,7 +39,18 @@ struct UsdAnimationObject {
 struct UsdAnimationFrame {
   std::shared_ptr<const Geometry> geometry;
   std::vector<UsdAnimationObject> objects;
+  std::optional<Camera> camera;
 };
+
+struct BlendExportOptions {
+  size_t remeshSamples = 256;
+  Color4f defaultColor{0.8f, 0.8f, 0.8f, 1.0f};
+  // Unset means "ask the geometry", which records twice the $fa it was tessellated at.
+  // Set only to override that for the whole export.
+  std::optional<double> smoothAngle;
+};
+
+bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames);
 
 enum class FileFormat {
   ASCII_STL,
@@ -74,7 +86,8 @@ enum class FileFormat {
   // as an --export-format and cannot end up in a user's file.
   IPC_GEOMETRY,
   USDA,
-  USDZ
+  USDZ,
+  BLEND
 };
 
 struct FileFormatInfo {
@@ -394,6 +407,8 @@ void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigne
                            std::ostream& output, const ExportInfo& exportInfo);
 void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo);
+void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                            std::ostream& output, const BlendExportOptions& options = {});
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_nefdbg(const std::shared_ptr<const Geometry>& geom, std::ostream& output);

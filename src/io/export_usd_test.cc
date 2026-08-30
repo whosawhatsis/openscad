@@ -393,6 +393,9 @@ TEST_CASE("USD formats are animatable but do not require --animate", "[export][u
   REQUIRE(fileformat::canAnimate(FileFormat::GIF));
 }
 
+// Gated: the feature cannot be enabled in a non-experimental build, where
+// Feature::is_enabled() always returns false.
+#ifdef ENABLE_EXPERIMENTAL
 TEST_CASE("USDA export honors predictible-output", "[export][usd]")
 {
   // Every other mesh exporter (STL, OBJ, OFF, WRL, POV, 3MF) sorts its PolySet when this
@@ -409,6 +412,7 @@ TEST_CASE("USDA export honors predictible-output", "[export][usd]")
   // Sorted export must emit the lowest vertex first, whatever order it arrived in.
   REQUIRE(sorted.find("point3f[] points = [(0, 0, 0),") != std::string::npos);
 }
+#endif
 
 TEST_CASE("USDA export carries the body's surface parameters", "[export][usd]")
 {
