@@ -42,6 +42,16 @@ public:
   [[nodiscard]] unsigned int getConvexity() const { return convexity; }
   void setConvexity(int c) { this->convexity = c; }
   virtual void setColor(const Color4f& c) {}
+  // The smoothing tolerance this geometry was generated for, in degrees: facets meeting
+  // at less than this are meant to read as one curved surface rather than as distinct
+  // planes. Primitives record twice the $fa they were tessellated at. The default is
+  // twice the default $fa of 12, so geometry that records nothing behaves as before.
+  //
+  // Read by the viewport's smooth shading and by the .blend exporter's sharp-edge
+  // marking, which must use the same number or a model shades one way in OpenSCAD and
+  // another in Blender.
+  void setSmoothAngle(double degrees) { smooth_angle_ = degrees; }
+  [[nodiscard]] double smoothAngle() const { return smooth_angle_; }
 
   virtual void transform(const Transform3d& /*mat*/) { assert(!"transform not implemented!"); }
   virtual void resize(const Vector3d& /*newsize*/, const Eigen::Matrix<bool, 3, 1>& /*autosize*/)
@@ -52,6 +62,7 @@ public:
   virtual void accept(GeometryVisitor& visitor) const = 0;
 
 protected:
+  double smooth_angle_{24.0};
   int convexity{1};
 };
 

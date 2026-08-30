@@ -219,6 +219,10 @@ std::unique_ptr<const Geometry> SphereNode::createGeometry() const
     polyset->indices.back().push_back(num_rings * num_fragments - i - 1);
   }
 
+  // Twice $fa: facets meeting at less than the angle they were generated at are meant
+  // to read as one curved surface. Deliberately $fa and not the actual angular step -
+  // a coarse $fn=6 cylinder has 60 degree facets and is meant to look faceted.
+  polyset->setSmoothAngle(2.0 * discretizer.minimumFragmentAngle());
   return polyset;
 }
 
@@ -304,6 +308,10 @@ std::unique_ptr<const Geometry> CylinderNode::createGeometry() const
     }
   }
 
+  // Twice $fa: facets meeting at less than the angle they were generated at are meant
+  // to read as one curved surface. Deliberately $fa and not the actual angular step -
+  // a coarse $fn=6 cylinder has 60 degree facets and is meant to look faceted.
+  polyset->setSmoothAngle(2.0 * discretizer.minimumFragmentAngle());
   return polyset;
 }
 
