@@ -522,16 +522,16 @@ void GeometryEvaluator::addToParent(const State& state, const AbstractNode& node
       attributedGeom = std::move(copy);
     }
   }
-}
-this->visitedchildren.erase(node.index());
-if (state.parent()) {
-  this->visitedchildren[state.parent()->index()].push_back(
-    std::make_pair(node.shared_from_this(), attributedGeom));
-} else {
-  // Root node
-  this->root = attributedGeom;
-  assert(this->visitedchildren.empty());
-}
+
+  this->visitedchildren.erase(node.index());
+  if (state.parent()) {
+    this->visitedchildren[state.parent()->index()].push_back(
+      std::make_pair(node.shared_from_this(), attributedGeom));
+  } else {
+    // Root node
+    this->root = attributedGeom;
+    assert(this->visitedchildren.empty());
+  }
 }
 
 Response GeometryEvaluator::visit(State& state, const ColorNode& node)
