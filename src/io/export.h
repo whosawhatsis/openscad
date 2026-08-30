@@ -42,7 +42,9 @@ struct UsdAnimationFrame {
 struct BlendExportOptions {
   size_t remeshSamples = 256;
   Color4f defaultColor{0.8f, 0.8f, 0.8f, 1.0f};
-  double smoothAngle = 24.0;
+  // Unset means "ask the geometry", which records twice the $fa it was tessellated at.
+  // Set only to override that for the whole export.
+  std::optional<double> smoothAngle;
 };
 
 bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames);

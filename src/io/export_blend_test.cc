@@ -216,3 +216,30 @@ TEST_CASE("BLEND export computes sharp edges from smooth angle threshold", "[exp
 
   REQUIRE(outputSharp.str() != outputSmooth.str());
 }
+
+TEST_CASE("BLEND export takes the smooth angle from the geometry", "[export][blend]")
+{
+  PlatformUtils::registerApplicationPath(
+    fs::path(__FILE__).parent_path().parent_path().parent_path().string());
+
+  // Same mesh twice, differing only in the angle it records. The two faces meet at
+  // 90 degrees, so a tolerance either side of that decides whether the edge is sharp.
+  const auto build = [](double smoothAngle) {
+    auto mesh = std::make_shared<PolySet>(3);
+    mesh->vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    mesh->indices = {{0, 1, 2}, {0, 3, 1}};
+    mesh->setSmoothAngle(smoothAngle);
+    return mesh;
+  };
+
+  std::ostringstream sharp;
+  export_blend_animation({{.geometry = build(24.0)}}, 24, sharp, BlendExportOptions{});
+
+  std::ostringstream smooth;
+  export_blend_animation({{.geometry = build(120.0)}}, 24, smooth, BlendExportOptions{});
+
+  // Without this, both runs use the hardcoded 24 degree default and the geometry's own
+  // angle - the $fa it was tessellated at - is ignored, so a model shades one way in
+  // the viewport and another in Blender.
+  REQUIRE(sharp.str() != smooth.str());
+}

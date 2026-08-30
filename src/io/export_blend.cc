@@ -266,7 +266,8 @@ struct Block {
 class BlendScene
 {
 public:
-  BlendScene(const fs::path& templatePath, const Color4f& defaultColor, double smoothAngle = 24.0)
+  BlendScene(const fs::path& templatePath, const Color4f& defaultColor,
+             std::optional<double> smoothAngle = std::nullopt)
     : defaultColor_(defaultColor), smoothAngle_(smoothAngle)
   {
     std::ifstream input(templatePath, std::ios::binary);
@@ -915,7 +916,11 @@ private:
       faceNormals.push_back(normal);
     }
 
-    const double cosThreshold = std::cos(smoothAngle_ * (M_PI / 180.0));
+    // The geometry's own angle unless the export overrides it. This is the same number
+    // the viewport smooths by, which is the point: an edge that reads as sharp in
+    // OpenSCAD must read as sharp in Blender.
+    const double smoothAngle = smoothAngle_.value_or(geometry ? geometry->smoothAngle() : 24.0);
+    const double cosThreshold = std::cos(smoothAngle * (M_PI / 180.0));
     std::vector<int8_t> sharpEdges(edges.size(), 0);
     for (size_t e = 0; e < edges.size(); ++e) {
       const auto& fList = edgeFaces[e];
@@ -1020,7 +1025,9 @@ private:
   std::unordered_map<uint64_t, size_t> indexByAddress_;
   std::map<std::tuple<float, float, float, float>, uint64_t> materials_;
   Color4f defaultColor_;
-  double smoothAngle_ = 24.0;
+  // Unset: each mesh uses the angle its own geometry recorded, so a model with a
+  // coarse $fa and one with a fine $fa in the same export each get their own.
+  std::optional<double> smoothAngle_;
   std::unique_ptr<Dna> dna_;
   uint64_t nextGeneratedAddress_ = 1;
 };
