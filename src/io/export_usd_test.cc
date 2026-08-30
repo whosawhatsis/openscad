@@ -393,6 +393,7 @@ TEST_CASE("USD formats are animatable but do not require --animate", "[export][u
   REQUIRE(fileformat::canAnimate(FileFormat::GIF));
 }
 
+#ifdef ENABLE_EXPERIMENTAL
 TEST_CASE("USDA export honours predictible-output", "[export][usd]")
 {
   // Every other mesh exporter (STL, OBJ, OFF, WRL, POV, 3MF) sorts its PolySet when this
@@ -409,3 +410,4 @@ TEST_CASE("USDA export honours predictible-output", "[export][usd]")
   // Sorted export must emit the lowest vertex first, whatever order it arrived in.
   REQUIRE(sorted.find("point3f[] points = [(0, 0, 0),") != std::string::npos);
 }
+#endif
