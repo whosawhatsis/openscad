@@ -40,7 +40,8 @@ public:
     const std::vector<std::vector<std::vector<std::array<double, 2>>>>& contours, double height);
   // Each pole is {x, y, weight}; rational quadratics represent exact conic arcs.
   static BrepGeometry rationalPrism(
-    const std::vector<std::vector<std::vector<std::array<double, 3>>>>& contours, double height);
+    const std::vector<std::vector<std::vector<std::array<double, 3>>>>& contours, double height,
+    bool evenOdd = false);
   [[nodiscard]] BrepGeometry offset2d(double delta, bool round, double height,
                                       bool chamfer = false) const;
   [[nodiscard]] BrepGeometry cutProjection(double height) const;

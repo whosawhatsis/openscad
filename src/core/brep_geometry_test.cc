@@ -745,6 +745,7 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
   imported->center = false;
   bool unsupported = false;
   bool faceted = false;
+  bool checkFill = false, hole = true;
   size_t curvedFaces = 2;
   SECTION("absolute controls")
   {
@@ -796,6 +797,32 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     imported->id = "ring";
     curvedFaces = 8;
   }
+  SECTION("inline even-odd fill overrides presentation attribute")
+  {
+    imported->id = "evenodd";
+    curvedFaces = 8;
+    checkFill = true;
+  }
+  SECTION("inherited even-odd fill")
+  {
+    imported->id = "inherited";
+    curvedFaces = 8;
+    checkFill = true;
+  }
+  SECTION("child nonzero overrides inherited even-odd")
+  {
+    imported->id = "nonzero";
+    curvedFaces = 4;
+    checkFill = true;
+    hole = false;
+  }
+  SECTION("even-odd is per shape not across separate shapes")
+  {
+    imported->id = "group-overlap";
+    curvedFaces = 4;
+    checkFill = true;
+    hole = false;
+  }
   SECTION("explicit circle facets")
   {
     imported->id = "circle";
@@ -829,13 +856,14 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     CHECK(brep->surfaceCount(BrepSurfaceType::Plane) == 8);
     return;
   }
-  if (imported->id.get() == "ring") {
+  if (imported->id.get() == "ring" || checkFill) {
     auto probe = BrepGeometry::cube(0.1, 0.1, 0.1);
     Transform3d placement = Transform3d::Identity();
     placement.translate(Vector3d(7, 16, 1));
     probe.transform(placement);
     BrepFilletDiagnostics diagnostics;
-    CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
+    CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty() ==
+          hole);
   }
   if (imported->id.get() == "circle") {
     const auto occupied = [&](double offset) {

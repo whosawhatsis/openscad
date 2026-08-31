@@ -82,17 +82,8 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
         imported && imported->type == ImportType::DXF) {
       const DxfData data(imported->discretizer, imported->filename, imported->layer.value_or(""),
                          imported->origin_x, imported->origin_y, imported->scale, true);
-      BrepGeometry result(nullptr);
-      BrepFilletDiagnostics unused;
-      for (const auto& contour : data.curveContours()) {
-        const auto region = BrepGeometry::rationalPrism({contour}, extrusionHeight);
-        // DXF polygon sanitization uses even-odd fill, independent of contour direction.
-        const auto outside =
-          BrepGeometry::boolean({result, region}, BrepOperation::Difference, 0, unused);
-        const auto inside =
-          BrepGeometry::boolean({region, result}, BrepOperation::Difference, 0, unused);
-        result = BrepGeometry::boolean({outside, inside}, BrepOperation::Union, 0, unused);
-      }
+      // DXF polygon sanitization uses even-odd fill, independent of contour direction.
+      auto result = BrepGeometry::rationalPrism(data.curveContours(), extrusionHeight, true);
       if (imported->center && !result.isEmpty()) {
         const Vector3d center = result.getBoundingBox().center();
         auto placement = Transform3d::Identity();
@@ -103,12 +94,13 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
     }
     if (const auto *imported = dynamic_cast<const ImportNode *>(&node);
         imported && imported->type == ImportType::SVG) {
-      std::vector<SvgBezierContours> curves;
+      std::vector<SvgProfile> curves;
       import_svg(imported->discretizer, imported->filename, imported->id, imported->layer, imported->dpi,
                  false, imported->modinst->location(), &curves);
       std::vector<BrepGeometry> shapes;
-      for (const auto& contours : curves)
-        shapes.push_back(BrepGeometry::rationalPrism(contours, extrusionHeight));
+      for (const auto& profile : curves)
+        shapes.push_back(
+          BrepGeometry::rationalPrism(profile.contours, extrusionHeight, profile.evenOdd));
       BrepFilletDiagnostics unused;
       auto result = BrepGeometry::boolean(shapes, BrepOperation::Union, 0, unused);
       if (imported->center && !result.isEmpty()) {

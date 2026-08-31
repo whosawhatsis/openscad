@@ -101,11 +101,12 @@ void shape::set_attrs(attr_map_t& attrs, void *context)
   this->stroke_linecap = attrs["stroke-linecap"];
   this->stroke_linejoin = attrs["stroke-linejoin"];
   this->style = attrs["style"];
-  for (const auto& name : {"stroke", "fill", "fill-rule"}) {
+  fill_rule = get_style("fill-rule");
+  if (fill_rule.empty()) fill_rule = attrs["fill-rule"];
+  for (const auto& name : {"stroke", "fill"}) {
     const auto value = get_style(name).empty() ? attrs[name] : get_style(name);
     if ((std::string(name) == "stroke" && !value.empty() && value != "none") ||
-        (std::string(name) == "fill" && value == "none") ||
-        (std::string(name) == "fill-rule" && value == "evenodd"))
+        (std::string(name) == "fill" && value == "none"))
       native_style_valid = false;
   }
 
@@ -292,7 +293,7 @@ const bezier_contours_t& shape::get_bezier_contours() const
 {
   for (const shape *s = this; s; s = s->get_parent())
     if (!s->native_style_valid)
-      throw std::runtime_error("Native SVG strokes and even-odd fills are not supported yet");
+      throw std::runtime_error("Native SVG strokes and unfilled paths are not supported yet");
   if (!native_curves_valid)
     throw std::runtime_error("Native SVG import requires a supported closed profile");
   return bezier_contours;
@@ -321,6 +322,15 @@ void shape::offset_path(path_list_t& path_list, path_t& path, double stroke_widt
     }
     path_list.back().push_back(Eigen::Vector3d(p[0].x / scale, p[0].y / scale, 0));
   }
+}
+
+bool shape::uses_even_odd_fill() const
+{
+  for (const shape *s = this; s; s = s->get_parent()) {
+    if (s->fill_rule == "evenodd") return true;
+    if (s->fill_rule == "nonzero") return false;
+  }
+  return false;
 }
 
 void shape::draw_ellipse(path_t& path, double x, double y, double rx, double ry, void *context)

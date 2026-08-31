@@ -89,6 +89,7 @@ protected:
   bezier_contours_t bezier_contours;
   bool native_curves_valid{false};
   bool native_style_valid{true};
+  std::string fill_rule;
   std::string transform;
   std::string stroke_width;
   std::string stroke_linecap;
@@ -135,6 +136,7 @@ public:
 
   [[nodiscard]] virtual const path_list_t& get_path_list() const { return path_list; }
   [[nodiscard]] const bezier_contours_t& get_bezier_contours() const;
+  [[nodiscard]] bool uses_even_odd_fill() const;
 
   [[nodiscard]] virtual bool is_excluded() const;
   [[nodiscard]] virtual bool is_container() const { return false; }

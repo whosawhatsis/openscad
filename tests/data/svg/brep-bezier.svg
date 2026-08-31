@@ -11,6 +11,15 @@
     <polygon id="polygon" points="0,0 4,0 4,2 0,2"/>
     <path id="zeroarc" d="M0 0 A0 2 0 0 1 4 0 L4 2 L0 2 Z"/>
     <path id="ring" d="M0 0 A2 2 0 1 0 4 0 A2 2 0 1 0 0 0 Z M1 0 A1 1 0 1 1 3 0 A1 1 0 1 1 1 0 Z"/>
+    <path id="evenodd" fill-rule="nonzero" style="fill-rule:evenodd" d="M0 0 A2 2 0 1 0 4 0 A2 2 0 1 0 0 0 Z M1 0 A1 1 0 1 0 3 0 A1 1 0 1 0 1 0 Z"/>
+    <g fill-rule="evenodd">
+      <path id="inherited" d="M0 0 A2 2 0 1 0 4 0 A2 2 0 1 0 0 0 Z M1 0 A1 1 0 1 0 3 0 A1 1 0 1 0 1 0 Z"/>
+      <path id="nonzero" fill-rule="nonzero" d="M0 0 A2 2 0 1 0 4 0 A2 2 0 1 0 0 0 Z M1 0 A1 1 0 1 0 3 0 A1 1 0 1 0 1 0 Z"/>
+    </g>
+    <g id="group-overlap" fill-rule="evenodd">
+      <circle cx="2" cy="0" r="2"/>
+      <circle cx="2" cy="0" r="2"/>
+    </g>
   </g>
   <rect id="excluded" x="15" y="15" width="2" height="2"/>
 </svg>

@@ -725,7 +725,8 @@ std::shared_ptr<void> brepMinkowski(const std::vector<std::shared_ptr<void>>& op
 
 template <size_t N>
 static std::shared_ptr<void> bezierPrismImpl(
-  const std::vector<std::vector<std::vector<std::array<double, N>>>>& contours, double height)
+  const std::vector<std::vector<std::vector<std::array<double, N>>>>& contours, double height,
+  bool evenOdd = false)
 {
   try {
     std::vector<std::pair<std::shared_ptr<void>, int>> regions;
@@ -799,14 +800,15 @@ static std::shared_ptr<void> bezierPrismImpl(
         throw std::runtime_error("Font outline does not form a valid prism");
       std::shared_ptr<void> remaining = std::make_shared<TopoDS_Shape>(solid);
       const auto contourShape = remaining;
-      const int sign = signedArea >= 0 ? 1 : -1;
+      const int sign = evenOdd || signedArea >= 0 ? 1 : -1;
       std::vector<std::pair<std::shared_ptr<void>, int>> next;
       for (const auto& [region, winding] : regions) {
         auto outside = brepBoolean({region, contourShape}, BrepOperation::Difference, 0).shape;
         if (!brepIsEmpty(outside)) next.emplace_back(outside, winding);
-        if (winding + sign != 0) {
+        const int nextWinding = evenOdd ? (winding + 1) % 2 : winding + sign;
+        if (nextWinding != 0) {
           auto overlap = brepBoolean({region, contourShape}, BrepOperation::Intersection, 0).shape;
-          if (!brepIsEmpty(overlap)) next.emplace_back(overlap, winding + sign);
+          if (!brepIsEmpty(overlap)) next.emplace_back(overlap, nextWinding);
         }
         remaining = brepBoolean({remaining, region}, BrepOperation::Difference, 0).shape;
       }
@@ -828,9 +830,10 @@ std::shared_ptr<void> brepBezierPrism(
 }
 
 std::shared_ptr<void> brepRationalPrism(
-  const std::vector<std::vector<std::vector<std::array<double, 3>>>>& contours, double height)
+  const std::vector<std::vector<std::vector<std::array<double, 3>>>>& contours, double height,
+  bool evenOdd)
 {
-  return bezierPrismImpl(contours, height);
+  return bezierPrismImpl(contours, height, evenOdd);
 }
 
 std::shared_ptr<void> brepShadowProjection(const std::shared_ptr<void>& shape, double height)

@@ -22,8 +22,9 @@ is not implemented yet.
   circles, ellipses, polygons, and plain/rounded rectangles. Conics use exact
   rational curves, including after SVG transforms. ID/layer selection, page
   scaling, and centering are retained. Explicit `$fn` makes imported circles
-  polygonal. Native import currently requires closed, nonzero-winding filled
-  profiles without strokes.
+  polygonal. Native import supports nonzero and even-odd fill rules, including
+  inherited rules and local overrides. Fill rules apply within each shape;
+  separate shapes are unioned. Profiles must be closed and filled without strokes.
 - DXF profiles retain circles, circular arcs, ellipses, straight LINE/LWPOLYLINE
   edges, and resolved block INSERT transforms (including base points, rotation,
   and nonuniform scale). Layers, import origin/scale, centering, explicit `$fn`,
@@ -53,11 +54,12 @@ is not implemented yet.
 This is not yet a replacement for every CGAL/Manifold operation. General curved
 hulls, general curved-operand Minkowski sums, DXF spline/bulged-polyline entities
 and INSERT arrays/forward block references,
-SVG open/stroked paths and even-odd fills, and negative extrusion scales
+SVG open/stroked paths, and negative extrusion scales
 remain unsupported. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail
-OCCT construction or validity checks. Unsupported paths report errors instead
+OCCT construction or validity checks, as can self-intersecting imported contours.
+Unsupported paths report errors instead
 of deliberately tessellating the input and handing the operation to a mesh kernel.
 
 There is no arbitrary face/edge selection interface for fillets.

@@ -86,7 +86,7 @@ std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::s
                                       const boost::optional<std::string>& id,
                                       const boost::optional<std::string>& layer, const double dpi,
                                       const bool center, const Location& loc,
-                                      std::vector<SvgBezierContours> *curves)
+                                      std::vector<SvgProfile> *curves)
 {
   try {
     fnContext scadContext(
@@ -213,7 +213,7 @@ std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::s
                                                   scale.y() * (-viewbox.y() - v.y()) + cy, v.z()});
             }
           }
-          curves->push_back(std::move(contours));
+          curves->push_back({std::move(contours), s.uses_even_odd_fill()});
           continue;
         }
         for (const auto& p : s.get_path_list()) {
