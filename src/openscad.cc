@@ -182,6 +182,15 @@ struct CommandLine {
   const AnimateArgs animate;
   const std::vector<std::string> summaryOptions;
   const std::string summaryFile;
+  /*!
+     Where the source should be treated as living, when that is not where it was read from.
+
+     A window renders what is in its editor, which it hands to its compute worker as a temporary
+     file. `include <>` and `use <>` resolve relative to the document, so without this they would
+     resolve relative to the temporary copy and a model that renders in the GUI would fail in the
+     worker. Empty everywhere else, which leaves the filename doing both jobs as before.
+   */
+  const std::string sourcePath;
 };
 
 namespace {
@@ -635,7 +644,8 @@ int cmdline(const CommandLine& cmd)
   text += "\n\x03\n" + commandline_commands;
 
   SourceFile *root_file = nullptr;
-  if (!parse(root_file, text, cmd.filename, cmd.filename, false)) {
+  const std::string& documentPath = cmd.sourcePath.empty() ? cmd.filename : cmd.sourcePath;
+  if (!parse(root_file, text, documentPath, documentPath, false)) {
     delete root_file;  // parse failed
     root_file = nullptr;
   }
@@ -884,7 +894,15 @@ int compute_worker_main()
       const ViewOptions viewOptions{};
       const Camera camera;
       const CmdLineExportOptions exportOptions;
-      const fs::path originalPath = fs::path(input).parent_path();
+      // A window renders what is in its editor, which it hands over as a temporary file. Relative
+      // include<> and use<> must still resolve against the document's own directory, or a model
+      // that renders in the GUI fails in the worker.
+      // The editor's text arrives as a temporary file, so where the document really lives has to
+      // be said separately or its relative includes cannot be found.
+      const auto workingDirectory = request.value("workingDirectory", std::string{});
+      const auto sourcePath = request.value("sourcePath", std::string{});
+      const fs::path originalPath =
+        workingDirectory.empty() ? fs::path(input).parent_path() : fs::path(workingDirectory);
       // The Customizer's values are not in the .scad file, so unless the request carries them the
       // worker renders the file's defaults -- a window that shows one thing and exports another.
       const std::string parameterFile = request.value("parameterFile", std::string{});
@@ -903,7 +921,8 @@ int compute_worker_main()
                             exportOptions,
                             {},
                             {},
-                            ""});
+                            "",
+                            sourcePath});
       ipc_payload_sink::end();
 
       if (result != 0) throw std::runtime_error("evaluation of '" + input + "' failed");

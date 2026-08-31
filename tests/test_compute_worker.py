@@ -401,5 +401,49 @@ class ComputeWorkerParameters(WorkerFixture, unittest.TestCase):
         self.assertTrue(done.get("ok"))
 
 
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerWorkingDirectory(WorkerFixture, unittest.TestCase):
+    """A window renders what is in the editor, which is not always what is on disk.
+
+    The text is handed to the worker as a temporary file, so `include <>` and `use <>` would resolve
+    relative to wherever that file landed rather than to the document's own directory -- and a model
+    that renders in the GUI would fail in the worker. The request names the directory to resolve
+    from instead.
+    """
+
+    def make_document(self):
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        with open(os.path.join(directory, "shape.scad"), "w") as handle:
+            handle.write("module shape() { cube(7); }\n")
+        return directory
+
+    def render_from(self, source, document_directory=None):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        extra = {}
+        if document_directory:
+            extra["workingDirectory"] = document_directory
+            # Where the document really lives. The text itself is somewhere else, exactly as a
+            # window's unsaved editor contents would be.
+            extra["sourcePath"] = os.path.join(document_directory, "model.scad")
+        request(parent, command="render", requestId=1, input=self.write_scad(source),
+                output="result.osig", **extra)
+        return self.read_until_done(parent)
+
+    SOURCE = 'include <shape.scad>\nshape();'
+
+    def test_includes_resolve_against_the_working_directory(self):
+        _, done = self.render_from(self.SOURCE, self.make_document())
+        self.assertTrue(done.get("ok"), f"the include did not resolve: {done}")
+
+    def test_without_a_working_directory_the_include_is_not_found(self):
+        """The failure the field exists to prevent, pinned so the field cannot be quietly dropped."""
+        self.make_document()
+        _, done = self.render_from(self.SOURCE)
+        self.assertFalse(done.get("ok"))
+
+
 if __name__ == "__main__":
     unittest.main()
