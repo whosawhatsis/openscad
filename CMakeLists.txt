@@ -1804,7 +1804,11 @@ if(ENABLE_TESTS)
     endif()
     target_link_libraries(OpenSCADUnitTests PRIVATE Catch2::Catch2WithMain OpenSCADLibInternal svg)
     target_compile_definitions(OpenSCADUnitTests PRIVATE
-      OPENSCAD_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+      OPENSCAD_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data"
+      # So a test can drive the real binary as a compute worker. This is the only coverage of the
+      # worker request path on Windows: tests/test_compute_worker.py cannot run there, because
+      # handing a descriptor to a child needs POSIX pass_fds.
+      OPENSCAD_BINARY_PATH="$<TARGET_FILE:OpenSCADExe>")
     include(CTest)
     include(Catch)
     catch_discover_tests(OpenSCADUnitTests ADD_TAGS_AS_LABELS)
