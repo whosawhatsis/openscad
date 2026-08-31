@@ -60,6 +60,11 @@ BrepGeometry BrepGeometry::fromPolySet(const PolySet& mesh)
   return BrepGeometry(brepFromMesh(data));
 }
 
+BrepGeometry BrepGeometry::prism(const std::vector<std::array<double, 2>>& outline, double height)
+{
+  return BrepGeometry(brepMakePrism(outline, height));
+}
+
 size_t BrepGeometry::memsize() const
 {
   return sizeof(*this);

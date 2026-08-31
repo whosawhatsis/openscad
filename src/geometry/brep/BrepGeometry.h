@@ -35,6 +35,7 @@ public:
   static BrepGeometry sphere(double radius);
   static BrepGeometry cone(double radius1, double radius2, double height);
   static BrepGeometry fromPolySet(const PolySet& mesh);
+  static BrepGeometry prism(const std::vector<std::array<double, 2>>& outline, double height);
 
   [[nodiscard]] size_t memsize() const override;
   [[nodiscard]] BoundingBox getBoundingBox() const override;

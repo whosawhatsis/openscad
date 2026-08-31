@@ -15,6 +15,7 @@
 #include "core/CsgOpNode.h"
 #include "core/CurveDiscretizer.h"
 #include "core/ModuleInstantiation.h"
+#include "core/LinearExtrudeNode.h"
 #include "core/TransformNode.h"
 #include "core/Tree.h"
 #include "core/primitives.h"
@@ -422,6 +423,110 @@ TEST_CASE("B-Rep evaluator reports open polyhedra without throwing", "[brep]")
   CHECK_NOTHROW(result = evaluator.evaluateGeometry(*open, true));
   RenderSettings::inst()->backend3D = previousBackend;
   REQUIRE(result);
+  REQUIRE(result->isEmpty());
+}
+
+TEST_CASE("Linear extrusion preserves analytic and polygonal profiles", "[brep]")
+{
+  ModuleInstantiation inst("linear_extrude");
+  const auto smooth = [] {
+    return CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; });
+  };
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, smooth());
+  extrusion->height = Vector3d(0, 0, 8);
+  extrusion->center = true;
+  size_t cylinders = 0;
+  double minX = -4.0, maxX = 4.0;
+  SECTION("analytic annulus")
+  {
+    auto outer = std::make_shared<CircleNode>(&inst, smooth());
+    outer->r = 4.0;
+    auto inner = std::make_shared<CircleNode>(&inst, smooth());
+    inner->r = 2.0;
+    auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+    difference->children = {outer, inner};
+    extrusion->children = {difference};
+    cylinders = 2;
+  }
+  SECTION("intentional hexagon")
+  {
+    auto circle = std::make_shared<CircleNode>(&inst, CurveDiscretizer(6.0));
+    circle->r = 4.0;
+    extrusion->children = {circle};
+  }
+  SECTION("centered square")
+  {
+    auto square = std::make_shared<SquareNode>(&inst);
+    square->x = square->y = 8.0;
+    square->center = true;
+    extrusion->children = {square};
+  }
+  SECTION("concave polygon")
+  {
+    auto polygon = std::make_shared<PolygonNode>(&inst);
+    polygon->points = {{0, 0}, {4, 0}, {4, 2}, {2, 2}, {2, 4}, {0, 4}};
+    extrusion->children = {polygon};
+    minX = 0.0;
+  }
+  SECTION("profile transform projects to XY")
+  {
+    auto circle = std::make_shared<CircleNode>(&inst, smooth());
+    circle->r = 4.0;
+    auto transform = std::make_shared<TransformNode>(&inst, "translate");
+    transform->matrix.translate(Vector3d(3, 0, 100));
+    transform->children = {circle};
+    extrusion->children = {transform};
+    cylinders = 1;
+    minX = -1.0;
+    maxX = 7.0;
+  }
+  SECTION("oblique extrusion")
+  {
+    auto square = std::make_shared<SquareNode>(&inst);
+    square->x = square->y = 8.0;
+    square->center = true;
+    extrusion->children = {square};
+    extrusion->height = Vector3d(4, 2, 8);
+    minX = -6.0;
+    maxX = 6.0;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  REQUIRE(brep->surfaceCount(BrepSurfaceType::Cylinder) == cylinders);
+  REQUIRE(brep->getBoundingBox().min().x() == Catch::Approx(minX).margin(0.001));
+  REQUIRE(brep->getBoundingBox().max().x() == Catch::Approx(maxX).margin(0.001));
+  REQUIRE(brep->getBoundingBox().min().z() == Catch::Approx(-4.0).margin(0.001));
+  REQUIRE(brep->getBoundingBox().max().z() == Catch::Approx(4.0).margin(0.001));
+  REQUIRE_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
+TEST_CASE("Unsupported B-Rep extrusion variants do not silently become meshes", "[brep]")
+{
+  ModuleInstantiation inst("linear_extrude");
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(0.0));
+  extrusion->children = {std::make_shared<SquareNode>(&inst)};
+  SECTION("twist")
+  {
+    extrusion->twist = 45.0;
+  }
+  SECTION("scale")
+  {
+    extrusion->scale_x = 2.0;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(result));
   REQUIRE(result->isEmpty());
 }
 

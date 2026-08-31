@@ -2,6 +2,7 @@
 #include "geometry/brep/BrepBoolean.h"
 
 #include <array>
+#include <cmath>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -22,6 +23,7 @@
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
@@ -67,6 +69,22 @@ std::shared_ptr<void> brepMakeSphere(double radius)
 std::shared_ptr<void> brepMakeCone(double radius1, double radius2, double height)
 {
   return std::make_shared<TopoDS_Shape>(BRepPrimAPI_MakeCone(radius1, radius2, height).Shape());
+}
+
+std::shared_ptr<void> brepMakePrism(const std::vector<std::array<double, 2>>& outline, double height)
+{
+  BRepBuilderAPI_MakePolygon polygon;
+  for (const auto& point : outline) polygon.Add(gp_Pnt(point[0], point[1], 0));
+  polygon.Close();
+  if (!polygon.IsDone()) throw std::runtime_error("B-Rep extrusion profile is invalid");
+  BRepBuilderAPI_MakeFace face(polygon.Wire(), true);
+  if (!face.IsDone()) throw std::runtime_error("B-Rep extrusion face construction failed");
+  BRepPrimAPI_MakePrism prism(face.Face(), gp_Vec(0, 0, height));
+  if (!prism.IsDone()) throw std::runtime_error("B-Rep prism construction failed");
+  auto solid = TopoDS::Solid(prism.Shape());
+  if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+    throw std::runtime_error("B-Rep extrusion does not form a valid solid");
+  return std::make_shared<TopoDS_Shape>(solid);
 }
 
 std::shared_ptr<void> brepFromMesh(const BrepMeshData& mesh)
@@ -131,14 +149,28 @@ std::array<double, 6> brepBounds(const std::shared_ptr<void>& shape)
 std::shared_ptr<void> brepTransform(const std::shared_ptr<void>& shape,
                                     const std::array<double, 12>& matrix)
 {
-  try {
-    gp_Trsf transform;
-    transform.SetValues(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], matrix[6],
-                        matrix[7], matrix[8], matrix[9], matrix[10], matrix[11]);
-    BRepBuilderAPI_Transform operation(shapeFrom(shape), transform, true);
-    if (!operation.IsDone()) throw std::runtime_error("OpenCASCADE transform failed");
-    return std::make_shared<TopoDS_Shape>(operation.Shape());
-  } catch (const Standard_Failure&) {
+  double squaredScale = 0.0;
+  for (int row = 0; row < 3; ++row) squaredScale += matrix[row * 4] * matrix[row * 4];
+  bool similarity = std::isfinite(squaredScale) && squaredScale > 0.0;
+  for (int column = 0; column < 3; ++column) {
+    for (int other = 0; other < 3; ++other) {
+      double dot = 0.0;
+      for (int row = 0; row < 3; ++row) dot += matrix[row * 4 + column] * matrix[row * 4 + other];
+      similarity &= std::isfinite(dot) &&
+                    std::abs(dot - (column == other ? squaredScale : 0.0)) <= 1e-12 * squaredScale;
+    }
+  }
+  // gp_Trsf::SetValues orthogonalizes its input, silently losing a shear/nonuniform scale.
+  if (similarity) {
+    try {
+      gp_Trsf transform;
+      transform.SetValues(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], matrix[6],
+                          matrix[7], matrix[8], matrix[9], matrix[10], matrix[11]);
+      BRepBuilderAPI_Transform operation(shapeFrom(shape), transform, true);
+      if (!operation.IsDone()) throw std::runtime_error("OpenCASCADE transform failed");
+      return std::make_shared<TopoDS_Shape>(operation.Shape());
+    } catch (const Standard_Failure&) {
+    }
   }
 
   gp_GTrsf transform;

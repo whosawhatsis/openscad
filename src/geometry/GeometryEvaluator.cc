@@ -70,8 +70,66 @@ class Tree;
 namespace {
 
 std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
-                                                 BrepFilletDiagnostics *diagnostics = nullptr)
+                                                 BrepFilletDiagnostics *diagnostics = nullptr,
+                                                 double extrusionHeight = 0.0)
 {
+  if (const auto *extrusion = dynamic_cast<const LinearExtrudeNode *>(&node)) {
+    if (extrusionHeight > 0.0) return {};
+    if (extrusion->twist != 0.0 || extrusion->scale_x != 1.0 || extrusion->scale_y != 1.0) {
+      LOG(message_group::Error, "OpenCASCADE linear_extrude does not yet support twist or scale");
+      return std::make_unique<BrepGeometry>(nullptr);
+    }
+    if (extrusion->height.z() <= 0.0) return std::make_unique<BrepGeometry>(nullptr);
+    try {
+      std::vector<BrepGeometry> operands;
+      for (const auto& child : node.children) {
+        if (child->modinst->isBackground()) continue;
+        auto operand = createBrepGeometry(*child, nullptr, extrusion->height.z());
+        if (!operand) {
+          LOG(message_group::Error, "OpenCASCADE linear_extrude profile is not yet supported");
+          return std::make_unique<BrepGeometry>(nullptr);
+        }
+        operands.push_back(std::move(*operand));
+      }
+      BrepFilletDiagnostics unused;
+      auto result = std::make_unique<BrepGeometry>(
+        BrepGeometry::boolean(operands, BrepOperation::Union, 0.0, unused));
+      if (!result->isEmpty()) {
+        Transform3d placement = Transform3d::Identity();
+        placement(0, 2) = extrusion->height.x() / extrusion->height.z();
+        placement(1, 2) = extrusion->height.y() / extrusion->height.z();
+        if (extrusion->center) placement.translation() = -extrusion->height / 2.0;
+        result->transform(placement);
+      }
+      return result;
+    } catch (const std::exception& error) {
+      LOG(message_group::Error, "OpenCASCADE linear_extrude failed: %1$s", error.what());
+      return std::make_unique<BrepGeometry>(nullptr);
+    }
+  }
+  if (extrusionHeight > 0.0) {
+    // Constant-section extrusion distributes over profile booleans. Keep circles analytic;
+    // polygonal profiles use their authored straight edges rather than a mesh solid bridge.
+    const auto *circle = dynamic_cast<const CircleNode *>(&node);
+    if (circle && !circle->discretizer.isFnSpecified()) {
+      if (circle->r <= 0.0) return std::make_unique<BrepGeometry>(nullptr);
+      return std::make_unique<BrepGeometry>(BrepGeometry::cylinder(circle->r, extrusionHeight));
+    }
+    if (circle || dynamic_cast<const SquareNode *>(&node) || dynamic_cast<const PolygonNode *>(&node)) {
+      const auto geometry = static_cast<const LeafNode&>(node).createGeometry();
+      const auto *polygon = dynamic_cast<const Polygon2d *>(geometry.get());
+      if (!polygon) return {};
+      const auto clean = ClipperUtils::sanitize(*polygon);
+      if (clean->isEmpty()) return std::make_unique<BrepGeometry>(nullptr);
+      if (clean->outlines().size() != 1) return {};
+      std::vector<std::array<double, 2>> outline;
+      for (const auto& point : clean->outlines().front().vertices) {
+        outline.push_back({point.x(), point.y()});
+      }
+      return std::make_unique<BrepGeometry>(BrepGeometry::prism(outline, extrusionHeight));
+    }
+    if (dynamic_cast<const LeafNode *>(&node)) return {};
+  }
   const auto *sphere = dynamic_cast<const SphereNode *>(&node);
   const auto *cylinder = dynamic_cast<const CylinderNode *>(&node);
   if (dynamic_cast<const PolyhedronNode *>(&node) || (sphere && sphere->discretizer.isFnSpecified()) ||
@@ -116,6 +174,7 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
   }
   const auto *transform = dynamic_cast<const TransformNode *>(&node);
   const auto *csg = dynamic_cast<const CsgOpNode *>(&node);
+  if (extrusionHeight > 0.0 && csg && csg->hasFillet && csg->filletRadius > 0.0) return {};
   if (transform || csg || dynamic_cast<const GroupNode *>(&node) ||
       dynamic_cast<const ListNode *>(&node)) {
     std::vector<BrepGeometry> operands;
@@ -129,7 +188,7 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
         }
         return true;
       }
-      auto operand = createBrepGeometry(child);
+      auto operand = createBrepGeometry(child, nullptr, extrusionHeight);
       if (!operand) return false;
       operands.push_back(std::move(*operand));
       return true;
@@ -143,7 +202,14 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
     BrepFilletDiagnostics resultDiagnostics;
     auto result = std::make_unique<BrepGeometry>(BrepGeometry::boolean(
       operands, operation, csg && csg->hasFillet ? csg->filletRadius : 0.0, resultDiagnostics));
-    if (transform && !result->isEmpty()) result->transform(transform->matrix);
+    if (transform && !result->isEmpty()) {
+      auto matrix = transform->matrix;
+      if (extrusionHeight > 0.0) {
+        matrix(0, 2) = matrix(1, 2) = matrix(2, 0) = matrix(2, 1) = matrix(2, 3) = 0.0;
+        matrix(2, 2) = 1.0;
+      }
+      result->transform(matrix);
+    }
     if (diagnostics) *diagnostics = resultDiagnostics;
     return result;
   }
@@ -163,6 +229,9 @@ std::pair<double, double> brepFacetSettings(const AbstractNode& node, const Brep
   } else if (const auto *sphere = dynamic_cast<const SphereNode *>(&node)) {
     fa = sphere->discretizer.getFa();
     fs = sphere->discretizer.getFs();
+  } else if (const auto *extrusion = dynamic_cast<const LinearExtrudeNode *>(&node)) {
+    fa = extrusion->discretizer.getFa();
+    fs = extrusion->discretizer.getFs();
   } else if (const auto *transform = dynamic_cast<const TransformNode *>(&node);
              transform && transform->children.size() == 1) {
     return brepFacetSettings(*transform->children.front(), geometry);

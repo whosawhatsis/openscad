@@ -867,6 +867,12 @@ if(ENABLE_OPENCSCADE)
       ${TEST_SCAD_DIR}/misc/brep-facets.scad)
   set_tests_properties(export-stl-brep-facets PROPERTIES
     PASS_REGULAR_EXPRESSION "Triangles: +[1-9]" FAIL_REGULAR_EXPRESSION "ERROR:")
+  add_test(NAME export-stl-brep-linear-extrude
+    COMMAND $<TARGET_FILE:OpenSCADExe> --backend=opencascade --render
+      -o ${CMAKE_CURRENT_BINARY_DIR}/brep-linear-extrude.stl
+      ${TEST_SCAD_DIR}/misc/brep-linear-extrude.scad)
+  set_tests_properties(export-stl-brep-linear-extrude PROPERTIES
+    PASS_REGULAR_EXPRESSION "Triangles: +[1-9]" FAIL_REGULAR_EXPRESSION "ERROR:")
 endif()
 if(EXAMPLES_DIR)
   add_cmdline_test(dump-examples  OPENSCAD FILES ${EXAMPLE_FILES} SUFFIX csg ARGS)
