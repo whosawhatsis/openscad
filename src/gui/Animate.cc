@@ -2,6 +2,8 @@
 
 #include <QAction>
 #include <QBoxLayout>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QIcon>
 #include <QList>
@@ -13,8 +15,10 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include "gui/MainWindow.h"
+#include "gui/AnimationExport.h"
 #include "gui/UIUtils.h"
 #include "openscad_gui.h"
 #include "utils/printutils.h"
@@ -134,7 +138,12 @@ void Animate::updatedAnimFpsAndAnimSteps()
 
 void Animate::on_e_dump_toggled(bool checked)
 {
-  if (!checked) this->animDumping = false;
+  if (checked) {
+    startDump();
+  } else {
+    this->animDumping = false;
+    stopDump();
+  }
 
   updatePauseButtonIcon();
 }
@@ -237,6 +246,124 @@ void Animate::animateUpdate()
       animateTimer->start();
     }
   }
+}
+
+bool Animate::saveFrame(const QImage& image)
+{
+  if (dumpPath.isEmpty()) return false;
+
+  if (!dumpEncoder) {
+    // Not an animation container: keep writing one numbered still per frame.
+    const QString frameFile =
+      QString::fromStdString(numberedFramePath(dumpPath.toStdString(), dumpFrame++));
+    if (image.save(frameFile)) return true;
+    LOG(message_group::Error, "Can't write %1$s.", frameFile.toStdString());
+    return false;
+  }
+
+  /*
+     The encoder is opened on the first frame rather than when the box is checked,
+     because the viewport size is what defines the frame size and the user may have
+     resized the window in between. A container cannot change size mid-stream, so a
+     later size change has to stop the dump rather than silently produce a broken file.
+   */
+  if (dumpFrame == 0) {
+    if (!dumpEncoder->open(dumpPath.toStdString(), image.width(), image.height(), dumpFps)) {
+      LOG(message_group::Error, "Can't open %1$s for writing.", dumpPath.toStdString());
+      return false;
+    }
+    dumpSize = image.size();
+  } else if (image.size() != dumpSize) {
+    LOG(message_group::Error, "Viewport was resized during recording; stopping at %1$d frames.",
+        dumpFrame);
+    return false;
+  }
+
+  // The encoders take tightly-packed top-down RGBA.
+  const QImage rgba = image.convertToFormat(QImage::Format_RGBA8888);
+  if (!dumpEncoder->addFrame(rgba.constBits(), rgba.bytesPerLine())) {
+    LOG(message_group::Error, "Failed to encode frame %1$d.", dumpFrame);
+    return false;
+  }
+  ++dumpFrame;
+  return true;
+}
+
+bool Animate::recordsGeometry() const
+{
+  return animation_export::recordsGeometry(dumpPath.toStdString());
+}
+
+bool Animate::saveFrame(UsdAnimationFrame frame)
+{
+  if (dumpPath.isEmpty() || !recordsGeometry()) return false;
+  dumpGeometryFrames.push_back(std::move(frame));
+  ++dumpFrame;
+  return true;
+}
+
+void Animate::startDump()
+{
+  /*
+     Stop the animation while the dialog is up. Qt keeps delivering timer events to a
+     running animation underneath a modal dialog, so nextFrame() counts a whole loop
+     and unticks the checkbox before the user has even chosen a file -- the recording
+     then ends before it begins and writes nothing.
+   */
+  const bool wasRunning = animateTimer->isActive();
+  animateTimer->stop();
+
+  const QString path = QFileDialog::getSaveFileName(
+    this, _("Export Animation"), QString(),
+    _("Blender animation (*.blend);;USD ASCII animation (*.usda);;USDZ animation (*.usdz);;"
+      "Animated GIF (*.gif);;Animated PNG (*.apng);;MJPEG AVI (*.avi);;"
+      "PNG image sequence (*.png)"));
+
+  if (wasRunning) animateTimer->start();
+
+  if (path.isEmpty()) {
+    // Cancelled: untick the box rather than silently recording to nowhere.
+    e_dump->setChecked(false);
+    return;
+  }
+
+  // Re-anchor the loop detection so the recording spans a full loop from here on.
+  animDumping = false;
+
+  dumpPath = path;
+  dumpFrame = 0;
+  dumpGeometryFrames.clear();
+  if (!animation_export::recordsGeometry(path.toStdString())) {
+    dumpEncoder = VideoEncoder::create(outputSuffix(path.toStdString()));
+  }
+
+  double fps = e_fps->text().toDouble();
+  if (fps < 1) fps = 1;
+  if (fps > 100) fps = 100;
+  dumpFps = static_cast<unsigned>(fps);
+}
+
+void Animate::stopDump()
+{
+  if (!dumpGeometryFrames.empty()) {
+    if (mainWindow->writeUsdAnimation(dumpPath, dumpGeometryFrames, dumpFps, e_blend_samples->value())) {
+      LOG("Wrote %1$d frames to %2$s.", dumpFrame, dumpPath.toStdString());
+    } else {
+      LOG(message_group::Error, "Can't write %1$s.", dumpPath.toStdString());
+    }
+  }
+  if (dumpEncoder) {
+    // dumpFrame == 0 means no frame ever arrived, so there is nothing to finalize.
+    if (dumpFrame > 0 && !dumpEncoder->close()) {
+      LOG(message_group::Error, "Failed to finalize %1$s.", dumpPath.toStdString());
+    } else if (dumpFrame > 0) {
+      LOG("Wrote %1$d frames to %2$s.", dumpFrame, dumpPath.toStdString());
+    }
+    dumpEncoder.reset();
+  }
+  dumpPath.clear();
+  dumpGeometryFrames.clear();
+  dumpFrame = 0;
 }
 
 bool Animate::dumpPictures()

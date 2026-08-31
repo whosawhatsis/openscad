@@ -67,6 +67,13 @@ json writeChain(const std::vector<CSGChainObject>& chain, const std::string& fil
                       {"color",
                        {object.leaf->color.r(), object.leaf->color.g(), object.leaf->color.b(),
                         object.leaf->color.a()}},
+                      // Material identity lives on the leaf, not the mesh, so a preview
+                      // composited in the window from the worker's product list would
+                      // otherwise lose material() -- and with it the surface parameters the
+                      // viewport shades from.
+                      {"materialName", object.leaf->materialName},
+                      {"roughness", object.leaf->roughness},
+                      {"metallic", object.leaf->metallic},
                       {"label", object.leaf->label},
                       {"index", object.leaf->index},
                       {"flags", object.flags}});
@@ -148,9 +155,10 @@ bool readChain(const json& input, std::vector<CSGChainObject>& output,
     const auto channels = item.value("color", std::vector<float>{});
     if (channels.size() != 4) return false;
 
-    auto leaf = std::make_shared<CSGLeaf>(polyset, matrix,
-                                          Color4f(channels[0], channels[1], channels[2], channels[3]),
-                                          item.value("label", std::string{}), item.value("index", 0));
+    auto leaf = std::make_shared<CSGLeaf>(
+      polyset, matrix, Color4f(channels[0], channels[1], channels[2], channels[3]),
+      item.value("materialName", std::string{}), item.value("roughness", -1.0f),
+      item.value("metallic", 0.0f), item.value("label", std::string{}), item.value("index", 0));
     output.emplace_back(leaf, static_cast<CSGNode::Flag>(item.value("flags", 0)));
   }
   return true;

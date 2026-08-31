@@ -104,10 +104,16 @@ Containers& containers()
     add_item(*containers, {FileFormat::COORDINATEMAP_PNG, "coordinatemap", "png", "Coordinate Map PNG"});
     add_item(*containers, {FileFormat::FLATMAP_PNG, "flatmap", "png", "Flat Shaded PNG"});
     add_item(*containers, {FileFormat::CHROMATIC_PNG, "chromatic", "png", "Chromatic 3-Point PNG"});
+    add_item(*containers, {FileFormat::APNG, "apng", "apng", "Animated PNG"});
+    add_item(*containers, {FileFormat::GIF, "gif", "gif", "Animated GIF"});
+    add_item(*containers, {FileFormat::AVI, "avi", "avi", "MJPEG AVI"});
     add_item(*containers, {FileFormat::PDF, "pdf", "pdf", "PDF"});
     add_item(*containers, {FileFormat::POV, "pov", "pov", "POV"});
     add_item(*containers, {FileFormat::USDA, "usda", "usda", "USDA"});
     add_item(*containers, {FileFormat::USDZ, "usdz", "usdz", "USDZ"});
+    add_item(*containers, {FileFormat::USDA, "usda", "usda", "USDA"});
+    add_item(*containers, {FileFormat::USDZ, "usdz", "usdz", "USDZ"});
+    add_item(*containers, {FileFormat::BLEND, "blend", "blend", "Blender"});
 
     // Alias
     containers->identifierToInfo["stl"] = containers->identifierToInfo["asciistl"];
@@ -175,7 +181,19 @@ bool canPreview(FileFormat format)
           format == FileFormat::ECHO || format == FileFormat::TERM || format == FileFormat::PNG ||
           format == FileFormat::DEPTHMAP || format == FileFormat::NORMALMAP_PNG ||
           format == FileFormat::CANNYMAP_PNG || format == FileFormat::COORDINATEMAP_PNG ||
-          format == FileFormat::FLATMAP_PNG || format == FileFormat::CHROMATIC_PNG);
+          format == FileFormat::FLATMAP_PNG || format == FileFormat::CHROMATIC_PNG ||
+          isAnimation(format));
+}
+
+bool isAnimation(FileFormat format)
+{
+  return format == FileFormat::APNG || format == FileFormat::GIF || format == FileFormat::AVI;
+}
+
+bool canAnimate(FileFormat format)
+{
+  return isAnimation(format) || format == FileFormat::USDA || format == FileFormat::USDZ ||
+         format == FileFormat::BLEND;
 }
 
 bool is3D(FileFormat format)
@@ -184,6 +202,7 @@ bool is3D(FileFormat format)
          format == FileFormat::OBJ || format == FileFormat::OFF || format == FileFormat::WRL ||
          format == FileFormat::_3MF || format == FileFormat::NEFDBG || format == FileFormat::NEF3 ||
          format == FileFormat::POV || format == FileFormat::USDA || format == FileFormat::USDZ ||
+         format == FileFormat::BLEND ||
          // Internal worker transport: 3D for dispatch, but absent from the identifier table, so
          // all3D() -- which iterates that table -- still never offers it to a user.
          format == FileFormat::IPC_GEOMETRY;
@@ -238,6 +257,13 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
   case FileFormat::POV:          export_pov(root_geom, output, exportInfo); break;
   case FileFormat::USDA:         export_usda(root_geom, output, exportInfo); break;
   case FileFormat::USDZ:         export_usdz(root_geom, output, exportInfo); break;
+  case FileFormat::BLEND:        {
+    UsdAnimationFrame frame;
+    frame.geometry = root_geom;
+    if (exportInfo.camera) frame.camera = *exportInfo.camera;
+    export_blend_animation({std::move(frame)}, 30, output, {.defaultColor = exportInfo.defaultColor});
+    break;
+  }
   case FileFormat::IPC_GEOMETRY: export_ipc_geometry(root_geom, output); break;
 #ifdef ENABLE_CGAL
   case FileFormat::NEFDBG: export_nefdbg(root_geom, output); break;

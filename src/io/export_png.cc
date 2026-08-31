@@ -12,6 +12,8 @@
 #include "glview/RenderSettings.h"
 #include "glview/Renderer.h"
 #include "io/export.h"
+#include "io/VideoEncoder.h"
+#include "io/imageutils.h"
 #include "utils/printutils.h"
 
 #ifndef NULLGL
@@ -234,6 +236,30 @@ bool export_pfm(const OffscreenView& glview, std::ostream& output)
   return export_pfm(output, mm, glview.ctx->width(), glview.ctx->height());
 }
 
+bool export_video_frame(const OffscreenView& glview, VideoEncoder& encoder)
+{
+  if (!glview.ctx) return false;
+  const auto pixels = glview.ctx->getFramebuffer();
+  const size_t width = glview.ctx->width();
+  const size_t height = glview.ctx->height();
+  const size_t samplesPerPixel = 4;  // R, G, B and A
+  if (pixels.size() < samplesPerPixel * width * height) return false;
+
+  // Images read from OpenGL buffers are upside-down.
+  std::vector<uint8_t> flipped(samplesPerPixel * width * height);
+  flip_image(pixels.data(), flipped.data(), samplesPerPixel, width, height);
+
+  return encoder.addFrame(flipped.data(), samplesPerPixel * width);
+}
+
+bool export_video_frame(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
+                        Camera& camera, VideoEncoder& encoder)
+{
+  const auto glview = prepare_geometry_view(root_geom, options, camera);
+  if (!glview) return false;
+  return export_video_frame(*glview, encoder);
+}
+
 #else  // NULLGL
 
 bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
@@ -281,6 +307,15 @@ bool export_pfm(const std::shared_ptr<const Geometry>& root_geom, const ViewOpti
   return false;
 }
 bool export_pfm(const OffscreenView& glview, std::ostream& output)
+{
+  return false;
+}
+bool export_video_frame(const OffscreenView& glview, VideoEncoder& encoder)
+{
+  return false;
+}
+bool export_video_frame(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
+                        Camera& camera, VideoEncoder& encoder)
 {
   return false;
 }

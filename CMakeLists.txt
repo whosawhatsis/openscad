@@ -1073,6 +1073,7 @@ set(CORE_SOURCES
   src/ext/libtess2/Source/sweep.c
   src/ext/libtess2/Source/tess.c
   src/ext/lodepng/lodepng.cpp
+  src/ext/stb/stb_image_write.cc
   src/geometry/ClipperUtils.cc
   src/geometry/Geometry.cc
   src/geometry/GeometryCache.cc
@@ -1109,9 +1110,15 @@ set(CORE_SOURCES
   src/io/export_svg.cc
   src/io/export_pov.cc
   src/io/export_usd.cc
+  src/io/export_usd.cc
+  src/io/export_blend.cc
   src/io/export_param.cc
   src/io/export_wrl.cc
   src/io/fileutils.cc
+  src/io/VideoEncoder.cc
+  src/io/video_apng.cc
+  src/io/video_avi.cc
+  src/io/video_gif.cc
   src/io/import_json.cc
   src/io/import_obj.cc
   src/io/import_off.cc
@@ -1606,6 +1613,8 @@ file(GLOB_RECURSE TEST_SOURCES
   "src/glview/*_test.cc"
   "src/io/*_test.cc"
   "src/glview/*_test.cc"
+  "src/io/*_test.cc"
+  "src/glview/*_test.cc"
 )
 # Tests for sources that sit directly in src/, such as Feature.cc. Deliberately GLOB and not
 # GLOB_RECURSE: recursing from src/ would sweep up src/gui/*_test.cc and build the GUI tests into
@@ -1746,7 +1755,8 @@ if(NOT APPLE OR APPLE_UNIX)
   install(DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/libraries DESTINATION "${OPENSCAD_INSTALL_RESOURCEDIR}" PATTERN ".git*" EXCLUDE)
   install(DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/locale DESTINATION "${OPENSCAD_INSTALL_RESOURCEDIR}" FILES_MATCHING PATTERN "*/LC_MESSAGES/openscad.mo")
   install(DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/shaders DESTINATION "${OPENSCAD_INSTALL_RESOURCEDIR}")
-  install(DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/templates DESTINATION "${OPENSCAD_INSTALL_RESOURCEDIR}" FILES_MATCHING PATTERN "*.json")
+  install(DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/templates DESTINATION "${OPENSCAD_INSTALL_RESOURCEDIR}"
+          FILES_MATCHING PATTERN "*.json" PATTERN "*.blend" PATTERN "*.README.md")
 
   if(ENABLE_GUI_TESTS)
     install(DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/tests/data/ DESTINATION ${OPENSCAD_INSTALL_RESOURCEDIR}/tests)

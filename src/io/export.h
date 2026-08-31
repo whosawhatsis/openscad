@@ -9,6 +9,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,7 +39,18 @@ struct UsdAnimationObject {
 struct UsdAnimationFrame {
   std::shared_ptr<const Geometry> geometry;
   std::vector<UsdAnimationObject> objects;
+  std::optional<Camera> camera;
 };
+
+struct BlendExportOptions {
+  size_t remeshSamples = 256;
+  Color4f defaultColor{0.8f, 0.8f, 0.8f, 1.0f};
+  // Unset means "ask the geometry", which records twice the $fa it was tessellated at.
+  // Set only to override that for the whole export.
+  std::optional<double> smoothAngle;
+};
+
+bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames);
 
 enum class FileFormat {
   ASCII_STL,
@@ -63,10 +75,14 @@ enum class FileFormat {
   COORDINATEMAP_PNG,
   FLATMAP_PNG,
   CHROMATIC_PNG,
+  APNG,
+  GIF,
+  AVI,
   PDF,
   POV,
   USDA,
   USDZ,
+  BLEND,
   PARAM,
   // Internal only: the binary payload a window and its private compute worker exchange.
   // Deliberately absent from the identifier table in export.cc, so it is not selectable as an
@@ -96,6 +112,17 @@ const FileFormatInfo& info(FileFormat fileFormat);
 bool fromIdentifier(const std::string& identifier, FileFormat& format);
 const std::string& toSuffix(FileFormat format);
 bool canPreview(FileFormat format);
+/*!
+   True for the animation containers, which hold a sequence of rendered frames and are
+   only meaningful together with --animate.
+ */
+bool isAnimation(FileFormat format);
+/*!
+   True for the formats that fold every --animate frame into a single output file. A
+   superset of isAnimation(): the video containers are meaningless without --animate,
+   whereas USD is equally valid as a still, so it is animatable without requiring it.
+ */
+bool canAnimate(FileFormat format);
 bool is3D(FileFormat format);
 bool is2D(FileFormat format);
 
@@ -381,6 +408,25 @@ void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigne
                            std::ostream& output, const ExportInfo& exportInfo);
 void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo);
+void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo);
+void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo);
+/*!
+   Writes one USD stage covering every animation frame. OpenSCAD re-evaluates the script per
+   frame, so topology may change between frames; USD represents that natively by
+   time-sampling points/faceVertexCounts/faceVertexIndices.
+ */
+void export_usda_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usdz_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_blend_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                            std::ostream& output, const BlendExportOptions& options = {});
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_nefdbg(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
@@ -463,6 +509,14 @@ bool export_depthmap(const OffscreenView& glview, const DepthmapOptions& depthOp
 bool export_pfm(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
                 Camera& camera, std::ostream& output);
 bool export_pfm(const OffscreenView& glview, std::ostream& output);
+
+/*!
+   Renders one animation frame and hands its RGBA pixels to `encoder`, instead of
+   writing a still image. The encoder must already be open at the camera's pixel size.
+ */
+bool export_video_frame(const OffscreenView& glview, class VideoEncoder& encoder);
+bool export_video_frame(const std::shared_ptr<const class Geometry>& root_geom,
+                        const ViewOptions& options, Camera& camera, class VideoEncoder& encoder);
 bool export_param(SourceFile *root, const fs::path& path, std::ostream& output);
 
 std::unique_ptr<PolySet> createSortedPolySet(const PolySet& ps);
