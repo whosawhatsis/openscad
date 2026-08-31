@@ -145,3 +145,78 @@ TEST_CASE("The real binary reports a bad request and stays up", "[gui][ComputeWo
   CHECK(answer.value("ok", false));
   CHECK(answer.value("requestId", 0) == 4);
 }
+
+// ---------------------------------------------------------------------------------------------
+// The asynchronous shape MainWindow needs.
+//
+// CGALWorker hands its result back through a `done` signal from a thread of its own, because the
+// GUI thread cannot block while geometry is evaluated. ComputeWorker's channel is blocking, so it
+// needs the same treatment before a window can use it -- otherwise isolating the computation would
+// freeze the window it was meant to protect, which is worse than not isolating it.
+
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QTimer>
+
+#include "geometry/Geometry.h"
+#include "geometry/PolySet.h"
+
+namespace {
+
+//! Spins the event loop until `predicate` holds or the wait times out. Returns whether it held.
+template <typename Predicate>
+bool waitFor(const Predicate& predicate, int milliseconds = 30000)
+{
+  QElapsedTimer timer;
+  timer.start();
+  while (!predicate() && timer.elapsed() < milliseconds) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  return predicate();
+}
+
+}  // namespace
+
+TEST_CASE("A render can be asked for without blocking the caller", "[gui][ComputeWorkerIntegration]")
+{
+  auto worker = startRealWorker();
+
+  std::shared_ptr<const Geometry> result;
+  bool finished = false;
+  QObject::connect(worker.get(), &ComputeWorker::renderDone, worker.get(),
+                   [&](const std::shared_ptr<const Geometry>& geometry) {
+                     result = geometry;
+                     finished = true;
+                   });
+
+  const auto model = writeModel("cube([10, 10, 10]);", "openscad-worker-async");
+  worker->startRender(QString::fromStdString(model), {}, {});
+
+  // The point of the exercise: control comes straight back, and the answer arrives later through
+  // the event loop rather than by blocking here.
+  CHECK_FALSE(finished);
+
+  REQUIRE(waitFor([&] { return finished; }));
+  REQUIRE(result);
+  const auto polyset = std::dynamic_pointer_cast<const PolySet>(result);
+  REQUIRE(polyset);
+  CHECK(polyset->vertices.size() == 8);
+}
+
+TEST_CASE("A render that fails reports rather than hanging", "[gui][ComputeWorkerIntegration]")
+{
+  // A window waiting forever on a signal that will never come is the failure mode this has to
+  // avoid: the user would see a progress bar and nothing else, with no way to tell it had died.
+  auto worker = startRealWorker();
+
+  bool failed = false;
+  QString message;
+  QObject::connect(worker.get(), &ComputeWorker::renderFailed, worker.get(), [&](const QString& reason) {
+    message = reason;
+    failed = true;
+  });
+
+  worker->startRender(QString::fromStdString(writeModel("nonsense (((", "openscad-worker-bad")), {}, {});
+  REQUIRE(waitFor([&] { return failed; }));
+  CHECK_FALSE(message.isEmpty());
+}

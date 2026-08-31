@@ -1,14 +1,28 @@
 #include "gui/ComputeWorker.h"
 
 #include <QByteArray>
+#include <QMetaObject>
 #include <QProcess>
+#include <QThread>
 #include <QProcessEnvironment>
 #include <exception>
+#include <map>
 #include <utility>
 
+#include "geometry/Geometry.h"
 #include "io/ipc_channel.h"
+#include "io/ipc_geometry.h"
+#include "json/json.hpp"
 #include "utils/printutils.h"
 #include "io/ipc_endpoint.h"
+
+namespace {
+
+//! Names the payload the worker returns geometry under. The request asks for this name and the
+//! reply carries it back, so the two only have to agree here.
+constexpr auto kRenderOutputName = "render.osig";
+
+}  // namespace
 
 struct ComputeWorker::Private {
   QString program;
@@ -16,6 +30,8 @@ struct ComputeWorker::Private {
   QString channelVariable;
   QProcess process;
   std::unique_ptr<IpcChannelPair> channel;
+  //! One request at a time per worker, run off the GUI thread.
+  QThread *renderThread = nullptr;
 };
 
 ComputeWorker::ComputeWorker(QString program, QStringList arguments, QString channelEnvironmentVariable)
@@ -28,6 +44,12 @@ ComputeWorker::ComputeWorker(QString program, QStringList arguments, QString cha
 
 ComputeWorker::~ComputeWorker()
 {
+  if (d->renderThread) {
+    // The thread is blocked in read() until the child goes away, so the child has to go first.
+    if (isRunning()) cancel();
+    d->renderThread->quit();
+    d->renderThread->wait();
+  }
   if (isRunning()) {
     cancel();
     d->process.waitForFinished(-1);
@@ -105,4 +127,78 @@ bool ComputeWorker::waitForFinished()
 bool ComputeWorker::exitedCleanly() const
 {
   return d->process.exitStatus() == QProcess::NormalExit && d->process.exitCode() == 0;
+}
+
+void ComputeWorker::startRender(const QString& scadPath, const QString& parameterFile,
+                                const QString& setName)
+{
+  if (!d->channel) {
+    emit renderFailed(tr("The compute worker is not running."));
+    return;
+  }
+  if (d->renderThread) {
+    emit renderFailed(tr("The compute worker is already busy."));
+    return;
+  }
+
+  nlohmann::json request;
+  request["command"] = "render";
+  request["input"] = scadPath.toStdString();
+  request["output"] = kRenderOutputName;
+  if (!parameterFile.isEmpty()) request["parameterFile"] = parameterFile.toStdString();
+  if (!setName.isEmpty()) request["setName"] = setName.toStdString();
+
+  d->renderThread = QThread::create([this, text = request.dump()] {
+    const QByteArray payload(text.data(), static_cast<int>(text.size()));
+    if (!send("request", payload)) {
+      QMetaObject::invokeMethod(this, [this] { finishRender({}, tr("The worker went away.")); });
+      return;
+    }
+
+    // Payloads arrive before the answer that ends the request, so they are collected as they come.
+    std::map<std::string, std::string> payloads;
+    IpcMessage message;
+    while (receive(message)) {
+      if (message.name != "done") {
+        payloads.emplace(std::move(message.name), std::move(message.payload));
+        continue;
+      }
+      std::shared_ptr<const Geometry> geometry;
+      QString error;
+      try {
+        const auto answer = nlohmann::json::parse(message.payload);
+        if (!answer.value("ok", false)) {
+          error = QString::fromStdString(answer.value("error", std::string{"The render failed."}));
+        } else {
+          const auto found = payloads.find(kRenderOutputName);
+          if (found == payloads.end()) error = tr("The worker returned no geometry.");
+          else {
+            geometry =
+              import_ipc_geometry_buffer(found->second.data(), found->second.size(), kRenderOutputName);
+            if (!geometry) error = tr("The worker returned geometry that could not be read.");
+          }
+        }
+      } catch (const std::exception& e) {
+        error = QString::fromLatin1(e.what());
+      }
+      QMetaObject::invokeMethod(this, [this, geometry, error] { finishRender(geometry, error); });
+      return;
+    }
+    // The channel ended without an answer, which is what a crashed worker looks like from here.
+    QMetaObject::invokeMethod(this, [this] { finishRender({}, tr("The compute worker stopped.")); });
+  });
+  connect(d->renderThread, &QThread::finished, d->renderThread, &QObject::deleteLater);
+  d->renderThread->start();
+}
+
+void ComputeWorker::finishRender(const std::shared_ptr<const Geometry>& geometry, const QString& error)
+{
+  // The thread is finishing; let it go before anything else is asked of this worker.
+  if (d->renderThread) {
+    d->renderThread->quit();
+    d->renderThread->wait();
+    d->renderThread = nullptr;
+  }
+  if (geometry) emit renderDone(geometry);
+  else emit renderFailed(error);
 }

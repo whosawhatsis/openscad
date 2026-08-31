@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <memory>
 #include <QString>
 #include <QStringList>
 #include <memory>
@@ -52,7 +53,27 @@ public:
   //! False for a crash or a kill, true only for a child that exited zero of its own accord.
   [[nodiscard]] bool exitedCleanly() const;
 
+  /*!
+     Asks for a render and returns immediately. The answer arrives as `renderDone` or
+     `renderFailed`, both emitted on the caller's thread.
+
+     Blocking here is not an option: the GUI thread cannot wait on a channel, and isolating the
+     computation only to freeze the window it was meant to protect would be worse than not
+     isolating it at all. This mirrors what CGALWorker does for the in-process path.
+   */
+  void startRender(const QString& scadPath, const QString& parameterFile, const QString& setName);
+
+signals:
+  //! The geometry a render produced. Never null: a failure comes through renderFailed instead.
+  void renderDone(std::shared_ptr<const class Geometry>);
+  //! Always emitted if renderDone is not, so a window is never left waiting on a signal that will
+  //! never come.
+  void renderFailed(QString reason);
+
 private:
+  //! Runs on the caller's thread; turns the worker's answer into one signal or the other.
+  void finishRender(const std::shared_ptr<const class Geometry>& geometry, const QString& error);
+
   struct Private;
   std::unique_ptr<Private> d;
 };
