@@ -76,10 +76,6 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
   if (const auto *revolution = dynamic_cast<const RotateExtrudeNode *>(&node)) {
     if (extrusionHeight > 0.0) return {};
     if (revolution->angle == 0.0) return std::make_unique<BrepGeometry>(nullptr);
-    if (revolution->discretizer.isFnSpecified()) {
-      LOG(message_group::Error, "OpenCASCADE rotate_extrude does not yet support explicit $fn sweeps");
-      return std::make_unique<BrepGeometry>(nullptr);
-    }
     try {
       std::vector<BrepGeometry> profiles;
       for (const auto& child : node.children) {
@@ -91,8 +87,12 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
       }
       BrepFilletDiagnostics diagnostics;
       auto profile = BrepGeometry::boolean(profiles, BrepOperation::Union, 0.0, diagnostics);
+      const int segments =
+        revolution->discretizer.isFnSpecified()
+          ? revolution->discretizer.getCircularSegmentCount(1.0, revolution->angle).value_or(1)
+          : 0;
       return std::make_unique<BrepGeometry>(
-        profile.revolve(revolution->angle * M_DEG2RAD, revolution->start * M_DEG2RAD));
+        profile.revolve(revolution->angle * M_DEG2RAD, revolution->start * M_DEG2RAD, segments));
     } catch (const std::exception& error) {
       LOG(message_group::Error, "OpenCASCADE rotate_extrude failed: %1$s", error.what());
       return std::make_unique<BrepGeometry>(nullptr);

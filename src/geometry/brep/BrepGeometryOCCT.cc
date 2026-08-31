@@ -9,6 +9,7 @@
 
 #include <BRepBndLib.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -25,6 +26,7 @@
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRepFill.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
@@ -89,7 +91,8 @@ std::shared_ptr<void> brepMakePrism(const std::vector<std::array<double, 2>>& ou
   return std::make_shared<TopoDS_Shape>(solid);
 }
 
-std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double angle, double start)
+std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double angle, double start,
+                                  int segments)
 {
   if (brepIsEmpty(profile) || angle == 0.0) return {};
   if (!std::isfinite(angle) || !std::isfinite(start) || std::abs(angle) > 2 * M_PI)
@@ -114,6 +117,57 @@ std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double a
       if (std::abs(plane.Axis().Direction().Z()) < 1.0 - Precision::Angular() ||
           std::abs(plane.Location().Z()) > Precision::Confusion())
         continue;
+      if (segments > 0) {
+        for (int segment = 0; segment < segments; ++segment) {
+          gp_Trsf first, last;
+          const gp_Ax1 zAxis(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1));
+          first.SetRotation(zAxis, start + angle * segment / segments);
+          last.SetRotation(zAxis, start + angle * (segment + 1) / segments);
+          BRepBuilderAPI_Sewing sewing(Precision::Confusion());
+          sewing.Add(BRepBuilderAPI_Transform(face.Reversed(), first * toXZ, true).Shape());
+          sewing.Add(BRepBuilderAPI_Transform(face, last * toXZ, true).Shape());
+          for (TopExp_Explorer edges(face, TopAbs_EDGE); edges.More(); edges.Next()) {
+            Bnd_Box edgeBounds;
+            BRepBndLib::AddOptimal(edges.Current(), edgeBounds, false, false);
+            // An edge on the axis stays fixed and contributes no swept face.
+            if (std::abs(edgeBounds.CornerMin().X()) <= Precision::Confusion() &&
+                std::abs(edgeBounds.CornerMax().X()) <= Precision::Confusion())
+              continue;
+            const auto a =
+              TopoDS::Edge(BRepBuilderAPI_Transform(edges.Current(), first * toXZ, true).Shape());
+            const auto b =
+              TopoDS::Edge(BRepBuilderAPI_Transform(edges.Current(), last * toXZ, true).Shape());
+            const BRepAdaptor_Curve curveA(a), curveB(b);
+            if (curveA.GetType() == GeomAbs_Line) {
+              std::vector<gp_Pnt> points;
+              for (const auto& point :
+                   {curveA.Value(curveA.FirstParameter()), curveA.Value(curveA.LastParameter()),
+                    curveB.Value(curveB.LastParameter()), curveB.Value(curveB.FirstParameter())}) {
+                if (points.empty() || point.Distance(points.back()) > Precision::Confusion())
+                  points.push_back(point);
+              }
+              if (points.size() > 1 && points.front().Distance(points.back()) <= Precision::Confusion())
+                points.pop_back();
+              if (points.size() < 3) continue;
+              BRepBuilderAPI_MakePolygon boundary;
+              for (const auto& point : points) boundary.Add(point);
+              boundary.Close();
+              sewing.Add(BRepBuilderAPI_MakeFace(boundary.Wire(), true).Face());
+            } else {
+              sewing.Add(BRepFill::Face(a, b));
+            }
+          }
+          sewing.Perform();
+          if (sewing.NbFreeEdges() || sewing.NbMultipleEdges() ||
+              sewing.SewedShape().ShapeType() != TopAbs_SHELL)
+            throw std::runtime_error("B-Rep faceted sweep is not a closed shell");
+          auto solid = BRepBuilderAPI_MakeSolid(TopoDS::Shell(sewing.SewedShape())).Solid();
+          if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+            throw std::runtime_error("B-Rep faceted sweep does not form a valid solid");
+          solids.push_back(std::make_shared<TopoDS_Shape>(solid));
+        }
+        continue;
+      }
       const auto base = BRepBuilderAPI_Transform(face, rotation * toXZ, true).Shape();
       BRepPrimAPI_MakeRevol revolution(base, axis, std::abs(angle), true);
       if (!revolution.IsDone()) throw std::runtime_error("B-Rep revolution construction failed");
@@ -123,7 +177,13 @@ std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double a
       solids.push_back(std::make_shared<TopoDS_Shape>(solid));
     }
     if (solids.empty()) throw std::runtime_error("B-Rep revolution has no planar profile faces");
-    return brepBoolean(solids, BrepOperation::Union, 0.0).shape;
+    auto result = brepBoolean(solids, BrepOperation::Union, 0.0).shape;
+    if (segments > 0 && !brepIsEmpty(result)) {
+      ShapeUpgrade_UnifySameDomain unify(shapeFrom(result), true, true, false);
+      unify.Build();
+      return std::make_shared<TopoDS_Shape>(unify.Shape());
+    }
+    return result;
   } catch (const Standard_Failure& error) {
     throw std::runtime_error(error.GetMessageString());
   }

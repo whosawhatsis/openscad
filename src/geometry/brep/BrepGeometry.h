@@ -37,7 +37,8 @@ public:
   static BrepGeometry fromPolySet(const PolySet& mesh);
   static BrepGeometry prism(const std::vector<std::array<double, 2>>& outline, double height);
   // Map the z=0 profile faces to XZ, then revolve about Z; angles are in radians.
-  [[nodiscard]] BrepGeometry revolve(double angle, double start) const;
+  // Zero segments means a smooth revolution; positive counts create chordal sweep segments.
+  [[nodiscard]] BrepGeometry revolve(double angle, double start, int segments = 0) const;
 
   [[nodiscard]] size_t memsize() const override;
   [[nodiscard]] BoundingBox getBoundingBox() const override;

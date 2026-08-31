@@ -647,7 +647,72 @@ TEST_CASE("B-Rep rotational extrusion retains smooth surfaces", "[brep]")
   CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
 }
 
-TEST_CASE("B-Rep rotational extrusion rejects unsupported or invalid sweeps", "[brep]")
+TEST_CASE("B-Rep explicit sweep facets remain intentional geometry", "[brep]")
+{
+  ModuleInstantiation inst("rotate_extrude");
+  auto revolution = std::make_shared<RotateExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  auto square = std::make_shared<SquareNode>(&inst);
+  square->x = 4;
+  square->y = 2;
+  revolution->children = {square};
+  size_t planes = 8;
+  SECTION("hexagonal solid touching axis")
+  {
+  }
+  SECTION("partial sweep")
+  {
+    revolution->angle = 180;
+    planes = 6;  // The two radial caps merge into one coplanar face.
+  }
+  SECTION("negative sweep with start")
+  {
+    revolution->angle = -180;
+    revolution->start = 90;
+    planes = 6;
+  }
+  SECTION("hollow hexagonal solid")
+  {
+    auto polygon = std::make_shared<PolygonNode>(&inst);
+    polygon->points = {{2, 0}, {4, 0}, {4, 2}, {2, 2}};
+    revolution->children = {polygon};
+    planes = 14;
+  }
+  SECTION("smooth profile with polygonal sweep")
+  {
+    auto circle = std::make_shared<CircleNode>(
+      &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+    circle->r = 1;
+    auto translate = std::make_shared<TransformNode>(&inst, "translate");
+    translate->matrix.translate(Vector3d(5, 0, 0));
+    translate->children = {circle};
+    revolution->children = {translate};
+    planes = 0;
+  }
+  SECTION("profile with a hole")
+  {
+    auto polygon = std::make_shared<PolygonNode>(&inst);
+    polygon->points = {{2, 0}, {5, 0}, {5, 4}, {2, 4}, {3, 1}, {4, 1}, {4, 3}, {3, 3}};
+    polygon->paths = {{0, 1, 2, 3}, {4, 5, 6, 7}};
+    revolution->children = {polygon};
+    planes = 28;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(revolution);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*revolution, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Plane) == planes);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == 0);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Torus) == 0);
+  CHECK(brep->numFacets() == 0);
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
+TEST_CASE("B-Rep rotational extrusion rejects invalid sweeps", "[brep]")
 {
   ModuleInstantiation inst("rotate_extrude");
   auto revolution = std::make_shared<RotateExtrudeNode>(&inst, CurveDiscretizer(0.0));
@@ -657,10 +722,6 @@ TEST_CASE("B-Rep rotational extrusion rejects unsupported or invalid sweeps", "[
   SECTION("axis crossing")
   {
     square->center = true;
-  }
-  SECTION("explicit sweep facets")
-  {
-    revolution->discretizer = CurveDiscretizer(6.0);
   }
   SECTION("zero angle")
   {
