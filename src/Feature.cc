@@ -50,6 +50,10 @@ const Feature Feature::ExperimentalMultiMaterial(
   "multi-material",
   "Enable <code>material()</code>, and carry the bodies declared by <code>material()</code> and "
   "<code>color()</code> through rendering so they can be exported separately.");
+const Feature Feature::ExperimentalScreenSpaceReflections(
+  "screen-space-reflections",
+  "In the shaded view, reflect the model in itself by marching the depth buffer, instead of "
+  "reflecting only the stand-in environment. Costs a second pass over the geometry.");
 const Feature Feature::ExperimentalAiFeatures("ai-features",
                                               "Enable AI features (Note: AI integration is under "
                                               "development and does not connect to external APIs yet).");

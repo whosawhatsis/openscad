@@ -24,6 +24,7 @@ public:
   static const Feature ExperimentalDiscretizationByError;
   static const Feature ExperimentalAiFeatures;
   static const Feature ExperimentalMultiMaterial;
+  static const Feature ExperimentalScreenSpaceReflections;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif

@@ -141,6 +141,10 @@ public:
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_normal_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_coord_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_chromatic_shader;
+  // The first pass's color and depth, for screen-space reflections.
+  GLuint ssr_color_tex_{0};
+  GLuint ssr_depth_tex_{0};
+  void captureSceneForReflections();
   std::shared_ptr<Renderer> renderer;
   const ColorScheme *colorscheme;
   Camera cam;

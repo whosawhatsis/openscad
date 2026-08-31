@@ -1,6 +1,7 @@
 #include "glview/GLView.h"
 #include "geometry/linalg.h"
 #include "glview/ShaderUtils.h"
+#include "Feature.h"
 #include "core/Selection.h"
 #include "glview/system-gl.h"
 #include "glview/ColorMap.h"
@@ -49,6 +50,46 @@ GLView::~GLView()
   teardownShader();
 }
 
+// Copy the framebuffer's color and depth into textures the shader can sample.
+// glCopyTexImage2D rather than a framebuffer object: this is the OpenGL 2.1
+// path, FBOs are an extension there, and copying straight out of the default
+// framebuffer needs neither. Row 39's transparency compositor solves a related
+// problem by reading back to the CPU with glReadPixels and compositing in C++,
+// measured at 150-220 ms per frame - far too slow to do per fragment here.
+void GLView::captureSceneForReflections()
+{
+  GLint viewport[4];
+  glGetIntegerv(GL_VIEWPORT, viewport);
+  const GLsizei width = viewport[2];
+  const GLsizei height = viewport[3];
+  if (width <= 0 || height <= 0) return;
+
+  if (!ssr_color_tex_) glGenTextures(1, &ssr_color_tex_);
+  if (!ssr_depth_tex_) glGenTextures(1, &ssr_depth_tex_);
+
+  // Reallocating every frame is what glCopyTexImage2D does anyway; the size
+  // check exists so a resize does not leave a stale-sized texture bound.
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, ssr_color_tex_);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, viewport[0], viewport[1], width, height, 0);
+
+  glActiveTexture(GL_TEXTURE2);
+  glBindTexture(GL_TEXTURE_2D, ssr_depth_tex_);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  // A depth comparison would return 0/1; this wants the value itself.
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+  glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, viewport[0], viewport[1], width, height, 0);
+
+  glActiveTexture(GL_TEXTURE0);
+}
+
 void GLView::setupShader()
 {
   if (edge_shader) return;
@@ -71,7 +112,13 @@ void GLView::setupShader()
   phong_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
     .resource = phong_resource,
     .type = ShaderUtils::ShaderType::AGENT_RENDERING,
-    .uniforms = {{"showEdges", glGetUniformLocation(phong_resource.shader_program, "showEdges")}},
+    .uniforms =
+      {
+        {"showEdges", glGetUniformLocation(phong_resource.shader_program, "showEdges")},
+        {"ssrEnabled", glGetUniformLocation(phong_resource.shader_program, "ssrEnabled")},
+        {"ssrColor", glGetUniformLocation(phong_resource.shader_program, "ssrColor")},
+        {"ssrDepth", glGetUniformLocation(phong_resource.shader_program, "ssrDepth")},
+      },
     .attributes =
       {
         {"barycentric", glGetAttribLocation(phong_resource.shader_program, "barycentric")},
@@ -519,6 +566,36 @@ void GLView::paintGL()
     // highlight, so its RGB must not be multiplied by alpha a second time.
     if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     this->renderer->draw(active_showedges, active_shader);
+
+    // Screen-space reflections need the scene before they can reflect it, so
+    // the geometry is drawn a second time against the first pass's color and
+    // depth. Second, not deferred into a fullscreen pass: a G-buffer would need
+    // normals and material in render targets, and the OpenGL 2.1 floor this
+    // viewport supports has no multiple render targets to put them in.
+    if (analysis_mode == AnalysisMode::Shaded && phong_shader &&
+        Feature::ExperimentalScreenSpaceReflections.is_enabled()) {
+      captureSceneForReflections();
+      glUseProgram(active_shader->resource.shader_program);
+      glUniform1i(active_shader->uniforms.at("ssrEnabled"), GL_TRUE);
+      glUniform1i(active_shader->uniforms.at("ssrColor"), 1);
+      glUniform1i(active_shader->uniforms.at("ssrDepth"), 2);
+      glUseProgram(0);
+      // Draw over the first pass rather than clearing it: the background
+      // gradient, axes and crosshairs were drawn before any of this and a clear
+      // would take them with it. The same fragments land at the same depth, so
+      // the test has to accept equality or the second pass draws nothing.
+      glDepthFunc(GL_LEQUAL);
+      this->renderer->draw(active_showedges, active_shader);
+      glDepthFunc(GL_LESS);
+      glUseProgram(active_shader->resource.shader_program);
+      glUniform1i(active_shader->uniforms.at("ssrEnabled"), GL_FALSE);
+      glUseProgram(0);
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE2);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE0);
+    }
     if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (depth_preview_polarity(analysisDepthUnits()).invert) {
       // OpenCSG relies on black fog while constructing its internal CSG mask.
