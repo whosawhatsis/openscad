@@ -23,10 +23,14 @@ is not implemented yet.
   and native region classification, not a rendered image or triangle mesh.
 - Polyhedral hulls; smooth hulls of two spheres or two parallel vertical cylinders
   with matching cap heights (including extruded two-circle hulls).
-- Minkowski sums of convex polyhedra; convex-polyhedron/sphere rounding;
+- Minkowski sums of polyhedra, including nonconvex operands; polyhedron/sphere rounding;
   sphere/sphere sums; vertical constant-section prisms with a vertical cylinder
   (including planar circle offsets). Operands must fit a supported path at each
   step of a multi-operand sum.
+  Nonconvex polyhedra are split into convex cells using native face planes, then
+  their component sums are unioned. This preserves recesses without a mesh kernel.
+  Complexity limits are 256 splitting planes, 4096 cells/component pairs, and
+  one million vertex pairs per convex sum; complicated inputs can be expensive.
 - Height fields and mesh imports become intentionally faceted BREP solids.
   Multi-object AMF/3MF imports are combined with native booleans.
 - Polyhedra with disconnected shells, cavities, and nested islands. Shells must
@@ -36,7 +40,7 @@ is not implemented yet.
 ## Current limitations
 
 This is not yet a replacement for every CGAL/Manifold operation. General curved
-hulls, general nonconvex Minkowski sums, native smooth SVG/DXF
+hulls, general curved-operand Minkowski sums, native smooth SVG/DXF
 profiles, and negative extrusion scales remain unsupported. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail

@@ -422,6 +422,43 @@ std::vector<gp_Pnt> polyhedralVertices(const TopoDS_Shape& shape, bool requireCo
   return points;
 }
 
+std::vector<std::shared_ptr<void>> convexParts(const std::shared_ptr<void>& shape)
+{
+  polyhedralVertices(shapeFrom(shape), false);
+  try {
+    polyhedralVertices(shapeFrom(shape), true);
+    return {shape};
+  } catch (const std::runtime_error&) {
+    // Split by the supporting planes of every face: each occupied arrangement cell
+    // is convex. This preserves cavities and disconnected components without meshing.
+  }
+  TopTools_ListOfShape arguments, planes;
+  arguments.Append(shapeFrom(shape));
+  for (TopExp_Explorer faces(shapeFrom(shape), TopAbs_FACE); faces.More(); faces.Next()) {
+    if (planes.Size() >= 256)
+      throw std::runtime_error("B-Rep Minkowski decomposition plane limit exceeded");
+    planes.Append(
+      BRepBuilderAPI_MakeFace(BRepAdaptor_Surface(TopoDS::Face(faces.Current())).Plane()).Face());
+  }
+  // ponytail: full plane arrangements can grow cubically; use selective reflex-face
+  // splitting if the explicit size limits become restrictive in real models.
+  BRepAlgoAPI_Splitter splitter;
+  splitter.SetArguments(arguments);
+  splitter.SetTools(planes);
+  splitter.Build();
+  if (!splitter.IsDone() || !BRepCheck_Analyzer(splitter.Shape()).IsValid())
+    throw std::runtime_error("B-Rep Minkowski convex decomposition failed");
+  std::vector<std::shared_ptr<void>> parts;
+  for (TopExp_Explorer solids(splitter.Shape(), TopAbs_SOLID); solids.More(); solids.Next()) {
+    if (parts.size() >= 4096)
+      throw std::runtime_error("B-Rep Minkowski decomposition cell limit exceeded");
+    polyhedralVertices(solids.Current(), true);
+    parts.push_back(std::make_shared<TopoDS_Shape>(solids.Current()));
+  }
+  if (parts.empty()) throw std::runtime_error("B-Rep Minkowski decomposition produced no solids");
+  return parts;
+}
+
 std::shared_ptr<void> pointHull(const std::vector<gp_Pnt>& points)
 {
   if (points.size() < 4) return {};
@@ -641,7 +678,13 @@ std::shared_ptr<void> brepMinkowski(const std::vector<std::shared_ptr<void>>& op
               .Shape());
           continue;
         }
-        polyhedralVertices(shapeFrom(a), true);
+        const auto parts = convexParts(a);
+        if (parts.size() > 1) {
+          std::vector<std::shared_ptr<void>> sums;
+          for (const auto& part : parts) sums.push_back(brepMinkowski({part, b}));
+          result = brepBoolean(sums, BrepOperation::Union, 0).shape;
+          continue;
+        }
         BRepOffsetAPI_MakeOffsetShape offset;
         offset.PerformByJoin(shapeFrom(a), sphere->Radius(), Precision::Confusion());
         if (!offset.IsDone() || !BRepCheck_Analyzer(offset.Shape()).IsValid())
@@ -651,6 +694,16 @@ std::shared_ptr<void> brepMinkowski(const std::vector<std::shared_ptr<void>>& op
         result = std::make_shared<TopoDS_Shape>(
           BRepBuilderAPI_Transform(offset.Shape(), translation, true).Shape());
       } else {
+        const auto leftParts = convexParts(a), rightParts = convexParts(b);
+        if (leftParts.size() > 1 || rightParts.size() > 1) {
+          if (leftParts.size() > 4096 / rightParts.size())
+            throw std::runtime_error("B-Rep Minkowski component-pair limit exceeded");
+          std::vector<std::shared_ptr<void>> sums;
+          for (const auto& left : leftParts)
+            for (const auto& right : rightParts) sums.push_back(brepMinkowski({left, right}));
+          result = brepBoolean(sums, BrepOperation::Union, 0).shape;
+          continue;
+        }
         const auto lhs = polyhedralVertices(shapeFrom(a), true),
                    rhs = polyhedralVertices(shapeFrom(b), true);
         if (!rhs.empty() && lhs.size() > 1000000 / rhs.size())

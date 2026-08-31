@@ -861,6 +861,43 @@ TEST_CASE("B-Rep hull and Minkowski retain native solids", "[brep]")
   }
 }
 
+TEST_CASE("B-Rep nonconvex Minkowski preserves recesses", "[brep]")
+{
+  BrepFilletDiagnostics diagnostics;
+  auto notch = BrepGeometry::cube(4, 4, 4);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(Vector3d(2, 2, -1));
+  notch.transform(placement);
+  const auto concave = BrepGeometry::boolean({BrepGeometry::cube(5, 5, 2), notch},
+                                             BrepOperation::Difference, 0, diagnostics);
+  auto kernel = BrepGeometry::cube(1, 1, 1);
+  SECTION("polyhedral kernel")
+  {
+  }
+  SECTION("spherical kernel")
+  {
+    kernel = BrepGeometry::sphere(0.5);
+  }
+  SECTION("nonconvex kernel")
+  {
+    kernel = concave;
+  }
+  const auto result = BrepGeometry::minkowski({concave, kernel});
+  REQUIRE_FALSE(result.isEmpty());
+  const auto occupied = [&](double x, double y) {
+    auto probe = BrepGeometry::cube(0.01, 0.01, 0.01);
+    auto transform = Transform3d::Identity();
+    transform.translate(Vector3d(x, y, 1));
+    probe.transform(transform);
+    return !BrepGeometry::boolean({result, probe}, BrepOperation::Intersection, 0, diagnostics)
+              .isEmpty();
+  };
+  CHECK(occupied(1, 4));
+  CHECK(occupied(4, 1));
+  CHECK_FALSE(occupied(8, 8));
+  if (kernel.getBoundingBox().max().x() < 2) CHECK_FALSE(occupied(4, 4));
+}
+
 TEST_CASE("B-Rep hull of two spheres keeps the tangent envelope smooth", "[brep]")
 {
   ModuleInstantiation inst("hull");
