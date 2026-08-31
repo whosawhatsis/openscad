@@ -131,6 +131,9 @@ public:
   //! checked the geometry would not notice an empty view.
   const std::shared_ptr<CSGProducts>& previewProductsForTest() const { return this->rootProduct; }
   bool hasPreviewRendererForTest() const { return this->thrownTogetherRenderer != nullptr; }
+  //! Counts previews composited from a worker's product list. Without this a test cannot tell an
+  //! isolated preview from the in-process one -- both end with products in the same member.
+  int isolatedPreviewsForTest() const { return this->isolatedPreviews; }
 #endif
   ~MainWindow() override;
 
@@ -484,6 +487,7 @@ private:
   void startIsolatedRender();
   void isolatedRenderFailed(const QString& reason);
   void startIsolatedPreview();
+  int isolatedPreviews = 0;
   void isolatedPreviewDone(const std::shared_ptr<class CsgInfo>& products);
   void isolatedPreviewFailed(const QString& reason);
   //! Builds the renderers a preview draws from, whichever process produced the products.

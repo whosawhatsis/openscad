@@ -1914,13 +1914,6 @@ void MainWindow::createPreviewRenderers()
     this->rootProduct, this->highlightsProducts, this->backgroundProducts);
 }
 
-/*!
-   UNFINISHED. Wiring csgRender() to this makes a preview never complete: neither previewDone nor
-   previewFailed reaches the window, so it waits forever. The worker side is not the problem -- it
-   answers preview requests correctly and has tests that prove it -- so what is missing is on this
-   side of the channel. Left here, unreferenced, because deleting it would lose the analysis; do not
-   call it until a GUI test for an isolated preview passes.
- */
 void MainWindow::startIsolatedPreview()
 {
   const QString sourceFile = writeSourceForWorker();
@@ -1932,6 +1925,7 @@ void MainWindow::startIsolatedPreview()
 
 void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
 {
+  ++this->isolatedPreviews;
   this->rootProduct = products->root_products;
   this->highlightsProducts = products->highlights_products;
   this->backgroundProducts = products->background_products;
@@ -1968,8 +1962,12 @@ void MainWindow::finishPreview()
 
 void MainWindow::csgRender()
 {
-  // NOT routed through the compute worker: an isolated preview does not complete. See
-  // startIsolatedPreview() for how far the diagnosis got.
+  // The isolated preview ends in isolatedPreviewDone (or isolatedPreviewFailed), not here: the
+  // worker answers on the channel, long after this returns.
+  if (this->rootNode && this->computeWorker) {
+    startIsolatedPreview();
+    return;
+  }
   if (this->rootNode) compileCSG();
   finishPreview();
 }
@@ -3603,6 +3601,9 @@ void MainWindow::setupCoreSubsystems()
                                             QString::fromLatin1(kIpcChannelEnvironmentVariable));
     connect(this->computeWorker, &ComputeWorker::renderDone, this, &MainWindow::actionRenderDone);
     connect(this->computeWorker, &ComputeWorker::renderFailed, this, &MainWindow::isolatedRenderFailed);
+    connect(this->computeWorker, &ComputeWorker::previewDone, this, &MainWindow::isolatedPreviewDone);
+    connect(this->computeWorker, &ComputeWorker::previewFailed, this,
+            &MainWindow::isolatedPreviewFailed);
     if (!this->computeWorker->start()) {
       // Say so and carry on in-process. Refusing to open the window would be a worse answer than
       // computing the way it always did.

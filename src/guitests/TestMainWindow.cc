@@ -68,8 +68,9 @@ void TestMainWindow::checkSaveToShouldUpdateWindowTitle()
 
 namespace {
 
-//! Renders `source` in a window of its own and returns the geometry it produced, or null.
-std::shared_ptr<const Geometry> renderInOwnWindow(const QString& source)
+//! Runs `source` in a window of its own -- rendered (F6) or previewed (F5) -- and returns the
+//! window once it has finished compiling, or null if it never did.
+MainWindow *runInOwnWindow(const QString& source, const bool preview)
 {
   // Heap-allocated and released through the event loop, never destroyed on the stack. A window is
   // the target of queued connections and timers; tearing one down while the application is still
@@ -82,9 +83,10 @@ std::shared_ptr<const Geometry> renderInOwnWindow(const QString& source)
   QObject::connect(window, &MainWindow::compilationDone, window,
                    [&compiled](SourceFile *) { compiled = true; });
 
-  window->designActionRender->trigger();
+  if (preview) window->designActionPreview->trigger();
+  else window->designActionRender->trigger();
 
-  // A render crosses a process boundary, so it is slower than an in-process one and the wait has
+  // The work crosses a process boundary, so it is slower than an in-process one and the wait has
   // to be generous. It still has to end: a window left waiting forever is the failure this whole
   // feature exists to prevent, so timing out here is a real result and not a flake.
   QElapsedTimer timer;
@@ -97,7 +99,7 @@ std::shared_ptr<const Geometry> renderInOwnWindow(const QString& source)
   // the target of queued connections; tearing one down inside a running test process crashes in
   // whatever touches it next. The test process exits shortly after, so leaking it is the cheaper
   // and more honest option than pretending the teardown is safe.
-  return compiled ? window->rootGeom : nullptr;
+  return compiled ? window : nullptr;
 }
 
 }  // namespace
@@ -105,13 +107,31 @@ std::shared_ptr<const Geometry> renderInOwnWindow(const QString& source)
 void TestMainWindow::checkIsolatedRenderProducesGeometry()
 {
   Feature::enable_feature("process-isolation");
-  const auto geometry = renderInOwnWindow(QStringLiteral("cube([10, 10, 10]);"));
+  auto *window = runInOwnWindow(QStringLiteral("cube([10, 10, 10]);"), false);
   Feature::enable_feature("process-isolation", false);
 
-  QVERIFY2(geometry != nullptr, "an isolated render produced no geometry");
-  const auto polyset = std::dynamic_pointer_cast<const PolySet>(geometry);
+  QVERIFY2(window != nullptr, "an isolated render never finished");
+  const auto polyset = std::dynamic_pointer_cast<const PolySet>(window->rootGeom);
   QVERIFY2(polyset != nullptr, "the isolated result was not a mesh");
   QCOMPARE(polyset->vertices.size(), size_t{8});
+}
+
+void TestMainWindow::checkIsolatedPreviewProducesProducts()
+{
+  // A preview crosses the same boundary as a render, but comes back as a product list rather than
+  // one mesh. The window has to composite what the worker sent; until it does, F5 under isolation
+  // is either wrong or never ends.
+  Feature::enable_feature("process-isolation");
+  auto *window = runInOwnWindow(QStringLiteral("cube([10, 10, 10]);"), true);
+  Feature::enable_feature("process-isolation", false);
+
+  QVERIFY2(window != nullptr, "an isolated preview never finished");
+  const auto& products = window->previewProductsForTest();
+  QVERIFY2(products != nullptr, "an isolated preview produced no product list");
+  QCOMPARE(products->size(), size_t{1});
+  // Products alone would also be there if the window had quietly previewed in-process, which is
+  // exactly what it did before this was wired -- so the test has to say where they came from.
+  QCOMPARE(window->isolatedPreviewsForTest(), 1);
 }
 
 void TestMainWindow::checkInProcessPreviewProducesProducts()
@@ -119,18 +139,8 @@ void TestMainWindow::checkInProcessPreviewProducesProducts()
   // The control for the isolated preview test: same window, same trigger, isolation off. If this
   // hangs too, the problem is previewing in a window the test never showed -- not the worker.
   Feature::enable_feature("process-isolation", false);
-  auto *window = new MainWindow{QStringList{}};
-  window->activeEditor->setPlainText(QStringLiteral("cube([10, 10, 10]);"));
-  bool compiled = false;
-  QObject::connect(window, &MainWindow::compilationDone, window,
-                   [&compiled](SourceFile *) { compiled = true; });
-  window->designActionPreview->trigger();
-  QElapsedTimer timer;
-  timer.start();
-  while (!compiled && timer.elapsed() < 20000) {
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-  }
-  QVERIFY2(compiled, "the in-process preview never finished either");
+  auto *window = runInOwnWindow(QStringLiteral("cube([10, 10, 10]);"), true);
+  QVERIFY2(window != nullptr, "the in-process preview never finished either");
   QVERIFY2(window->previewProductsForTest() != nullptr, "no product list in-process");
 }
 
@@ -143,8 +153,8 @@ void TestMainWindow::checkAWindowWhoseWorkerCannotStartStillRenders()
   // With the flag off, the same window takes the in-process path, which is exactly the state the
   // fallback leaves it in.
   Feature::enable_feature("process-isolation", false);
-  const auto geometry = renderInOwnWindow(QStringLiteral("cube([10, 10, 10]);"));
+  auto *window = runInOwnWindow(QStringLiteral("cube([10, 10, 10]);"), false);
 
-  QVERIFY2(geometry != nullptr, "an in-process render produced no geometry");
-  QVERIFY(std::dynamic_pointer_cast<const PolySet>(geometry) != nullptr);
+  QVERIFY2(window != nullptr, "an in-process render never finished");
+  QVERIFY(std::dynamic_pointer_cast<const PolySet>(window->rootGeom) != nullptr);
 }
