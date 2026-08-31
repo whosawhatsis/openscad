@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "TestAnalysisView.h"
+#include "TestExportImage.h"
 #include "TestMainWindow.h"
 #include "TestModuleCache.h"
 #include "TestTabManager.h"
@@ -24,6 +25,7 @@ int runAllTest(MainWindow *window)
   totalTestFailures += runTests<TestMainWindow>(window);
   totalTestFailures += runTests<TestModuleCache>(window);
   totalTestFailures += runTests<TestAnalysisView>(window);
+  totalTestFailures += runTests<TestExportImage>(window);
   std::cout << "********************************** RESULTS *********************************"
             << std::endl;
   std::cout << "Failures: " << totalTestFailures << std::endl;

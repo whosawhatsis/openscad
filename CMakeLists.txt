@@ -1570,6 +1570,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestTabManager.h
     src/guitests/TestMainWindow.h
     src/guitests/TestAnalysisView.h
+    src/guitests/TestExportImage.h
     src/guitests/UXTest.h
   )
 
@@ -1579,6 +1580,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestTabManager.cc
     src/guitests/TestMainWindow.cc
     src/guitests/TestAnalysisView.cc
+    src/guitests/TestExportImage.cc
     src/guitests/UXTest.cc
   )
 
@@ -1608,6 +1610,8 @@ file(GLOB_RECURSE TEST_SOURCES
   "src/io/*_test.cc"
   # Not GUI_TEST_SOURCES: the parts of glview that these cover are in CORE_SOURCES and build
   # headless, so their tests should run in a headless build too.
+  "src/glview/*_test.cc"
+  "src/io/*_test.cc"
   "src/glview/*_test.cc"
   "src/io/*_test.cc"
   "src/glview/*_test.cc"

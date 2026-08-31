@@ -7,15 +7,11 @@
 #include <cstdlib>
 #include <iostream>
 
-bool write_png(const char *filename, unsigned char *pixels, int width, int height);
-bool write_png(std::ostream& output, unsigned char *pixels, int width, int height);
-/*!
-   Write a 16-bit greyscale PNG. Samples are big-endian, as PNG stores them.
-
-   Always lodepng, on every platform: the CoreGraphics writer used for color
-   output on macOS is 8 bits per component, and lodepng is compiled
-   unconditionally, so there is no reason to fork this per platform.
- */
+// pixels is always RGBA; with_alpha=false discards the alpha channel on output.
+bool write_png(const char *filename, unsigned char *pixels, int width, int height,
+               bool with_alpha = false);
+bool write_png(std::ostream& output, unsigned char *pixels, int width, int height,
+               bool with_alpha = false);
 /*!
    Write 16-bit greyscale PNG, optionally with tEXt metadata chunks.
 

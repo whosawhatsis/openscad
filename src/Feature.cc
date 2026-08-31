@@ -60,6 +60,11 @@ const Feature Feature::ExperimentalProcessIsolation(
   "process-isolation", "Run each window's computation in an isolated process (requires restart).");
 const Feature Feature::ExperimentalEditorEnhancements("editor-enhancements",
                                                       "Enable experimental editor enhancements.");
+const Feature Feature::ExperimentalTransparentCompositing(
+  "transparent-compositing",
+  "Always render the 3D view on a transparent background and composite it over the background "
+  "color for display. Makes transparent image export correct for partially transparent "
+  "geometry, and lets it be exported without re-rendering.");
 
 #ifdef ENABLE_PYTHON
 const Feature Feature::ExperimentalPythonEngine(
