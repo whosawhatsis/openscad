@@ -82,6 +82,7 @@ static double vector_angle(double ux, double uy, double vx, double vy)
 void path::arc_to(path_t& path, double x1, double y1, double rx, double ry, double x2, double y2,
                   double angle, bool large, bool sweep, void *context)
 {
+  native_curves_valid = false;
   const auto *fValues = reinterpret_cast<const fnContext *>(context);
 
   // http://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes
@@ -155,6 +156,11 @@ void path::curve_to(path_t& path, double x, double y, double cx1, double cy1, do
   // fn was set to a fixed value of 20 where this is now used.
   // The author decided it should never be smaller than this original value.
   int fn = std::max(fValues->pathSegmentCount, 20);
+  if (fValues->retainCurves && !path.empty())
+    retained_curves.push_back({path_list.size() - 1,
+                               path.size() - 1,
+                               path.size() - 1 + fn,
+                               {{x, y, 0}, {cx1, cy1, 0}, {x2, y2, 0}}});
   for (int idx = 1; idx <= fn; ++idx) {
     const double a = idx * (1.0 / (double)fn);
     const double xx = x * t(a, 2) + cx1 * 2 * t(a, 1) * a + x2 * a * a;
@@ -173,6 +179,11 @@ void path::curve_to(path_t& path, double x, double y, double cx1, double cy1, do
   // fn was set to a fixed value of 20 where this is now used.
   // The author decided it should never be smaller than this original value.
   int fn = std::max(fValues->pathSegmentCount, 20);
+  if (fValues->retainCurves && !path.empty())
+    retained_curves.push_back({path_list.size() - 1,
+                               path.size() - 1,
+                               path.size() - 1 + fn,
+                               {{x, y, 0}, {cx1, cy1, 0}, {cx2, cy2, 0}, {x2, y2, 0}}});
   for (int idx = 1; idx <= fn; ++idx) {
     const double a = idx * (1.0 / (double)fn);
     const double xx = x * t(a, 3) + cx1 * 3 * t(a, 2) * a + cx2 * 3 * t(a, 1) * a * a + x2 * a * a * a;
@@ -218,6 +229,7 @@ void path::set_attrs(attr_map_t& attrs, void *context)
   std::string commands = "-zmlcqahvstZMLCQAHVST";
 
   shape::set_attrs(attrs, context);
+  native_curves_valid = true;
   this->data = attrs["d"];
 
   boost::char_separator<char> sep(" ,", commands.c_str());
@@ -424,6 +436,7 @@ void path::set_attrs(attr_map_t& attrs, void *context)
         path_t path = path_list.back();
         if (!path_list.back().empty()) {
           if (is_open_path(path)) {
+            native_curves_valid = false;
             path_list.pop_back();
             offset_path(path_list, path, get_stroke_width(), get_stroke_linecap());
           }
@@ -487,10 +500,34 @@ void path::set_attrs(attr_map_t& attrs, void *context)
   if (!path_closed && !path_list.empty()) {
     path_t path = path_list.back();
     if (is_open_path(path)) {
+      native_curves_valid = false;
       path_list.pop_back();
       offset_path(path_list, path, get_stroke_width(), get_stroke_linecap());
     }
   }
+  if (reinterpret_cast<const fnContext *>(context)->retainCurves && native_curves_valid) {
+    auto curve = retained_curves.begin();
+    for (size_t c = 0; c < path_list.size(); ++c) {
+      const auto& points = path_list[c];
+      if (points.size() < 2 || (points.front() - points.back()).norm() > 1e-9) {
+        native_curves_valid = false;
+        break;
+      }
+      bezier_contours.emplace_back();
+      for (size_t i = 0; i + 1 < points.size();) {
+        if (curve != retained_curves.end() && curve->contour == c && curve->first == i) {
+          bezier_contours.back().push_back(curve->poles);
+          i = curve->last;
+          ++curve;
+        } else {
+          if ((points[i] - points[i + 1]).norm() > 1e-12)
+            bezier_contours.back().push_back({points[i], points[i + 1]});
+          ++i;
+        }
+      }
+    }
+  }
+  retained_curves.clear();
 }
 
 bool path::is_open_path(path_t& path) const

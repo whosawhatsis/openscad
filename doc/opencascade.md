@@ -18,6 +18,10 @@ is not implemented yet.
   extrusion. Twist uses tolerance-controlled smooth splines.
 - Text extrusion from the font's original quadratic/cubic Bezier curves, retaining
   shaping, spacing, alignment, holes, and nonzero-winding contour overlaps.
+- SVG extrusion of closed paths containing lines and quadratic/cubic Bezier
+  segments retains the original curves, including relative commands, transforms,
+  ID/layer selection, page scaling, and centering. Native import is currently
+  restricted to filled, nonzero-winding paths without strokes or arc segments.
 - Round, miter, and chamfer offsets of supported profiles, and both cut and shadow
   projections used as extrusion profiles. Shadow projection uses OCCT silhouettes
   and native region classification, not a rendered image or triangle mesh.
@@ -40,8 +44,9 @@ is not implemented yet.
 ## Current limitations
 
 This is not yet a replacement for every CGAL/Manifold operation. General curved
-hulls, general curved-operand Minkowski sums, native smooth SVG/DXF
-profiles, and negative extrusion scales remain unsupported. Native profile
+hulls, general curved-operand Minkowski sums, native DXF profiles, SVG arcs and
+non-path elements, SVG strokes/even-odd fills, and negative extrusion scales
+remain unsupported. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail
 OCCT construction or validity checks. Unsupported paths report errors instead

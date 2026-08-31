@@ -25,6 +25,7 @@
 #include "core/RotateExtrudeNode.h"
 #include "core/State.h"
 #include "core/TextNode.h"
+#include "io/import.h"
 #include "core/TransformNode.h"
 #include "core/Tree.h"
 #include "core/enums.h"
@@ -76,6 +77,24 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
                                                  double extrusionHeight = 0.0)
 {
   if (extrusionHeight > 0) {
+    if (const auto *imported = dynamic_cast<const ImportNode *>(&node);
+        imported && imported->type == ImportType::SVG) {
+      std::vector<SvgBezierContours> curves;
+      import_svg(imported->discretizer, imported->filename, imported->id, imported->layer, imported->dpi,
+                 false, imported->modinst->location(), &curves);
+      std::vector<BrepGeometry> shapes;
+      for (const auto& contours : curves)
+        shapes.push_back(BrepGeometry::bezierPrism(contours, extrusionHeight));
+      BrepFilletDiagnostics unused;
+      auto result = BrepGeometry::boolean(shapes, BrepOperation::Union, 0, unused);
+      if (imported->center && !result.isEmpty()) {
+        const Vector3d center = result.getBoundingBox().center();
+        auto placement = Transform3d::Identity();
+        placement.translate(Vector3d(-center.x(), -center.y(), 0));
+        result.transform(placement);
+      }
+      return std::make_unique<BrepGeometry>(std::move(result));
+    }
     if (const auto *text = dynamic_cast<const TextNode *>(&node)) {
       std::vector<BrepGeometry> glyphs;
       for (const auto& contours : FreetypeRenderer().renderCurves(text->params))

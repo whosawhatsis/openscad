@@ -24,6 +24,7 @@
  *
  */
 #include "io/import.h"
+#include <type_traits>
 
 #include <clipper2/clipper.h>
 
@@ -84,12 +85,15 @@ double calc_alignment(const libsvg::align_t alignment, double page_mm, double sc
 std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::string& filename,
                                       const boost::optional<std::string>& id,
                                       const boost::optional<std::string>& layer, const double dpi,
-                                      const bool center, const Location& loc)
+                                      const bool center, const Location& loc,
+                                      std::vector<SvgBezierContours> *curves)
 {
   try {
     fnContext scadContext(
       [&discretizer](double r, double angle) { return discretizer.getCircularSegmentCount(r, angle); },
       discretizer.getPathSegmentCount());
+    scadContext.retainCurves = curves != nullptr;
+    if (curves) curves->clear();
     if (id) {
       scadContext.selector = [&scadContext, id, layer](const libsvg::shape *s) {
         bool layer_match = true;
@@ -125,7 +129,9 @@ std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::s
       match_args += "layer = \"" + layer.get() + "\"";
     }
 
-    const auto shapes = libsvg::libsvg_read_file(filename.c_str(), (void *)&scadContext);
+    const auto rawShapes = libsvg::libsvg_read_file(filename.c_str(), (void *)&scadContext);
+    const std::unique_ptr<std::remove_pointer_t<decltype(rawShapes)>, decltype(&libsvg::libsvg_free)>
+      shapes(rawShapes, libsvg::libsvg_free);
     if (!match_args.empty() && !scadContext.has_matches()) {
       LOG(message_group::Warning, loc, "", "import() filter %2$s did not match anything", filename,
           match_args);
@@ -194,6 +200,21 @@ std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::s
       if (!shape_ptr->is_excluded()) {
         auto poly = std::make_shared<Polygon2d>();
         const auto& s = *shape_ptr;
+        if (curves) {
+          if (s.is_container()) continue;
+          SvgBezierContours contours;
+          for (const auto& contour : s.get_bezier_contours()) {
+            contours.emplace_back();
+            for (const auto& curve : contour) {
+              contours.back().emplace_back();
+              for (const auto& v : curve)
+                contours.back().back().push_back(
+                  {scale.x() * (-viewbox.x() + v.x()) - cx, scale.y() * (-viewbox.y() - v.y()) + cy});
+            }
+          }
+          curves->push_back(std::move(contours));
+          continue;
+        }
         for (const auto& p : s.get_path_list()) {
           Outline2d outline;
           for (const auto& v : p) {
@@ -207,9 +228,13 @@ std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::s
         if (!poly->isEmpty()) polygons.push_back(poly);
       }
     }
-    libsvg_free(shapes);
+    if (curves) return std::make_unique<Polygon2d>();
     return ClipperUtils::apply(polygons, Clipper2Lib::ClipType::Union);
   } catch (const std::exception& e) {
+    if (curves) {
+      curves->clear();
+      throw;
+    }
     LOG(message_group::Error, "%1$s, import() at line %2$d", e.what(), loc.firstLine());
     return std::make_unique<Polygon2d>();
   }

@@ -60,6 +60,7 @@ struct fnContext {
   std::function<bool(const libsvg::shape *)> selector;
   std::function<std::optional<int>(double, double)> getCircularSegmentCount;
   const int pathSegmentCount;
+  bool retainCurves{false};
 
 private:
   std::atomic<int> matches{0};
@@ -69,6 +70,7 @@ namespace libsvg {
 
 using path_t = std::vector<Eigen::Vector3d>;
 using path_list_t = std::vector<path_t>;
+using bezier_contours_t = std::vector<path_list_t>;
 using attr_map_t = std::map<std::string, std::string>;
 
 class shape
@@ -83,6 +85,9 @@ protected:
   double x{0};
   double y{0};
   path_list_t path_list;
+  bezier_contours_t bezier_contours;
+  bool native_curves_valid{false};
+  bool native_style_valid{true};
   std::string transform;
   std::string stroke_width;
   std::string stroke_linecap;
@@ -125,6 +130,7 @@ public:
   [[nodiscard]] virtual double get_y() const { return y; }
 
   [[nodiscard]] virtual const path_list_t& get_path_list() const { return path_list; }
+  [[nodiscard]] const bezier_contours_t& get_bezier_contours() const;
 
   [[nodiscard]] virtual bool is_excluded() const;
   [[nodiscard]] virtual bool is_container() const { return false; }

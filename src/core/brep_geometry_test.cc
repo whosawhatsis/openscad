@@ -730,6 +730,62 @@ TEST_CASE("B-Rep shadow projection preserves silhouettes and visible holes", "[b
           .isEmpty() == hole);
 }
 
+TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
+{
+  ModuleInstantiation inst("import");
+  auto imported = std::make_shared<ImportNode>(
+    &inst, ImportType::SVG,
+    CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  imported->filename =
+    Filename((std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+              "tests/data/svg/brep-bezier.svg")
+               .string());
+  imported->id = "profile";
+  imported->dpi = 72;
+  imported->center = false;
+  bool unsupported = false;
+  SECTION("absolute controls")
+  {
+  }
+  SECTION("relative controls")
+  {
+    imported->id = "relative";
+  }
+  SECTION("centered")
+  {
+    imported->center = true;
+  }
+  SECTION("arcs do not silently become polygons")
+  {
+    imported->id = "arc";
+    unsupported = true;
+  }
+  SECTION("strokes do not silently become fills")
+  {
+    imported->id = "stroke";
+    unsupported = true;
+  }
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 5);
+  extrusion->children = {imported};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  if (unsupported) {
+    CHECK(brep->isEmpty());
+    return;
+  }
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Other) == 2);
+  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(imported->center ? -4 : 3).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(imported->center ? 4 : 11).margin(1e-5));
+}
+
 TEST_CASE("B-Rep text extrusion retains font Bezier curves", "[brep]")
 {
   PlatformUtils::registerApplicationPath(

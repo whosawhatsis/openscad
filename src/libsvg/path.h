@@ -37,6 +37,11 @@ protected:
   std::string data;
 
 private:
+  struct RetainedCurve {
+    size_t contour, first, last;
+    path_t poles;
+  };
+  std::vector<RetainedCurve> retained_curves;
   [[nodiscard]] inline double t(double t, int exp) const { return std::pow(1.0 - t, exp); }
 
   bool is_open_path(path_t& path) const;

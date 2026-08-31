@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20">
+  <g transform="translate(3 4) scale(2)">
+    <path id="profile" d="M 0 0 Q 2 -2 4 0 C 4 2 0 2 0 0 Z"/>
+    <path id="relative" d="m 0 0 q 2 -2 4 0 c 0 2 -4 2 -4 0 z"/>
+    <path id="arc" d="M 0 0 A 2 2 0 0 1 4 0 L 0 0 Z"/>
+    <path id="stroke" stroke="black" d="M 0 0 Q 2 -2 4 0 C 4 2 0 2 0 0 Z"/>
+  </g>
+  <rect id="excluded" x="15" y="15" width="2" height="2"/>
+</svg>

@@ -23,6 +23,7 @@
  * THE SOFTWARE.
  */
 #include "libsvg/shape.h"
+#include <stdexcept>
 
 #include <clipper2/clipper.offset.h>
 
@@ -99,6 +100,13 @@ void shape::set_attrs(attr_map_t& attrs, void *context)
   this->stroke_linecap = attrs["stroke-linecap"];
   this->stroke_linejoin = attrs["stroke-linejoin"];
   this->style = attrs["style"];
+  for (const auto& name : {"stroke", "fill", "fill-rule"}) {
+    const auto value = get_style(name).empty() ? attrs[name] : get_style(name);
+    if ((std::string(name) == "stroke" && !value.empty() && value != "none") ||
+        (std::string(name) == "fill" && value == "none") ||
+        (std::string(name) == "fill-rule" && value == "evenodd"))
+      native_style_valid = false;
+  }
 
   std::string display = get_style("display");
   if (display.empty()) {
@@ -269,6 +277,22 @@ void shape::apply_transform()
     }
   }
   path_list = result_list;
+  for (auto& contour : bezier_contours)
+    for (auto& curve : contour)
+      for (auto& pole : curve) {
+        pole.z() = 1;
+        for (auto it = matrices.rbegin(); it != matrices.rend(); ++it) pole = *it * pole;
+      }
+}
+
+const bezier_contours_t& shape::get_bezier_contours() const
+{
+  for (const shape *s = this; s; s = s->get_parent())
+    if (!s->native_style_valid)
+      throw std::runtime_error("Native SVG strokes and even-odd fills are not supported yet");
+  if (!native_curves_valid)
+    throw std::runtime_error("Native SVG import currently requires closed line/Bezier paths");
+  return bezier_contours;
 }
 
 void shape::offset_path(path_list_t& path_list, path_t& path, double stroke_width,
