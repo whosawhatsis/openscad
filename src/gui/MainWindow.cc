@@ -65,6 +65,7 @@
 #include <QTextEdit>
 #include <QTextStream>
 #include <QTime>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
@@ -118,6 +119,8 @@
 #include "glview/preview/CSGTreeNormalizer.h"
 #include "glview/preview/ThrownTogetherRenderer.h"
 #include "gui/AboutDialog.h"
+#include "gui/ComputeWorker.h"
+#include "io/ipc_endpoint.h"
 #include "gui/GeometryWorker.h"
 #include "gui/ColorList.h"
 #include "gui/Dock.h"
@@ -274,7 +277,8 @@ std::unique_ptr<ExternalToolInterface> createExternalToolService(print_service_t
 
 }  // namespace
 
-MainWindow::MainWindow(const QStringList& filenames) : rubberBandManager(this)
+MainWindow::MainWindow(const QStringList& filenames)
+  : rubberBandManager(this), processIsolation(Feature::ExperimentalProcessIsolation.is_enabled())
 {
   // Main UI setup
   setupWindow();
@@ -613,6 +617,8 @@ void MainWindow::updateReorderMode(bool reorderMode)
 MainWindow::~MainWindow()
 {
   delete this->geometryWorker;
+  // Takes the child process with it, so closing a window does not leave one behind.
+  delete this->computeWorker;
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -2008,7 +2014,39 @@ void MainWindow::cgalRender()
   if (!isClosing) progress_report_prep(this->rootNode, report_func, this);
   else return;
 
-  this->geometryWorker->start(this->tree);
+  if (this->computeWorker) startIsolatedRender();
+  else this->geometryWorker->start(this->tree);
+}
+
+void MainWindow::startIsolatedRender()
+{
+  // What the user sees is the editor's contents, which may never have been saved. The worker reads
+  // a copy, and is told where the document really lives so its relative includes still resolve.
+  this->workerSourceDirectory = std::make_unique<QTemporaryDir>();
+  if (!this->workerSourceDirectory->isValid()) {
+    isolatedRenderFailed(tr("Could not create a temporary directory for the compute worker."));
+    return;
+  }
+  const QString sourceFile = this->workerSourceDirectory->filePath(QStringLiteral("source.scad"));
+  QFile file(sourceFile);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    isolatedRenderFailed(tr("Could not write the source for the compute worker."));
+    return;
+  }
+  file.write(this->activeEditor->toPlainText().toUtf8());
+  file.close();
+
+  this->computeWorker->startRender(sourceFile, {}, {}, this->activeEditor->filepath);
+}
+
+void MainWindow::isolatedRenderFailed(const QString& reason)
+{
+  // The window has to be released either way. A render that ends without ending the progress state
+  // leaves the user with a progress bar and no way to start another.
+  LOG(message_group::Error, "%1$s", reason.toStdString());
+  progress_report_fin();
+  updateStatusBar(nullptr);
+  compileEnded();
 }
 
 void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_geom)
@@ -3495,6 +3533,25 @@ void MainWindow::setupCoreSubsystems()
 
   this->geometryWorker = new GeometryWorker();
   connect(this->geometryWorker, &GeometryWorker::done, this, &MainWindow::actionRenderDone);
+
+  if (this->processIsolation) {
+    // One worker per window, started with the window and kept for its life: starting a process per
+    // render would throw away the caches that make a repeat render cheap, which is most of what
+    // this buys.
+    this->computeWorker = new ComputeWorker(QCoreApplication::applicationFilePath(),
+                                            QStringList{QStringLiteral("--compute-worker")},
+                                            QString::fromLatin1(kIpcChannelEnvironmentVariable));
+    connect(this->computeWorker, &ComputeWorker::renderDone, this, &MainWindow::actionRenderDone);
+    connect(this->computeWorker, &ComputeWorker::renderFailed, this, &MainWindow::isolatedRenderFailed);
+    if (!this->computeWorker->start()) {
+      // Say so and carry on in-process. Refusing to open the window would be a worse answer than
+      // computing the way it always did.
+      LOG(message_group::Warning,
+          "Could not start this window's compute worker; computing in this process instead.");
+      delete this->computeWorker;
+      this->computeWorker = nullptr;
+    }
+  }
 
   autoReloadTimer = new QTimer(this);
   autoReloadTimer->setSingleShot(false);

@@ -130,7 +130,7 @@ bool ComputeWorker::exitedCleanly() const
 }
 
 void ComputeWorker::startRender(const QString& scadPath, const QString& parameterFile,
-                                const QString& setName)
+                                const QString& setName, const QString& sourcePath)
 {
   if (!d->channel) {
     emit renderFailed(tr("The compute worker is not running."));
@@ -147,6 +147,9 @@ void ComputeWorker::startRender(const QString& scadPath, const QString& paramete
   request["output"] = kRenderOutputName;
   if (!parameterFile.isEmpty()) request["parameterFile"] = parameterFile.toStdString();
   if (!setName.isEmpty()) request["setName"] = setName.toStdString();
+  // Where the document really lives, when scadPath is a copy of unsaved editor contents. The
+  // worker resolves relative includes against it.
+  if (!sourcePath.isEmpty()) request["sourcePath"] = sourcePath.toStdString();
 
   d->renderThread = QThread::create([this, text = request.dump()] {
     const QByteArray payload(text.data(), static_cast<int>(text.size()));

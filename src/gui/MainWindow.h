@@ -45,6 +45,7 @@ Q_IMPORT_PLUGIN(QSvgPlugin)
 
 class BuiltinContext;
 class GeometryWorker;
+class ComputeWorker;
 class CSGNode;
 class CSGProducts;
 class FontListDialog;
@@ -461,6 +462,19 @@ private:
   QTemporaryFile *tempFile{nullptr};
   ProgressWidget *progresswidget{nullptr};
   GeometryWorker *geometryWorker;
+  /*!
+     This window's private compute worker, or null when process isolation is off.
+
+     Latched once, at construction: a window that started computing in-process must not find itself
+     half-isolated because the preference changed underneath it, which is why the feature says it
+     needs a restart.
+   */
+  ComputeWorker *computeWorker = nullptr;
+  const bool processIsolation;
+  //! Holds the editor's text for as long as the worker is reading it.
+  std::unique_ptr<class QTemporaryDir> workerSourceDirectory;
+  void startIsolatedRender();
+  void isolatedRenderFailed(const QString& reason);
   QMutex consolemutex;
   EditorInterface *renderedEditor;  // stores pointer to editor which has been most recently rendered
   time_t includesMTime{0};          // latest include mod time

@@ -901,8 +901,12 @@ int compute_worker_main()
       // be said separately or its relative includes cannot be found.
       const auto workingDirectory = request.value("workingDirectory", std::string{});
       const auto sourcePath = request.value("sourcePath", std::string{});
-      const fs::path originalPath =
-        workingDirectory.empty() ? fs::path(input).parent_path() : fs::path(workingDirectory);
+      // Falls back to the document's own directory when one is named, since that is what relative
+      // paths in the model are written against -- not wherever the text happens to have been read
+      // from.
+      const fs::path originalPath = !workingDirectory.empty() ? fs::path(workingDirectory)
+                                    : !sourcePath.empty()     ? fs::path(sourcePath).parent_path()
+                                                              : fs::path(input).parent_path();
       // The Customizer's values are not in the .scad file, so unless the request carries them the
       // worker renders the file's defaults -- a window that shows one thing and exports another.
       const std::string parameterFile = request.value("parameterFile", std::string{});
