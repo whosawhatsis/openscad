@@ -245,19 +245,19 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
                        const ExportInfo& exportInfo)
 {
   switch (exportInfo.format) {
-  case FileFormat::ASCII_STL:    export_stl(root_geom, output, false); break;
-  case FileFormat::BINARY_STL:   export_stl(root_geom, output, true); break;
-  case FileFormat::OBJ:          export_obj(root_geom, output); break;
-  case FileFormat::OFF:          export_off(root_geom, output); break;
-  case FileFormat::WRL:          export_wrl(root_geom, output); break;
-  case FileFormat::_3MF:         export_3mf(root_geom, output, exportInfo); break;
-  case FileFormat::DXF:          export_dxf(root_geom, output); break;
-  case FileFormat::SVG:          export_svg(root_geom, output, exportInfo); break;
-  case FileFormat::PDF:          export_pdf(root_geom, output, exportInfo); break;
-  case FileFormat::POV:          export_pov(root_geom, output, exportInfo); break;
-  case FileFormat::USDA:         export_usda(root_geom, output, exportInfo); break;
-  case FileFormat::USDZ:         export_usdz(root_geom, output, exportInfo); break;
-  case FileFormat::BLEND:        {
+  case FileFormat::ASCII_STL:  export_stl(root_geom, output, false); break;
+  case FileFormat::BINARY_STL: export_stl(root_geom, output, true); break;
+  case FileFormat::OBJ:        export_obj(root_geom, output); break;
+  case FileFormat::OFF:        export_off(root_geom, output); break;
+  case FileFormat::WRL:        export_wrl(root_geom, output); break;
+  case FileFormat::_3MF:       export_3mf(root_geom, output, exportInfo); break;
+  case FileFormat::DXF:        export_dxf(root_geom, output); break;
+  case FileFormat::SVG:        export_svg(root_geom, output, exportInfo); break;
+  case FileFormat::PDF:        export_pdf(root_geom, output, exportInfo); break;
+  case FileFormat::POV:        export_pov(root_geom, output, exportInfo); break;
+  case FileFormat::USDA:       export_usda(root_geom, output, exportInfo); break;
+  case FileFormat::USDZ:       export_usdz(root_geom, output, exportInfo); break;
+  case FileFormat::BLEND:      {
     UsdAnimationFrame frame;
     frame.geometry = root_geom;
     if (exportInfo.camera) frame.camera = *exportInfo.camera;

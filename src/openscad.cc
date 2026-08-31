@@ -173,10 +173,9 @@ struct AnimateArgs {
   unsigned frames = 0;
   unsigned num_shards = 1;
   unsigned shard = 1;
-  unsigned fps = 30;              //!< only used by the animation container formats
+  unsigned fps = 30;  //!< only used by the animation container formats
   unsigned blend_remesh_samples = 256;
-  unsigned processes = 1;         //!< >1 renders the frames in that many worker processes
-
+  unsigned processes = 1;  //!< >1 renders the frames in that many worker processes
 };
 
 /*!
@@ -662,8 +661,8 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
   } else {
     // start measuring render time
     RenderStatistic renderStatistic;
-    const bool preserveBodies = cmd.multiStl || export_format == FileFormat::_3MF ||
-                                export_format == FileFormat::POV;
+    const bool preserveBodies =
+      cmd.multiStl || export_format == FileFormat::_3MF || export_format == FileFormat::POV;
     GeometryEvaluator geomevaluator(tree, preserveBodies);
     std::unique_ptr<OffscreenView> glview;
     std::shared_ptr<const Geometry> root_geom;

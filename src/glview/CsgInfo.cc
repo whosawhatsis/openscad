@@ -165,10 +165,10 @@ bool readChain(const json& input, std::vector<CSGChainObject>& output,
       finish.reflectance = values[2];
       finish.emission = values[3];
     }
-    auto leaf = std::make_shared<CSGLeaf>(
-      polyset, matrix, Color4f(channels[0], channels[1], channels[2], channels[3]),
-      item.value("materialName", std::string{}), finish, item.value("label", std::string{}),
-      item.value("index", 0));
+    auto leaf = std::make_shared<CSGLeaf>(polyset, matrix,
+                                          Color4f(channels[0], channels[1], channels[2], channels[3]),
+                                          item.value("materialName", std::string{}), finish,
+                                          item.value("label", std::string{}), item.value("index", 0));
     output.emplace_back(leaf, static_cast<CSGNode::Flag>(item.value("flags", 0)));
   }
   return true;
