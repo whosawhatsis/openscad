@@ -1,5 +1,7 @@
 #pragma once
 
+#include "io/ipc_message.h"
+
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/completion_condition.hpp>
 #include <boost/asio/read.hpp>
@@ -33,11 +35,6 @@
 // payload measured on this project is 191 MiB, and names are filesystem paths.
 inline constexpr std::uint64_t kIpcMaxMessageSize = 16ull * 1024 * 1024 * 1024;
 inline constexpr std::uint64_t kIpcMaxNameSize = 4096;
-
-struct IpcMessage {
-  std::string name;
-  std::string payload;
-};
 
 // Canonical form of a payload name. Payload names are identifiers, never opened, and the two ends
 // reach them by different routes that spell separators differently on Windows: a geometry name

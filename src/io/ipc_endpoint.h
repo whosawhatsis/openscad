@@ -1,10 +1,10 @@
 #pragma once
 
+#include "io/ipc_message.h"
+
 #include <memory>
 #include <ostream>
 #include <string>
-
-struct IpcMessage;
 
 // How the parent tells its worker which end of the channel is its own. An environment variable
 // rather than a command-line argument, so it is not visible to anything listing processes.

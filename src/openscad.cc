@@ -109,7 +109,6 @@
 #include "json/json.hpp"
 
 #include "glview/CsgInfo.h"
-#include "io/ipc_channel.h"
 #include "io/ipc_endpoint.h"
 #include "openscad_gui.h"
 #include "openscad_mimalloc.h"
