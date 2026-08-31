@@ -376,7 +376,12 @@ int gui(std::vector<std::string>& inputFiles, const std::filesystem::path& origi
   if (gui_test != "none") {
     QTimer::singleShot(0, [&]() {
       int failureCount = 0;
-      for (auto w : app.windowManager.getWindows()) {
+      // A snapshot, not the live container. A test that opens a window -- which is the only way to
+      // exercise anything decided at window construction -- registers it here while this loop is
+      // running, which both re-runs the whole suite against it and invalidates the iterator. That
+      // showed up as the suite running twice and then crashing.
+      const auto windows = app.windowManager.getWindows();
+      for (auto w : windows) {
         failureCount += runAllTest(w);
       }
       app.exit(failureCount);
