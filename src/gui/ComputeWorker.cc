@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "io/ipc_channel.h"
+#include "utils/printutils.h"
 #include "io/ipc_endpoint.h"
 
 struct ComputeWorker::Private {
@@ -44,7 +45,13 @@ bool ComputeWorker::start()
   environment.insert(d->channelVariable, QString::fromStdString(channel->childArgument()));
   d->process.setProcessEnvironment(environment);
   d->process.start(d->program, d->arguments);
-  if (!d->process.waitForStarted()) return false;
+  if (!d->process.waitForStarted()) {
+    // Worth saying out loud: without this a worker that cannot be started is indistinguishable
+    // from one that started and said nothing.
+    LOG(message_group::Error, "Could not start compute worker '%1$s': %2$s", d->program.toStdString(),
+        d->process.errorString().toStdString());
+    return false;
+  }
 
   // The child has it now, so this process must not keep a copy. Holding one leaves the channel
   // open from this end forever, and a worker that dies would then never produce an end of stream
