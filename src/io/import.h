@@ -3,6 +3,7 @@
 #include <boost/optional.hpp>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "core/AST.h"
 #include "core/CurveDiscretizer.h"
@@ -10,8 +11,11 @@
 std::unique_ptr<class PolySet> import_stl(const std::string& filename, const Location& loc);
 std::unique_ptr<class PolySet> import_obj(const std::string& filename, const Location& loc);
 std::unique_ptr<class PolySet> import_off(const std::string& filename, const Location& loc);
-std::unique_ptr<class PolySet> import_amf(const std::string&, const Location& loc);
-std::unique_ptr<class PolySet> import_3mf(const std::string&, const Location& loc);
+// An optional parts output bypasses mesh-kernel unions for native BREP import.
+std::unique_ptr<class PolySet> import_amf(const std::string&, const Location& loc,
+                                          std::vector<std::unique_ptr<class PolySet>> *parts = nullptr);
+std::unique_ptr<class PolySet> import_3mf(const std::string&, const Location& loc,
+                                          std::vector<std::unique_ptr<class PolySet>> *parts = nullptr);
 
 std::unique_ptr<class Polygon2d> import_svg(CurveDiscretizer discretizer, const std::string& filename,
                                             const boost::optional<std::string>& id,

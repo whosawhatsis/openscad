@@ -592,6 +592,64 @@ FreetypeRenderer::TextMetrics::TextMetrics(const FreetypeRenderer::Params& param
   ok = true;
 }
 
+std::vector<FreetypeRenderer::GlyphCurves> FreetypeRenderer::renderCurves(const Params& params) const
+{
+  ShapeResults sr(params);
+  if (!sr.ok) return {};
+  struct Builder {
+    GlyphCurves contours;
+    std::array<double, 2> pen{}, offset{};
+    double factor;
+    std::array<double, 2> point(const FT_Vector *p) const
+    {
+      return {factor * p->x + offset[0], factor * p->y + offset[1]};
+    }
+    void add(std::vector<std::array<double, 2>> curve)
+    {
+      pen = curve.back();
+      if (curve.size() != 2 || curve.front() != curve.back())
+        contours.back().push_back(std::move(curve));
+    }
+  };
+  FT_Outline_Funcs callbacks{};
+  callbacks.move_to = [](const FT_Vector *p, void *user) {
+    auto& b = *static_cast<Builder *>(user);
+    b.contours.emplace_back();
+    b.pen = b.point(p);
+    return 0;
+  };
+  callbacks.line_to = [](const FT_Vector *p, void *user) {
+    auto& b = *static_cast<Builder *>(user);
+    b.add({b.pen, b.point(p)});
+    return 0;
+  };
+  callbacks.conic_to = [](const FT_Vector *c, const FT_Vector *p, void *user) {
+    auto& b = *static_cast<Builder *>(user);
+    b.add({b.pen, b.point(c), b.point(p)});
+    return 0;
+  };
+  callbacks.cubic_to = [](const FT_Vector *c1, const FT_Vector *c2, const FT_Vector *p, void *user) {
+    auto& b = *static_cast<Builder *>(user);
+    b.add({b.pen, b.point(c1), b.point(c2), b.point(p)});
+    return 0;
+  };
+  std::vector<GlyphCurves> result;
+  double x = 0, y = 0;
+  for (const auto& glyph : sr.glyph_array) {
+    Builder builder;
+    builder.factor = params.size / scale;
+    builder.offset = {params.size * (sr.x_offset + glyph.get_x_offset() + x),
+                      params.size * (sr.y_offset + glyph.get_y_offset() + y)};
+    auto outline = reinterpret_cast<FT_OutlineGlyph>(glyph.get_glyph())->outline;
+    if (FT_Outline_Decompose(&outline, &callbacks, &builder))
+      throw std::runtime_error("Font outline decomposition failed");
+    result.push_back(std::move(builder.contours));
+    x += glyph.get_x_advance() * params.spacing;
+    y += glyph.get_y_advance() * params.spacing;
+  }
+  return result;
+}
+
 std::vector<std::shared_ptr<const Polygon2d>> FreetypeRenderer::render(
   const FreetypeRenderer::Params& params) const
 {

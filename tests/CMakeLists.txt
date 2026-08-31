@@ -879,6 +879,12 @@ if(ENABLE_OPENCSCADE)
       ${TEST_SCAD_DIR}/misc/brep-rotate-extrude.scad)
   set_tests_properties(export-stl-brep-rotate-extrude PROPERTIES
     PASS_REGULAR_EXPRESSION "Triangles: +[1-9]" FAIL_REGULAR_EXPRESSION "ERROR:")
+  add_test(NAME export-stl-brep-native-operations
+    COMMAND $<TARGET_FILE:OpenSCADExe> --backend=opencascade --render
+      -o ${CMAKE_CURRENT_BINARY_DIR}/brep-native-operations.stl
+      ${TEST_SCAD_DIR}/misc/brep-native-operations.scad)
+  set_tests_properties(export-stl-brep-native-operations PROPERTIES
+    PASS_REGULAR_EXPRESSION "Triangles: +[1-9]" FAIL_REGULAR_EXPRESSION "ERROR:")
 endif()
 if(EXAMPLES_DIR)
   add_cmdline_test(dump-examples  OPENSCAD FILES ${EXAMPLE_FILES} SUFFIX csg ARGS)

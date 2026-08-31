@@ -426,7 +426,8 @@ std::string read_metadata(PLib3MFModel *model)
 
 }  // namespace
 
-std::unique_ptr<PolySet> import_3mf(const std::string& filename, const Location& loc)
+std::unique_ptr<PolySet> import_3mf(const std::string& filename, const Location& loc,
+                                    std::vector<std::unique_ptr<PolySet>> *parts)
 {
   DWORD interfaceVersionMajor, interfaceVersionMinor, interfaceVersionMicro;
   HRESULT result =
@@ -557,6 +558,10 @@ std::unique_ptr<PolySet> import_3mf(const std::string& filename, const Location&
     return std::move(meshes.front());
   } else {
     std::unique_ptr<PolySet> p;
+    if (parts) {
+      for (auto& mesh : meshes) parts->push_back(std::move(mesh));
+      return PolySet::createEmpty();
+    }
     Geometry::Geometries children;
     while (!meshes.empty()) {
       children.emplace_back(std::shared_ptr<AbstractNode>(),

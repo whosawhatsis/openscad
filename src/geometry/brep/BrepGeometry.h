@@ -36,6 +36,13 @@ public:
   static BrepGeometry cone(double radius1, double radius2, double height);
   static BrepGeometry fromPolySet(const PolySet& mesh);
   static BrepGeometry prism(const std::vector<std::array<double, 2>>& outline, double height);
+  static BrepGeometry bezierPrism(
+    const std::vector<std::vector<std::vector<std::array<double, 2>>>>& contours, double height);
+  [[nodiscard]] BrepGeometry offset2d(double delta, bool round, double height) const;
+  [[nodiscard]] BrepGeometry cutProjection(double height) const;
+  [[nodiscard]] BrepGeometry shadowProjection(double height) const;
+  static BrepGeometry hull(const std::vector<BrepGeometry>& operands);
+  static BrepGeometry minkowski(const std::vector<BrepGeometry>& operands);
   // Map the z=0 profile faces to XZ, then revolve about Z; angles are in radians.
   // Zero segments means a smooth revolution; positive counts create chordal sweep segments.
   [[nodiscard]] BrepGeometry revolve(double angle, double start, int segments = 0) const;

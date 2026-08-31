@@ -13,10 +13,15 @@
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRep_Builder.hxx>
 #include <BRepLib.hxx>
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
@@ -29,6 +34,14 @@
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepFill.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepOffsetAPI_MakeOffset.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Splitter.hxx>
+#include <HLRBRep_Algo.hxx>
+#include <HLRBRep_HLRToShape.hxx>
+#include <HLRAlgo_Projector.hxx>
+#include <optional>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
@@ -45,6 +58,7 @@
 #include <gp_Pln.hxx>
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <Geom_BezierCurve.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <Geom_Line.hxx>
 #include <GeomConvert.hxx>
@@ -52,6 +66,8 @@
 #include <TColgp_Array2OfPnt.hxx>
 #include <TColStd_Array2OfReal.hxx>
 #include <algorithm>
+#include <map>
+#include <set>
 
 namespace {
 
@@ -371,6 +387,470 @@ std::shared_ptr<void> brepTaper(const std::shared_ptr<void>& profile, double hei
   }
 }
 
+namespace {
+
+std::vector<gp_Pnt> polyhedralVertices(const TopoDS_Shape& shape, bool requireConvex)
+{
+  std::set<std::array<double, 3>> unique;
+  for (TopExp_Explorer vertices(shape, TopAbs_VERTEX); vertices.More(); vertices.Next()) {
+    const auto p = BRep_Tool::Pnt(TopoDS::Vertex(vertices.Current()));
+    unique.insert({p.X(), p.Y(), p.Z()});
+  }
+  std::vector<gp_Pnt> points;
+  for (const auto& p : unique) points.emplace_back(p[0], p[1], p[2]);
+  for (TopExp_Explorer faces(shape, TopAbs_FACE); faces.More(); faces.Next()) {
+    const auto face = TopoDS::Face(faces.Current());
+    const BRepAdaptor_Surface surface(face);
+    if (surface.GetType() != GeomAbs_Plane)
+      throw std::runtime_error("B-Rep hull/general Minkowski currently requires planar faces");
+    if (requireConvex) {
+      const auto plane = surface.Plane();
+      gp_Vec normal(plane.Axis().Direction());
+      if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
+      for (const auto& p : points) {
+        if (gp_Vec(plane.Location(), p).Dot(normal) > Precision::Confusion())
+          throw std::runtime_error("B-Rep general Minkowski currently requires convex operands");
+      }
+    }
+  }
+  for (TopExp_Explorer edges(shape, TopAbs_EDGE); edges.More(); edges.Next()) {
+    if (BRepAdaptor_Curve(TopoDS::Edge(edges.Current())).GetType() != GeomAbs_Line)
+      throw std::runtime_error("B-Rep polyhedral hull requires straight edges");
+  }
+  return points;
+}
+
+std::shared_ptr<void> pointHull(const std::vector<gp_Pnt>& points)
+{
+  if (points.size() < 4) return {};
+  const double tolerance = Precision::Confusion();
+  const auto farthest = [&](const auto& distance) {
+    size_t best = 0;
+    for (size_t i = 1; i < points.size(); ++i)
+      if (distance(points[i]) > distance(points[best])) best = i;
+    return best;
+  };
+  const size_t a = 0, b = farthest([&](const gp_Pnt& p) { return points[a].SquareDistance(p); });
+  gp_Vec axis(points[a], points[b]);
+  if (axis.Magnitude() <= tolerance) return {};
+  axis.Normalize();
+  const size_t c =
+    farthest([&](const gp_Pnt& p) { return axis.Crossed(gp_Vec(points[a], p)).SquareMagnitude(); });
+  auto normal = axis.Crossed(gp_Vec(points[a], points[c]));
+  if (normal.Magnitude() <= tolerance) return {};
+  normal.Normalize();
+  const size_t d = farthest([&](const gp_Pnt& p) { return std::abs(normal.Dot(gp_Vec(points[a], p))); });
+  if (std::abs(normal.Dot(gp_Vec(points[a], points[d]))) <= tolerance) return {};
+  const gp_Pnt interior((points[a].XYZ() + points[b].XYZ() + points[c].XYZ() + points[d].XYZ()) / 4);
+  std::vector<std::array<int, 3>> faces;
+  const auto addFace = [&](int i, int j, int k) {
+    if (gp_Vec(points[i], points[j])
+          .Crossed(gp_Vec(points[i], points[k]))
+          .Dot(gp_Vec(points[i], interior)) > 0)
+      std::swap(j, k);
+    faces.push_back({i, j, k});
+  };
+  addFace(a, b, c);
+  addFace(a, c, d);
+  addFace(a, d, b);
+  addFace(b, d, c);
+  // Incremental hull of authored vertices only: never sample an analytic surface.
+  for (size_t i = 0; i < points.size(); ++i) {
+    if (i == a || i == b || i == c || i == d) continue;
+    std::map<std::pair<int, int>, bool> horizon;
+    auto face = faces.begin();
+    while (face != faces.end()) {
+      const auto n = gp_Vec(points[(*face)[0]], points[(*face)[1]])
+                       .Crossed(gp_Vec(points[(*face)[0]], points[(*face)[2]]));
+      if (n.Dot(gp_Vec(points[(*face)[0]], points[i])) <= tolerance * n.Magnitude()) {
+        ++face;
+        continue;
+      }
+      for (int e = 0; e < 3; ++e) {
+        const int u = (*face)[e], v = (*face)[(e + 1) % 3];
+        if (!horizon.erase({v, u})) horizon[{u, v}] = true;
+      }
+      face = faces.erase(face);
+    }
+    for (const auto& edge : horizon) addFace(edge.first.first, edge.first.second, i);
+  }
+  BrepMeshData mesh;
+  for (const auto& p : points) mesh.vertices.push_back({p.X(), p.Y(), p.Z()});
+  mesh.triangles = std::move(faces);
+  return brepFromMesh(mesh);
+}
+
+std::optional<gp_Sphere> fullSphere(const TopoDS_Shape& shape)
+{
+  TopExp_Explorer faces(shape, TopAbs_FACE);
+  if (!faces.More()) return {};
+  const BRepAdaptor_Surface surface(TopoDS::Face(faces.Current()));
+  if (surface.GetType() != GeomAbs_Sphere) return {};
+  const auto sphere = surface.Sphere();
+  faces.Next();
+  if (faces.More()) return {};
+  return sphere;
+}
+
+// Recognize constant vertical sections without converting their curved boundaries to polygons.
+std::optional<std::array<double, 6>> verticalPrism(const std::shared_ptr<void>& shape)
+{
+  auto bounds = brepBounds(shape);
+  std::vector<double> caps;
+  for (TopExp_Explorer faces(shapeFrom(shape), TopAbs_FACE); faces.More(); faces.Next()) {
+    const BRepAdaptor_Surface surface(TopoDS::Face(faces.Current()));
+    if (surface.GetType() == GeomAbs_Plane) {
+      const auto plane = surface.Plane();
+      const double z = std::abs(plane.Axis().Direction().Z());
+      if (z < Precision::Angular()) continue;
+      if (z < 1 - Precision::Angular()) return {};
+      caps.push_back(plane.Location().Z());
+    } else if (surface.GetType() != GeomAbs_Cylinder ||
+               std::abs(surface.Cylinder().Axis().Direction().Z()) < 1 - Precision::Angular())
+      return {};
+  }
+  if (caps.size() < 2) return {};
+  const auto [bottom, top] = std::minmax_element(caps.begin(), caps.end());
+  bounds[2] = *bottom;
+  bounds[5] = *top;
+  for (double z : caps)
+    if (std::abs(z - bounds[2]) > Precision::Confusion() &&
+        std::abs(z - bounds[5]) > Precision::Confusion())
+      return {};
+  return bounds;
+}
+
+std::optional<gp_Cylinder> fullCylinder(const std::shared_ptr<void>& shape)
+{
+  if (!verticalPrism(shape)) return {};
+  std::optional<gp_Cylinder> cylinder;
+  int planes = 0;
+  for (TopExp_Explorer faces(shapeFrom(shape), TopAbs_FACE); faces.More(); faces.Next()) {
+    const BRepAdaptor_Surface surface(TopoDS::Face(faces.Current()));
+    if (surface.GetType() == GeomAbs_Cylinder) {
+      if (cylinder) return {};
+      cylinder = surface.Cylinder();
+    } else ++planes;
+  }
+  return planes == 2 ? cylinder : std::nullopt;
+}
+
+}  // namespace
+
+std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operands)
+{
+  try {
+    if (operands.size() == 2 && !brepIsEmpty(operands[0]) && !brepIsEmpty(operands[1])) {
+      const auto first = fullSphere(shapeFrom(operands[0])), second = fullSphere(shapeFrom(operands[1]));
+      if (first && second) {
+        gp_Vec axis(first->Location(), second->Location());
+        const double distance = axis.Magnitude(), r1 = first->Radius(), r2 = second->Radius();
+        if (distance <= std::abs(r2 - r1) + Precision::Confusion()) return operands[r1 >= r2 ? 0 : 1];
+        axis.Normalize();
+        const double slope = (r2 - r1) / distance, radial = std::sqrt(1 - slope * slope);
+        const gp_Ax2 placement(first->Location().Translated(axis * (-slope * r1)), gp_Dir(axis));
+        const double height = distance * radial * radial;
+        TopoDS_Shape envelope =
+          r1 == r2 ? BRepPrimAPI_MakeCylinder(placement, r1, height).Shape()
+                   : BRepPrimAPI_MakeCone(placement, r1 * radial, r2 * radial, height).Shape();
+        return brepBoolean({operands[0], operands[1], std::make_shared<TopoDS_Shape>(envelope)},
+                           BrepOperation::Union, 0)
+          .shape;
+      }
+      const auto c1 = fullCylinder(operands[0]), c2 = fullCylinder(operands[1]);
+      if (c1 && c2) {
+        const auto b1 = *verticalPrism(operands[0]), b2 = *verticalPrism(operands[1]);
+        if (std::abs(b1[2] - b2[2]) <= Precision::Confusion() &&
+            std::abs(b1[5] - b2[5]) <= Precision::Confusion()) {
+          const double dx = c2->Location().X() - c1->Location().X(),
+                       dy = c2->Location().Y() - c1->Location().Y();
+          const double distance = std::hypot(dx, dy), r1 = c1->Radius(), r2 = c2->Radius();
+          if (distance <= std::abs(r2 - r1) + Precision::Confusion()) return operands[r1 >= r2 ? 0 : 1];
+          const double k = (r1 - r2) / distance, t = std::sqrt(1 - k * k);
+          const std::array<double, 2> n1{(k * dx - t * dy) / distance, (k * dy + t * dx) / distance};
+          const std::array<double, 2> n2{(k * dx + t * dy) / distance, (k * dy - t * dx) / distance};
+          auto bridge =
+            brepMakePrism({{c1->Location().X() + r1 * n1[0], c1->Location().Y() + r1 * n1[1]},
+                           {c2->Location().X() + r2 * n1[0], c2->Location().Y() + r2 * n1[1]},
+                           {c2->Location().X() + r2 * n2[0], c2->Location().Y() + r2 * n2[1]},
+                           {c1->Location().X() + r1 * n2[0], c1->Location().Y() + r1 * n2[1]}},
+                          b1[5] - b1[2]);
+          gp_Trsf placement;
+          placement.SetTranslation(gp_Vec(0, 0, b1[2]));
+          bridge = std::make_shared<TopoDS_Shape>(
+            BRepBuilderAPI_Transform(shapeFrom(bridge), placement, true).Shape());
+          return brepBoolean({operands[0], operands[1], bridge}, BrepOperation::Union, 0).shape;
+        }
+      }
+    }
+    std::vector<gp_Pnt> points;
+    for (const auto& operand : operands) {
+      if (brepIsEmpty(operand)) continue;
+      const auto vertices = polyhedralVertices(shapeFrom(operand), false);
+      points.insert(points.end(), vertices.begin(), vertices.end());
+    }
+    return pointHull(points);
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
+}
+
+std::shared_ptr<void> brepMinkowski(const std::vector<std::shared_ptr<void>>& operands)
+{
+  if (operands.empty()) return {};
+  try {
+    for (const auto& operand : operands)
+      if (brepIsEmpty(operand)) return {};
+    auto result = operands.front();
+    for (size_t i = 1; i < operands.size(); ++i) {
+      auto a = result, b = operands[i];
+      auto cylinder = fullCylinder(b);
+      if (!cylinder && fullCylinder(a)) {
+        std::swap(a, b);
+        cylinder = fullCylinder(b);
+      }
+      if (cylinder) {
+        if (const auto bounds = verticalPrism(a)) {
+          const auto cb = *verticalPrism(b);
+          gp_Trsf down;
+          down.SetTranslation(gp_Vec(0, 0, -(*bounds)[2]));
+          auto profile =
+            std::make_shared<TopoDS_Shape>(BRepBuilderAPI_Transform(shapeFrom(a), down, true).Shape());
+          auto offset =
+            brepOffset2d(profile, cylinder->Radius(), true, (*bounds)[5] - (*bounds)[2] + cb[5] - cb[2]);
+          gp_Trsf up;
+          up.SetTranslation(
+            gp_Vec(cylinder->Location().X(), cylinder->Location().Y(), (*bounds)[2] + cb[2]));
+          result = std::make_shared<TopoDS_Shape>(
+            BRepBuilderAPI_Transform(shapeFrom(offset), up, true).Shape());
+          continue;
+        }
+      }
+      auto sphere = fullSphere(shapeFrom(b));
+      if (!sphere && fullSphere(shapeFrom(a))) {
+        std::swap(a, b);
+        sphere = fullSphere(shapeFrom(b));
+      }
+      if (sphere) {
+        if (const auto other = fullSphere(shapeFrom(a))) {
+          result = std::make_shared<TopoDS_Shape>(
+            BRepPrimAPI_MakeSphere(gp_Pnt(other->Location().XYZ() + sphere->Location().XYZ()),
+                                   other->Radius() + sphere->Radius())
+              .Shape());
+          continue;
+        }
+        polyhedralVertices(shapeFrom(a), true);
+        BRepOffsetAPI_MakeOffsetShape offset;
+        offset.PerformByJoin(shapeFrom(a), sphere->Radius(), Precision::Confusion());
+        if (!offset.IsDone() || !BRepCheck_Analyzer(offset.Shape()).IsValid())
+          throw std::runtime_error("B-Rep spherical Minkowski offset failed");
+        gp_Trsf translation;
+        translation.SetTranslation(gp_Vec(sphere->Location().XYZ()));
+        result = std::make_shared<TopoDS_Shape>(
+          BRepBuilderAPI_Transform(offset.Shape(), translation, true).Shape());
+      } else {
+        const auto lhs = polyhedralVertices(shapeFrom(a), true),
+                   rhs = polyhedralVertices(shapeFrom(b), true);
+        if (!rhs.empty() && lhs.size() > 1000000 / rhs.size())
+          throw std::runtime_error("B-Rep Minkowski vertex-pair limit exceeded");
+        std::vector<gp_Pnt> sums;
+        for (const auto& p : lhs)
+          for (const auto& q : rhs) sums.emplace_back(p.XYZ() + q.XYZ());
+        result = pointHull(sums);
+      }
+    }
+    return result;
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
+}
+
+std::shared_ptr<void> brepBezierPrism(
+  const std::vector<std::vector<std::vector<std::array<double, 2>>>>& contours, double height)
+{
+  try {
+    std::vector<std::pair<std::shared_ptr<void>, int>> regions;
+    for (const auto& contour : contours) {
+      if (contour.empty()) continue;
+      BRepBuilderAPI_MakeWire wire;
+      double signedArea = 0;
+      for (const auto& curve : contour) {
+        if (curve.size() < 2 || curve.size() > 4)
+          throw std::invalid_argument("Invalid font curve degree");
+        TColgp_Array1OfPnt poles(1, curve.size());
+        for (size_t i = 0; i < curve.size(); ++i) poles(i + 1) = gp_Pnt(curve[i][0], curve[i][1], 0);
+        if (curve.size() == 2) wire.Add(BRepBuilderAPI_MakeEdge(poles(1), poles(2)).Edge());
+        else wire.Add(BRepBuilderAPI_MakeEdge(new Geom_BezierCurve(poles)).Edge());
+        // Three-point Gaussian integration is exact for the degree-five area integrand
+        // of a cubic Bezier curve. Preserve the font's nonzero-winding fill rule.
+        const auto evaluate = [](std::vector<std::array<double, 2>> p, double t) {
+          for (size_t n = p.size(); n > 1; --n)
+            for (size_t i = 0; i < n - 1; ++i)
+              for (int c = 0; c < 2; ++c) p[i][c] = (1 - t) * p[i][c] + t * p[i + 1][c];
+          return p.front();
+        };
+        std::vector<std::array<double, 2>> derivative;
+        for (size_t i = 1; i < curve.size(); ++i)
+          derivative.push_back({(curve.size() - 1) * (curve[i][0] - curve[i - 1][0]),
+                                (curve.size() - 1) * (curve[i][1] - curve[i - 1][1])});
+        const double q = std::sqrt(15.0) / 10;
+        for (const auto& sample :
+             {std::pair{0.5 - q, 5.0 / 18}, std::pair{0.5, 4.0 / 9}, std::pair{0.5 + q, 5.0 / 18}}) {
+          const auto p = evaluate(curve, sample.first), d = evaluate(derivative, sample.first);
+          signedArea += sample.second * (p[0] * d[1] - p[1] * d[0]);
+        }
+      }
+      if (!wire.IsDone()) throw std::runtime_error("Font outline is disconnected");
+      BRepBuilderAPI_MakeFace face(wire.Wire(), true);
+      if (!face.IsDone()) throw std::runtime_error("Font outline face construction failed");
+      auto solid = TopoDS::Solid(BRepPrimAPI_MakePrism(face.Face(), gp_Vec(0, 0, height)).Shape());
+      if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+        throw std::runtime_error("Font outline does not form a valid prism");
+      std::shared_ptr<void> remaining = std::make_shared<TopoDS_Shape>(solid);
+      const auto contourShape = remaining;
+      const int sign = signedArea >= 0 ? 1 : -1;
+      std::vector<std::pair<std::shared_ptr<void>, int>> next;
+      for (const auto& [region, winding] : regions) {
+        auto outside = brepBoolean({region, contourShape}, BrepOperation::Difference, 0).shape;
+        if (!brepIsEmpty(outside)) next.emplace_back(outside, winding);
+        if (winding + sign != 0) {
+          auto overlap = brepBoolean({region, contourShape}, BrepOperation::Intersection, 0).shape;
+          if (!brepIsEmpty(overlap)) next.emplace_back(overlap, winding + sign);
+        }
+        remaining = brepBoolean({remaining, region}, BrepOperation::Difference, 0).shape;
+      }
+      if (!brepIsEmpty(remaining)) next.emplace_back(remaining, sign);
+      regions = std::move(next);
+    }
+    std::vector<std::shared_ptr<void>> filled;
+    for (const auto& region : regions) filled.push_back(region.first);
+    return brepBoolean(filled, BrepOperation::Union, 0).shape;
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
+}
+
+std::shared_ptr<void> brepShadowProjection(const std::shared_ptr<void>& shape, double height)
+{
+  if (brepIsEmpty(shape)) return {};
+  try {
+    Handle(HLRBRep_Algo) hlr = new HLRBRep_Algo;
+    hlr->Add(shapeFrom(shape));
+    hlr->Projector(HLRAlgo_Projector(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0))));
+    hlr->Update();
+    hlr->Hide();
+    HLRBRep_HLRToShape outlines(hlr);
+    const auto bounds = brepBounds(shape);
+    const auto plane = BRepBuilderAPI_MakeFace(gp_Pln(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), bounds[0] - 1,
+                                               bounds[3] + 1, bounds[1] - 1, bounds[4] + 1)
+                         .Face();
+    TopTools_ListOfShape tools;
+    for (auto edges :
+         {outlines.VCompound(), outlines.HCompound(), outlines.OutLineVCompound(),
+          outlines.OutLineHCompound(), outlines.Rg1LineVCompound(), outlines.Rg1LineHCompound()}) {
+      if (edges.IsNull()) continue;
+      if (!BRepLib::BuildCurves3d(edges))
+        throw std::runtime_error("B-Rep projected curve construction failed");
+      for (TopExp_Explorer e(edges, TopAbs_EDGE); e.More(); e.Next()) {
+        BRepLib::BuildPCurveForEdgeOnPlane(TopoDS::Edge(e.Current()), plane);
+        tools.Append(e.Current());
+      }
+    }
+    if (tools.IsEmpty()) return {};
+    TopTools_ListOfShape arguments;
+    arguments.Append(plane);
+    BRepAlgoAPI_Splitter splitter;
+    splitter.SetArguments(arguments);
+    splitter.SetTools(tools);
+    splitter.Build();
+    if (!splitter.IsDone()) throw std::runtime_error("B-Rep silhouette arrangement failed");
+    std::vector<std::shared_ptr<void>> regions;
+    for (TopExp_Explorer faces(splitter.Shape(), TopAbs_FACE); faces.More(); faces.Next()) {
+      // The silhouette/edge arrangement partitions the plane into constant-occupancy regions.
+      // Classify each region by intersecting its vertical prism, without sampling or meshing.
+      gp_Trsf translation;
+      translation.SetTranslation(gp_Vec(0, 0, bounds[2] - 1));
+      auto bottom = BRepBuilderAPI_Transform(faces.Current(), translation, true).Shape();
+      auto probe = BRepPrimAPI_MakePrism(bottom, gp_Vec(0, 0, bounds[5] - bounds[2] + 2)).Shape();
+      BRepAlgoAPI_Common occupied(shapeFrom(shape), probe);
+      if (!occupied.IsDone()) throw std::runtime_error("B-Rep projection occupancy test failed");
+      if (!TopExp_Explorer(occupied.Shape(), TopAbs_SOLID).More()) continue;
+      auto solid = TopoDS::Solid(BRepPrimAPI_MakePrism(faces.Current(), gp_Vec(0, 0, height)).Shape());
+      if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+        throw std::runtime_error("B-Rep projected silhouette is invalid");
+      regions.push_back(std::make_shared<TopoDS_Shape>(solid));
+    }
+    return brepBoolean(regions, BrepOperation::Union, 0).shape;
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
+}
+
+std::shared_ptr<void> brepCutProjection(const std::shared_ptr<void>& shape, double height)
+{
+  if (brepIsEmpty(shape)) return {};
+  try {
+    const auto bounds = brepBounds(shape);
+    BRepBuilderAPI_MakeFace plane(gp_Pln(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), bounds[0] - 1, bounds[3] + 1,
+                                  bounds[1] - 1, bounds[4] + 1);
+    BRepAlgoAPI_Common section(shapeFrom(shape), plane.Face());
+    if (!section.IsDone()) throw std::runtime_error("B-Rep cut projection failed");
+    std::vector<std::shared_ptr<void>> regions;
+    for (TopExp_Explorer faces(section.Shape(), TopAbs_FACE); faces.More(); faces.Next()) {
+      BRepPrimAPI_MakePrism prism(faces.Current(), gp_Vec(0, 0, height));
+      auto solid = TopoDS::Solid(prism.Shape());
+      if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+        throw std::runtime_error("B-Rep projected section is invalid");
+      regions.push_back(std::make_shared<TopoDS_Shape>(solid));
+    }
+    return brepBoolean(regions, BrepOperation::Union, 0).shape;
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
+}
+
+std::shared_ptr<void> brepOffset2d(const std::shared_ptr<void>& shape, double delta, bool round,
+                                   double height)
+{
+  if (brepIsEmpty(shape) || delta == 0) return shape;
+  if (!std::isfinite(delta)) throw std::invalid_argument("B-Rep offset must be finite");
+  try {
+    std::vector<std::shared_ptr<void>> regions;
+    for (TopExp_Explorer faces(shapeFrom(shape), TopAbs_FACE); faces.More(); faces.Next()) {
+      auto face = TopoDS::Face(faces.Current());
+      const BRepAdaptor_Surface surface(face);
+      if (surface.GetType() != GeomAbs_Plane ||
+          std::abs(surface.Plane().Axis().Direction().Z()) < 1 - Precision::Angular() ||
+          std::abs(surface.Plane().Location().Z()) > Precision::Confusion())
+        continue;
+      face.Orientation(TopAbs_FORWARD);
+      BRepOffsetAPI_MakeOffset offset(face, round ? GeomAbs_Arc : GeomAbs_Intersection);
+      offset.Perform(delta);
+      if (!offset.IsDone()) throw std::runtime_error("B-Rep offset construction failed");
+      std::shared_ptr<void> region;
+      for (TopExp_Explorer wires(offset.Shape(), TopAbs_WIRE); wires.More(); wires.Next()) {
+        BRepBuilderAPI_MakeFace cap(TopoDS::Wire(wires.Current()), true);
+        if (!cap.IsDone()) throw std::runtime_error("B-Rep offset cap construction failed");
+        auto solid = TopoDS::Solid(BRepPrimAPI_MakePrism(cap.Face(), gp_Vec(0, 0, height)).Shape());
+        if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+          throw std::runtime_error("B-Rep offset contour is invalid");
+        auto contour = std::make_shared<TopoDS_Shape>(solid);
+        if (!region) region = contour;
+        else {
+          // Even/odd contour nesting handles holes and islands without relying on wire order.
+          const auto a = brepBoolean({region, contour}, BrepOperation::Difference, 0).shape;
+          const auto b = brepBoolean({contour, region}, BrepOperation::Difference, 0).shape;
+          region = brepBoolean({a, b}, BrepOperation::Union, 0).shape;
+        }
+      }
+      regions.push_back(region);
+    }
+    return brepBoolean(regions, BrepOperation::Union, 0).shape;
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
+}
+
 std::shared_ptr<void> brepFromMesh(const BrepMeshData& mesh)
 {
   BRepBuilderAPI_Sewing sewing(Precision::Confusion());
@@ -389,15 +869,51 @@ std::shared_ptr<void> brepFromMesh(const BrepMeshData& mesh)
   sewing.Perform();
   if (sewing.NbFreeEdges() || sewing.NbMultipleEdges())
     throw std::runtime_error("B-Rep mesh must be closed and manifold");
-  TopExp_Explorer shells(sewing.SewedShape(), TopAbs_SHELL);
-  if (!shells.More()) throw std::runtime_error("B-Rep mesh has no closed shell");
-  TopoDS_Solid solid = BRepBuilderAPI_MakeSolid(TopoDS::Shell(shells.Current())).Solid();
-  shells.Next();
-  if (shells.More()) throw std::runtime_error("B-Rep mesh currently requires a single shell");
-  if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
-    throw std::runtime_error("B-Rep mesh does not form a valid solid");
+  std::vector<TopoDS_Solid> solids;
+  std::vector<TopoDS_Shell> boundaries;
+  for (TopExp_Explorer shells(sewing.SewedShape(), TopAbs_SHELL); shells.More(); shells.Next()) {
+    auto solid = BRepBuilderAPI_MakeSolid(TopoDS::Shell(shells.Current())).Solid();
+    if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+      throw std::runtime_error("B-Rep mesh does not form a valid solid");
+    solids.push_back(solid);
+    boundaries.push_back(TopoDS::Shell(TopExp_Explorer(solid, TopAbs_SHELL).Current()));
+  }
+  if (solids.empty()) throw std::runtime_error("B-Rep mesh has no closed shell");
+  // Boundary shells must be disjoint. Once this is checked, one boundary point suffices
+  // to determine containment, independently of the input shell order or winding.
+  std::vector<std::vector<bool>> inside(solids.size(), std::vector<bool>(solids.size()));
+  std::vector<size_t> depth(solids.size());
+  for (size_t i = 0; i < solids.size(); ++i) {
+    const auto vertex = TopoDS::Vertex(TopExp_Explorer(boundaries[i], TopAbs_VERTEX).Current());
+    for (size_t j = 0; j < solids.size(); ++j) {
+      if (i == j) continue;
+      if (i < j) {
+        BRepExtrema_DistShapeShape distance(boundaries[i], boundaries[j]);
+        if (!distance.IsDone() || distance.Value() <= Precision::Confusion())
+          throw std::runtime_error("B-Rep mesh shells intersect or touch");
+      }
+      BRepClass3d_SolidClassifier classifier(solids[j], BRep_Tool::Pnt(vertex), Precision::Confusion());
+      if (classifier.State() == TopAbs_UNKNOWN || classifier.State() == TopAbs_ON)
+        throw std::runtime_error("B-Rep mesh shell containment is ambiguous");
+      inside[i][j] = classifier.State() == TopAbs_IN;
+      depth[i] += inside[i][j];
+    }
+  }
+  BRep_Builder builder;
+  TopoDS_Compound regions;
+  builder.MakeCompound(regions);
+  for (size_t i = 0; i < solids.size(); ++i) {
+    if (depth[i] % 2) continue;
+    BRepBuilderAPI_MakeSolid region(boundaries[i]);
+    for (size_t j = 0; j < solids.size(); ++j) {
+      if (inside[j][i] && depth[j] == depth[i] + 1) region.Add(TopoDS::Shell(boundaries[j].Reversed()));
+    }
+    if (!BRepCheck_Analyzer(region.Solid()).IsValid())
+      throw std::runtime_error("B-Rep mesh cavity construction failed");
+    builder.Add(regions, region.Solid());
+  }
   // Merge coplanar triangles, without smoothing intentionally faceted surfaces.
-  ShapeUpgrade_UnifySameDomain unify(solid, true, true, false);
+  ShapeUpgrade_UnifySameDomain unify(regions, true, true, false);
   unify.Build();
   return std::make_shared<TopoDS_Shape>(unify.Shape());
 }
@@ -408,14 +924,17 @@ size_t brepSurfaceCount(const std::shared_ptr<void>& shape, BrepSurfaceType type
   for (TopExp_Explorer explorer(shapeFrom(shape), TopAbs_FACE); explorer.More(); explorer.Next()) {
     const GeomAbs_SurfaceType surfaceType =
       BRepAdaptor_Surface(TopoDS::Face(explorer.Current())).GetType();
-    const bool matches = (type == BrepSurfaceType::Plane && surfaceType == GeomAbs_Plane) ||
-                         (type == BrepSurfaceType::Cylinder && surfaceType == GeomAbs_Cylinder) ||
-                         (type == BrepSurfaceType::Cone && surfaceType == GeomAbs_Cone) ||
-                         (type == BrepSurfaceType::Sphere && surfaceType == GeomAbs_Sphere) ||
-                         (type == BrepSurfaceType::Torus && surfaceType == GeomAbs_Torus) ||
-                         (type == BrepSurfaceType::Bezier && surfaceType == GeomAbs_BezierSurface) ||
-                         (type == BrepSurfaceType::BSpline && surfaceType == GeomAbs_BSplineSurface) ||
-                         (type == BrepSurfaceType::Other && surfaceType == GeomAbs_OtherSurface);
+    const bool matches =
+      (type == BrepSurfaceType::Plane && surfaceType == GeomAbs_Plane) ||
+      (type == BrepSurfaceType::Cylinder && surfaceType == GeomAbs_Cylinder) ||
+      (type == BrepSurfaceType::Cone && surfaceType == GeomAbs_Cone) ||
+      (type == BrepSurfaceType::Sphere && surfaceType == GeomAbs_Sphere) ||
+      (type == BrepSurfaceType::Torus && surfaceType == GeomAbs_Torus) ||
+      (type == BrepSurfaceType::Bezier && surfaceType == GeomAbs_BezierSurface) ||
+      (type == BrepSurfaceType::BSpline && surfaceType == GeomAbs_BSplineSurface) ||
+      (type == BrepSurfaceType::Other &&
+       (surfaceType == GeomAbs_OtherSurface || surfaceType == GeomAbs_SurfaceOfExtrusion ||
+        surfaceType == GeomAbs_SurfaceOfRevolution || surfaceType == GeomAbs_OffsetSurface));
     if (matches) ++count;
   }
   return count;

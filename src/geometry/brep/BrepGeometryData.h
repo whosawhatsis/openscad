@@ -10,6 +10,14 @@ struct BrepDifferenceData {
 };
 
 bool brepIsEmpty(const std::shared_ptr<void>& shape);
+std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operands);
+std::shared_ptr<void> brepMinkowski(const std::vector<std::shared_ptr<void>>& operands);
+std::shared_ptr<void> brepBezierPrism(
+  const std::vector<std::vector<std::vector<std::array<double, 2>>>>& contours, double height);
+std::shared_ptr<void> brepOffset2d(const std::shared_ptr<void>& shape, double delta, bool round,
+                                   double height);
+std::shared_ptr<void> brepCutProjection(const std::shared_ptr<void>& shape, double height);
+std::shared_ptr<void> brepShadowProjection(const std::shared_ptr<void>& shape, double height);
 std::shared_ptr<void> brepTaper(const std::shared_ptr<void>& profile, double height, double scaleX,
                                 double scaleY, double twist, unsigned int minimumSpans);
 std::shared_ptr<void> brepMakeCube(double x, double y, double z);

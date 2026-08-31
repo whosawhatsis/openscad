@@ -15,6 +15,8 @@
 #include "core/CsgOpNode.h"
 #include "core/CurveDiscretizer.h"
 #include "core/LinearExtrudeNode.h"
+#include "core/ImportNode.h"
+#include "core/SurfaceNode.h"
 #include "core/ModuleInstantiation.h"
 #include "core/OffsetNode.h"
 #include "core/ProjectionNode.h"
@@ -73,6 +75,35 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
                                                  BrepFilletDiagnostics *diagnostics = nullptr,
                                                  double extrusionHeight = 0.0)
 {
+  if (extrusionHeight > 0) {
+    if (const auto *text = dynamic_cast<const TextNode *>(&node)) {
+      std::vector<BrepGeometry> glyphs;
+      for (const auto& contours : FreetypeRenderer().renderCurves(text->params))
+        glyphs.push_back(BrepGeometry::bezierPrism(contours, extrusionHeight));
+      BrepFilletDiagnostics unused;
+      return std::make_unique<BrepGeometry>(
+        BrepGeometry::boolean(glyphs, BrepOperation::Union, 0, unused));
+    }
+    const auto *offset = dynamic_cast<const OffsetNode *>(&node);
+    const auto *projection = dynamic_cast<const ProjectionNode *>(&node);
+    if (offset || projection) {
+      if (offset && offset->chamfer) return {};
+      std::vector<BrepGeometry> operands;
+      for (const auto& child : node.children) {
+        if (child->modinst->isBackground()) continue;
+        auto operand = createBrepGeometry(*child, nullptr, projection ? 0 : extrusionHeight);
+        if (!operand) return {};
+        operands.push_back(std::move(*operand));
+      }
+      BrepFilletDiagnostics unused;
+      auto result = BrepGeometry::boolean(operands, BrepOperation::Union, 0, unused);
+      return std::make_unique<BrepGeometry>(
+        projection ? (projection->cut_mode ? result.cutProjection(extrusionHeight)
+                                           : result.shadowProjection(extrusionHeight))
+                   : result.offset2d(offset->delta, offset->join_type == Clipper2Lib::JoinType::Round,
+                                     extrusionHeight));
+    }
+  }
   if (const auto *revolution = dynamic_cast<const RotateExtrudeNode *>(&node)) {
     if (extrusionHeight > 0.0) return {};
     if (revolution->angle == 0.0) return std::make_unique<BrepGeometry>(nullptr);
@@ -176,9 +207,12 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
   }
   const auto *sphere = dynamic_cast<const SphereNode *>(&node);
   const auto *cylinder = dynamic_cast<const CylinderNode *>(&node);
-  if (dynamic_cast<const PolyhedronNode *>(&node) || (sphere && sphere->discretizer.isFnSpecified()) ||
+  if (dynamic_cast<const PolyhedronNode *>(&node) || dynamic_cast<const ImportNode *>(&node) ||
+      dynamic_cast<const SurfaceNode *>(&node) || (sphere && sphere->discretizer.isFnSpecified()) ||
       (cylinder && cylinder->discretizer.isFnSpecified())) {
     const auto geometry = static_cast<const LeafNode&>(node).createGeometry();
+    if (const auto *native = dynamic_cast<const BrepGeometry *>(geometry.get()))
+      return std::make_unique<BrepGeometry>(*native);
     const auto *mesh = dynamic_cast<const PolySet *>(geometry.get());
     if (!mesh) return {};
     try {
@@ -218,8 +252,11 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
   }
   const auto *transform = dynamic_cast<const TransformNode *>(&node);
   const auto *csg = dynamic_cast<const CsgOpNode *>(&node);
+  const auto *advanced = dynamic_cast<const CgalAdvNode *>(&node);
+  const bool nativeAdvanced =
+    advanced && (advanced->type == CgalAdvType::HULL || advanced->type == CgalAdvType::MINKOWSKI);
   if (extrusionHeight > 0.0 && csg && csg->hasFillet && csg->filletRadius > 0.0) return {};
-  if (transform || csg || dynamic_cast<const GroupNode *>(&node) ||
+  if (transform || csg || nativeAdvanced || dynamic_cast<const GroupNode *>(&node) ||
       dynamic_cast<const ListNode *>(&node)) {
     std::vector<BrepGeometry> operands;
     operands.reserve(node.children.size());
@@ -239,6 +276,19 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
     };
     for (const auto& child : node.children) {
       if (!appendOperand(appendOperand, *child)) return {};
+    }
+    if (nativeAdvanced) {
+      try {
+        auto result = advanced->type == CgalAdvType::HULL ? BrepGeometry::hull(operands)
+                                                          : BrepGeometry::minkowski(operands);
+        if (extrusionHeight > 0 && advanced->type == CgalAdvType::MINKOWSKI && !operands.empty()) {
+          result = result.cutProjection(extrusionHeight);
+        }
+        return std::make_unique<BrepGeometry>(std::move(result));
+      } catch (const std::exception& error) {
+        LOG(message_group::Error, "OpenCASCADE %1$s failed: %2$s", node.name(), error.what());
+        return std::make_unique<BrepGeometry>(nullptr);
+      }
     }
     const auto operation = !csg || csg->type == OpenSCADOperator::UNION ? BrepOperation::Union
                            : csg->type == OpenSCADOperator::DIFFERENCE  ? BrepOperation::Difference

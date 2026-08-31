@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <optional>
 #include <stdexcept>
 
@@ -19,6 +20,13 @@
 #include "core/RotateExtrudeNode.h"
 #include "core/TransformNode.h"
 #include "core/Tree.h"
+#include "core/ImportNode.h"
+#include "core/SurfaceNode.h"
+#include "core/OffsetNode.h"
+#include "core/ProjectionNode.h"
+#include "core/TextNode.h"
+#include "core/CgalAdvNode.h"
+#include "platform/PlatformUtils.h"
 #include "core/primitives.h"
 
 TEST_CASE("BrepGeometry retains analytic surfaces until tessellation", "[brep]")
@@ -383,7 +391,7 @@ TEST_CASE("Intentional polygonal primitives remain planar B-Rep solids", "[brep]
   REQUIRE_FALSE(clipped.toDisplayMesh(0.1, 0.2).triangles.empty());
 }
 
-TEST_CASE("Polygon-to-B-Rep conversion rejects invalid and multi-shell inputs", "[brep]")
+TEST_CASE("Polygon-to-B-Rep conversion rejects invalid inputs", "[brep]")
 {
   PolySet mesh(3);
   mesh.vertices = {{0, 0, 0}, {10, 0, 0}, {0, 10, 0}, {0, 0, 10}};
@@ -406,8 +414,447 @@ TEST_CASE("Polygon-to-B-Rep conversion rejects invalid and multi-shell inputs", 
       for (auto& vertex : face) vertex += 4;
       mesh.indices.push_back(face);
     }
-    REQUIRE_THROWS_AS(BrepGeometry::fromPolySet(mesh), std::runtime_error);
+    REQUIRE_FALSE(BrepGeometry::fromPolySet(mesh).isEmpty());
   }
+}
+
+TEST_CASE("B-Rep mesh shells preserve disconnected regions and nested cavities", "[brep]")
+{
+  ModuleInstantiation inst("cube");
+  PolySet mesh(3);
+  const auto addBox = [&](double start, double size) {
+    CubeNode cube(&inst);
+    cube.x = cube.y = cube.z = size;
+    const auto geometry = cube.createGeometry();
+    const auto& box = dynamic_cast<const PolySet&>(*geometry);
+    const int first = mesh.vertices.size();
+    for (const auto& p : box.vertices) mesh.vertices.push_back(p + Vector3d(start, start, start));
+    for (auto indices : box.indices) {
+      for (auto& index : indices) index += first;
+      mesh.indices.push_back(indices);
+    }
+  };
+  addBox(0, 10);
+  bool island = false, separate = false;
+  SECTION("cavity")
+  {
+    addBox(2, 6);
+  }
+  SECTION("island in cavity")
+  {
+    addBox(2, 6);
+    addBox(4, 2);
+    island = true;
+  }
+  SECTION("disconnected")
+  {
+    addBox(20, 2);
+    separate = true;
+  }
+  SECTION("intersecting shells are invalid")
+  {
+    addBox(5, 10);
+    REQUIRE_THROWS_AS(BrepGeometry::fromPolySet(mesh), std::runtime_error);
+    return;
+  }
+  const auto shape = BrepGeometry::fromPolySet(mesh);
+  const auto occupied = [&](double p) {
+    auto probe = BrepGeometry::cube(0.1, 0.1, 0.1);
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(Vector3d(p, p, p));
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    return !BrepGeometry::boolean({shape, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty();
+  };
+  CHECK(occupied(1));
+  CHECK(occupied(3) == separate);
+  CHECK(occupied(5) == (separate || island));
+  CHECK(occupied(20.5) == separate);
+  CHECK_FALSE(shape.toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
+TEST_CASE("B-Rep evaluator retains mesh imports and height fields", "[brep]")
+{
+  ModuleInstantiation inst("input");
+  const auto data =
+    std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() / "tests/data";
+  std::shared_ptr<AbstractNode> node;
+  SECTION("OFF import")
+  {
+    auto imported = std::make_shared<ImportNode>(&inst, ImportType::OFF, CurveDiscretizer(6.0));
+    imported->filename = Filename((data / "off/brep-tetrahedron.off").string());
+    imported->convexity = 1;
+    imported->center = false;
+    node = imported;
+  }
+  SECTION("height field")
+  {
+    auto surface = std::make_shared<SurfaceNode>(&inst);
+    surface->filename = Filename((data / "scad/3D/features/surface-simple.dat").string());
+    node = surface;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(node);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*node, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Plane) > 0);
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
+TEST_CASE("B-Rep multipart import does not combine objects with a mesh kernel", "[brep]")
+{
+  PlatformUtils::registerApplicationPath(
+    std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().string());
+  ModuleInstantiation inst("import");
+  ImportNode node(&inst, ImportType::AMF, CurveDiscretizer(6.0));
+  node.filename = Filename((std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+                            "tests/data/amf/brep-multipart.amf")
+                             .string());
+  node.center = false;
+  node.convexity = 1;
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  const auto result = node.createGeometry();
+  RenderSettings::inst()->backend3D = previous;
+  const auto *brep = dynamic_cast<const BrepGeometry *>(result.get());
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(4).margin(1e-5));
+}
+
+TEST_CASE("B-Rep offset preserves circular profiles and holes", "[brep]")
+{
+  ModuleInstantiation inst("offset");
+  auto offset = std::make_shared<OffsetNode>(&inst, CurveDiscretizer(6.0));
+  offset->delta = 1;
+  auto circle = std::make_shared<CircleNode>(
+    &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  circle->r = 4;
+  offset->children = {circle};
+  bool hole = false;
+  SECTION("expand")
+  {
+  }
+  SECTION("shrink")
+  {
+    offset->delta = -1;
+  }
+  SECTION("vanish")
+  {
+    offset->delta = -5;
+  }
+  SECTION("annulus")
+  {
+    auto inner = std::make_shared<CircleNode>(&inst, circle->discretizer);
+    inner->r = 2;
+    auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+    difference->children = {circle, inner};
+    offset->children = {difference};
+    hole = true;
+  }
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 5);
+  extrusion->children = {offset};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  if (offset->delta == -5) {
+    CHECK(brep->isEmpty());
+    return;
+  }
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == (hole ? 2 : 1));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(4 + offset->delta).margin(1e-5));
+  BrepFilletDiagnostics diagnostics;
+  CHECK(BrepGeometry::boolean({*brep, BrepGeometry::cube(0.1, 0.1, 0.1)}, BrepOperation::Intersection, 0,
+                              diagnostics)
+          .isEmpty() == hole);
+}
+
+TEST_CASE("B-Rep cut projection retains curved sections", "[brep]")
+{
+  ModuleInstantiation inst("projection");
+  auto sphere = std::make_shared<SphereNode>(
+    &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  sphere->r = 4;
+  auto projection = std::make_shared<ProjectionNode>(&inst);
+  projection->cut_mode = true;
+  projection->children = {sphere};
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 5);
+  extrusion->children = {projection};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == 1);
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(4).margin(1e-5));
+}
+
+TEST_CASE("B-Rep shadow projection preserves silhouettes and visible holes", "[brep]")
+{
+  ModuleInstantiation inst("projection");
+  const CurveDiscretizer smooth([](const char *) -> std::optional<double> { return std::nullopt; });
+  auto sphere = std::make_shared<SphereNode>(&inst, smooth);
+  sphere->r = 4;
+  std::shared_ptr<AbstractNode> object = sphere;
+  bool hole = false;
+  SECTION("sphere above the projection plane")
+  {
+  }
+  SECTION("annulus")
+  {
+    auto outer = std::make_shared<CylinderNode>(&inst, smooth);
+    outer->r1 = outer->r2 = 4;
+    outer->h = 2;
+    auto inner = std::make_shared<CylinderNode>(&inst, smooth);
+    inner->r1 = inner->r2 = 2;
+    inner->h = 2;
+    auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+    difference->children = {outer, inner};
+    object = difference;
+    hole = true;
+  }
+  auto translate = std::make_shared<TransformNode>(&inst, "translate");
+  translate->matrix.translate(Vector3d(0, 0, 10));
+  translate->children = {object};
+  auto projection = std::make_shared<ProjectionNode>(&inst);
+  projection->children = {translate};
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 5);
+  extrusion->children = {projection};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == (hole ? 2 : 1));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(4).margin(1e-5));
+  BrepFilletDiagnostics diagnostics;
+  CHECK(BrepGeometry::boolean({*brep, BrepGeometry::cube(0.1, 0.1, 0.1)}, BrepOperation::Intersection, 0,
+                              diagnostics)
+          .isEmpty() == hole);
+}
+
+TEST_CASE("B-Rep text extrusion retains font Bezier curves", "[brep]")
+{
+  PlatformUtils::registerApplicationPath(
+    std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().string());
+  ModuleInstantiation inst("text");
+  FreetypeRenderer::Params::ParamsOptions options;
+  options.text = "Oo";
+  options.font = "Liberation Sans";
+  FreetypeRenderer::Params params(options);
+  params.detect_properties();
+  auto text = std::make_shared<TextNode>(&inst, std::move(params));
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 5);
+  extrusion->children = {text};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Other) + brep->surfaceCount(BrepSurfaceType::Bezier) +
+          brep->surfaceCount(BrepSurfaceType::BSpline) >
+        0);
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+  const auto glyphs = text->createPolygonList();
+  REQUIRE(glyphs.size() == 2);
+  for (const auto& glyph : glyphs) {
+    auto probe = BrepGeometry::cube(0.01, 0.01, 0.01);
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(glyph->getBoundingBox().center() + Vector3d(0, 0, 1));
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
+  }
+}
+
+TEST_CASE("B-Rep font contours use nonzero winding in overlaps", "[brep]")
+{
+  using Point = std::array<double, 2>;
+  const auto rectangle = [](double x) {
+    return std::vector<std::vector<Point>>{
+      {{x, 0}, {x + 2, 0}}, {{x + 2, 0}, {x + 2, 2}}, {{x + 2, 2}, {x, 2}}, {{x, 2}, {x, 0}}};
+  };
+  auto a = rectangle(0), b = rectangle(1);
+  bool opposite = false;
+  SECTION("same winding")
+  {
+  }
+  SECTION("opposite winding")
+  {
+    std::reverse(b.begin(), b.end());
+    for (auto& curve : b) std::reverse(curve.begin(), curve.end());
+    opposite = true;
+  }
+  const auto shape = BrepGeometry::bezierPrism({a, b}, 1);
+  auto probe = BrepGeometry::cube(0.1, 0.1, 0.1);
+  Transform3d transform = Transform3d::Identity();
+  transform.translate(Vector3d(1.5, 1, 0.5));
+  probe.transform(transform);
+  BrepFilletDiagnostics diagnostics;
+  CHECK(BrepGeometry::boolean({shape, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty() ==
+        opposite);
+}
+
+TEST_CASE("B-Rep hull and Minkowski retain native solids", "[brep]")
+{
+  ModuleInstantiation inst("advanced");
+  auto first = std::make_shared<CubeNode>(&inst);
+  first->x = first->y = first->z = 2;
+  auto second = std::make_shared<CubeNode>(&inst);
+  second->x = second->y = second->z = 2;
+  auto advanced = std::make_shared<CgalAdvNode>(&inst, CgalAdvType::HULL);
+  double expectedMin = 0, expectedMax = 6;
+  bool rounded = false;
+  SECTION("polyhedral hull")
+  {
+    auto transform = std::make_shared<TransformNode>(&inst, "translate");
+    transform->matrix.translate(Vector3d(4, 0, 0));
+    transform->children = {second};
+    advanced->children = {first, transform};
+  }
+  SECTION("convex polyhedral Minkowski")
+  {
+    advanced->type = CgalAdvType::MINKOWSKI;
+    advanced->children = {first, second};
+    expectedMax = 4;
+  }
+  SECTION("spherical Minkowski")
+  {
+    advanced->type = CgalAdvType::MINKOWSKI;
+    auto sphere = std::make_shared<SphereNode>(
+      &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+    sphere->r = 1;
+    advanced->children = {first, sphere};
+    expectedMin = -1;
+    expectedMax = 3;
+    rounded = true;
+  }
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(advanced);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*advanced, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(expectedMin).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(expectedMax).margin(1e-5));
+  CHECK((brep->surfaceCount(BrepSurfaceType::Sphere) > 0) == rounded);
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+  const auto occupied = [&](Vector3d p) {
+    auto probe = BrepGeometry::cube(0.01, 0.01, 0.01);
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(p);
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    return !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty();
+  };
+  if (rounded) {
+    CHECK(occupied({2.4, 2.4, 2.4}));
+    CHECK_FALSE(occupied({2.8, 2.8, 2.8}));
+  } else {
+    CHECK(occupied({3, 1, 1}));
+    CHECK_FALSE(occupied({expectedMax + 0.1, 1, 1}));
+  }
+}
+
+TEST_CASE("B-Rep hull of two spheres keeps the tangent envelope smooth", "[brep]")
+{
+  ModuleInstantiation inst("hull");
+  const CurveDiscretizer smooth([](const char *) -> std::optional<double> { return std::nullopt; });
+  auto first = std::make_shared<SphereNode>(&inst, smooth);
+  first->r = 2;
+  auto second = std::make_shared<SphereNode>(&inst, smooth);
+  second->r = 1;
+  auto translate = std::make_shared<TransformNode>(&inst, "translate");
+  translate->matrix.translate(Vector3d(6, 0, 0));
+  translate->children = {second};
+  auto hull = std::make_shared<CgalAdvNode>(&inst, CgalAdvType::HULL);
+  hull->children = {first, translate};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(hull);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*hull, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Sphere) >= 2);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cone) == 1);
+  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(-2).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(7).margin(1e-5));
+}
+
+TEST_CASE("B-Rep planar hull and Minkowski preserve circles", "[brep]")
+{
+  ModuleInstantiation inst("advanced");
+  const CurveDiscretizer smooth([](const char *) -> std::optional<double> { return std::nullopt; });
+  auto circle = std::make_shared<CircleNode>(&inst, smooth);
+  circle->r = 1;
+  auto advanced = std::make_shared<CgalAdvNode>(&inst, CgalAdvType::HULL);
+  double expectedMax = 7;
+  SECTION("two-circle hull")
+  {
+    auto second = std::make_shared<CircleNode>(&inst, smooth);
+    second->r = 2;
+    auto translate = std::make_shared<TransformNode>(&inst, "translate");
+    translate->matrix.translate(Vector3d(5, 0, 0));
+    translate->children = {second};
+    advanced->children = {circle, translate};
+  }
+  SECTION("circle Minkowski")
+  {
+    advanced->type = CgalAdvType::MINKOWSKI;
+    auto square = std::make_shared<SquareNode>(&inst);
+    square->x = square->y = 4;
+    advanced->children = {circle, square};
+    expectedMax = 5;
+  }
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, smooth);
+  extrusion->height = Vector3d(0, 0, 3);
+  extrusion->children = {advanced};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) > 0);
+  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(-1).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(expectedMax).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().z() == Catch::Approx(3).margin(1e-5));
 }
 
 TEST_CASE("B-Rep evaluator reports open polyhedra without throwing", "[brep]")

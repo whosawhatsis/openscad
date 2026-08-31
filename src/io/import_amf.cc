@@ -100,7 +100,8 @@ protected:
 public:
   AmfImporter(const Location& loc);
   virtual ~AmfImporter() = default;
-  std::unique_ptr<PolySet> read(const std::string& filename);
+  std::unique_ptr<PolySet> read(const std::string& filename,
+                                std::vector<std::unique_ptr<PolySet>> *parts);
 
   virtual xmlTextReaderPtr createXmlReader(const char *filename);
 };
@@ -245,7 +246,8 @@ int AmfImporter::streamFile(const char *filename)
   return ret;
 }
 
-std::unique_ptr<PolySet> AmfImporter::read(const std::string& filename)
+std::unique_ptr<PolySet> AmfImporter::read(const std::string& filename,
+                                           std::vector<std::unique_ptr<PolySet>> *parts)
 {
   funcs[coordinates_x] = set_x;
   funcs[coordinates_y] = set_y;
@@ -267,6 +269,10 @@ std::unique_ptr<PolySet> AmfImporter::read(const std::string& filename)
     return std::move(polySets[0]);
   }
   if (polySets.size() > 1) {
+    if (parts) {
+      *parts = std::move(polySets);
+      return PolySet::createEmpty();
+    }
     Geometry::Geometries children;
     for (auto& polySet : polySets) {
       children.push_back(std::make_pair(std::shared_ptr<AbstractNode>(), std::move(polySet)));
@@ -351,20 +357,22 @@ xmlTextReaderPtr AmfImporterZIP::createXmlReader(const char *filepath)
   }
 }
 
-std::unique_ptr<PolySet> import_amf(const std::string& filename, const Location& loc)
+std::unique_ptr<PolySet> import_amf(const std::string& filename, const Location& loc,
+                                    std::vector<std::unique_ptr<PolySet>> *parts)
 {
   LOG(message_group::Deprecated, "AMF import is deprecated. Please use 3MF instead.");
   AmfImporterZIP importer(loc);
-  return importer.read(filename);
+  return importer.read(filename, parts);
 }
 
 #else
 
-std::unique_ptr<PolySet> import_amf(const std::string& filename, const Location& loc)
+std::unique_ptr<PolySet> import_amf(const std::string& filename, const Location& loc,
+                                    std::vector<std::unique_ptr<PolySet>> *parts)
 {
   LOG(message_group::Deprecated, "AMF import is deprecated. Please use 3MF instead.");
   AmfImporter importer(loc);
-  return importer.read(filename);
+  return importer.read(filename, parts);
 }
 
 #endif  // ifdef ENABLE_LIBZIP

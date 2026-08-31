@@ -37,6 +37,9 @@
 
 #ifdef ENABLE_MANIFOLD
 #include "glview/RenderSettings.h"
+#ifdef ENABLE_OPENCSCADE
+#include "geometry/brep/BrepGeometry.h"
+#endif
 #endif
 
 #include <boost/algorithm/string.hpp>
@@ -199,6 +202,11 @@ static std::unique_ptr<T> optionally_center(std::unique_ptr<T> g, bool center)
 std::unique_ptr<const Geometry> ImportNode::createGeometry() const
 {
   std::unique_ptr<Geometry> g;
+  std::vector<std::unique_ptr<PolySet>> parts;
+  std::vector<std::unique_ptr<PolySet>> *separateParts = nullptr;
+#ifdef ENABLE_OPENCSCADE
+  if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) separateParts = &parts;
+#endif
   auto loc = this->modinst->location();
 
   switch (this->type) {
@@ -207,11 +215,13 @@ std::unique_ptr<const Geometry> ImportNode::createGeometry() const
     break;
   }
   case ImportType::AMF: {
-    g = optionally_center(import_amf(this->filename, loc), this->center);
+    auto mesh = import_amf(this->filename, loc, separateParts);
+    g = optionally_center(std::move(mesh), parts.empty() && this->center);
     break;
   }
   case ImportType::_3MF: {
-    g = optionally_center(import_3mf(this->filename, loc), this->center);
+    auto mesh = import_3mf(this->filename, loc, separateParts);
+    g = optionally_center(std::move(mesh), parts.empty() && this->center);
     break;
   }
   case ImportType::OFF: {
@@ -263,6 +273,21 @@ std::unique_ptr<const Geometry> ImportNode::createGeometry() const
     g = PolySet::createEmpty();
   }
 
+#ifdef ENABLE_OPENCSCADE
+  if (!parts.empty()) {
+    try {
+      std::vector<BrepGeometry> objects;
+      for (const auto& part : parts) objects.push_back(BrepGeometry::fromPolySet(*part));
+      BrepFilletDiagnostics unused;
+      g = optionally_center(
+        std::make_unique<BrepGeometry>(BrepGeometry::boolean(objects, BrepOperation::Union, 0, unused)),
+        this->center);
+    } catch (const std::exception& error) {
+      LOG(message_group::Error, "OpenCASCADE multipart import failed: %1$s", error.what());
+      g = std::make_unique<BrepGeometry>(nullptr);
+    }
+  }
+#endif
   g->setConvexity(this->convexity);
   return g;
 }

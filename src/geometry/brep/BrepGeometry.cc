@@ -65,6 +65,41 @@ BrepGeometry BrepGeometry::prism(const std::vector<std::array<double, 2>>& outli
   return BrepGeometry(brepMakePrism(outline, height));
 }
 
+BrepGeometry BrepGeometry::offset2d(double delta, bool round, double height) const
+{
+  return BrepGeometry(brepOffset2d(shape_, delta, round, height));
+}
+
+BrepGeometry BrepGeometry::bezierPrism(
+  const std::vector<std::vector<std::vector<std::array<double, 2>>>>& contours, double height)
+{
+  return BrepGeometry(brepBezierPrism(contours, height));
+}
+
+BrepGeometry BrepGeometry::cutProjection(double height) const
+{
+  return BrepGeometry(brepCutProjection(shape_, height));
+}
+
+BrepGeometry BrepGeometry::shadowProjection(double height) const
+{
+  return BrepGeometry(brepShadowProjection(shape_, height));
+}
+
+BrepGeometry BrepGeometry::hull(const std::vector<BrepGeometry>& operands)
+{
+  std::vector<std::shared_ptr<void>> shapes;
+  for (const auto& operand : operands) shapes.push_back(operand.opaqueShape());
+  return BrepGeometry(brepHull(shapes));
+}
+
+BrepGeometry BrepGeometry::minkowski(const std::vector<BrepGeometry>& operands)
+{
+  std::vector<std::shared_ptr<void>> shapes;
+  for (const auto& operand : operands) shapes.push_back(operand.opaqueShape());
+  return BrepGeometry(brepMinkowski(shapes));
+}
+
 BrepGeometry BrepGeometry::revolve(double angle, double start, int segments) const
 {
   return BrepGeometry(brepRevolve(shape_, angle, start, segments));

@@ -29,6 +29,7 @@
 #include <hb.h>
 
 #include <memory>
+#include <array>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -141,6 +142,11 @@ public:
 
   [[nodiscard]] std::vector<std::shared_ptr<const class Polygon2d>> render(
     const FreetypeRenderer::Params& params) const;
+
+  // Per glyph, contours of line/quadratic/cubic Bezier control points in model coordinates.
+  using CurveContour = std::vector<std::vector<std::array<double, 2>>>;
+  using GlyphCurves = std::vector<CurveContour>;
+  [[nodiscard]] std::vector<GlyphCurves> renderCurves(const Params& params) const;
 
 private:
   const static double scale;
