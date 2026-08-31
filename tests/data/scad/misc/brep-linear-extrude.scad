@@ -21,3 +21,7 @@ translate([65, 0, 0]) linear_extrude(height=8, scale=0.5)
   difference() { circle(r=4); circle(r=2); }
 translate([80, 0, 0]) linear_extrude(height=8, scale=[0.5, 0.75]) circle(r=4);
 translate([95, 0, 0]) linear_extrude(height=8, scale=1.5) circle(r=3, $fn=6);
+translate([110, 0, 0]) linear_extrude(height=8, scale=0) circle(r=4);
+translate([120, 0, 0]) linear_extrude(height=8, scale=0) circle(r=4, $fn=6);
+translate([130, 0, 0]) linear_extrude(height=8, scale=0)
+  difference() { circle(r=4); circle(r=2); }

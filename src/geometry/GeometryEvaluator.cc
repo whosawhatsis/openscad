@@ -100,9 +100,10 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
   }
   if (const auto *extrusion = dynamic_cast<const LinearExtrudeNode *>(&node)) {
     if (extrusionHeight > 0.0) return {};
-    if (extrusion->twist != 0.0 || extrusion->scale_x <= 0.0 || extrusion->scale_y <= 0.0) {
+    const bool apex = extrusion->scale_x == 0.0 && extrusion->scale_y == 0.0;
+    if (extrusion->twist != 0.0 || (!apex && (extrusion->scale_x <= 0.0 || extrusion->scale_y <= 0.0))) {
       LOG(message_group::Error,
-          "OpenCASCADE linear_extrude does not yet support twist or nonpositive scale");
+          "OpenCASCADE linear_extrude does not yet support twist or one-axis collapse");
       return std::make_unique<BrepGeometry>(nullptr);
     }
     if (extrusion->height.z() <= 0.0) return std::make_unique<BrepGeometry>(nullptr);

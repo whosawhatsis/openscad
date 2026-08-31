@@ -13,6 +13,7 @@
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepCheck_Analyzer.hxx>
@@ -27,6 +28,8 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepFill.hxx>
+#include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
@@ -197,9 +200,10 @@ std::shared_ptr<void> brepTaper(const std::shared_ptr<void>& profile, double hei
                                 double scaleY)
 {
   if (brepIsEmpty(profile)) return {};
+  const bool apex = scaleX == 0.0 && scaleY == 0.0;
   if (!std::isfinite(height) || !std::isfinite(scaleX) || !std::isfinite(scaleY) || height <= 0 ||
-      scaleX <= 0 || scaleY <= 0)
-    throw std::invalid_argument("B-Rep taper requires positive finite height and scales");
+      (!apex && (scaleX <= 0 || scaleY <= 0)))
+    throw std::invalid_argument("B-Rep taper requires finite positive scales or a zero-scale apex");
   try {
     std::vector<std::shared_ptr<void>> solids;
     for (TopExp_Explorer faces(shapeFrom(profile), TopAbs_FACE); faces.More(); faces.Next()) {
@@ -211,6 +215,26 @@ std::shared_ptr<void> brepTaper(const std::shared_ptr<void>& profile, double hei
           std::abs(plane.Location().Z()) > Precision::Confusion())
         continue;
       TopoDS_Face top;
+      if (apex) {
+        const auto outer = BRepTools::OuterWire(face);
+        const auto loft = [&](const TopoDS_Wire& wire) -> std::shared_ptr<void> {
+          BRepOffsetAPI_ThruSections builder(true, true);
+          builder.AddWire(wire);
+          builder.AddVertex(BRepBuilderAPI_MakeVertex(gp_Pnt(0, 0, height)).Vertex());
+          builder.Build();
+          if (!builder.IsDone()) throw std::runtime_error("B-Rep apex construction failed");
+          auto solid = TopoDS::Solid(builder.Shape());
+          if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+            throw std::runtime_error("B-Rep apex does not form a valid solid");
+          return std::make_shared<TopoDS_Shape>(solid);
+        };
+        std::vector<std::shared_ptr<void>> contours{loft(outer)};
+        for (TopExp_Explorer wires(face, TopAbs_WIRE); wires.More(); wires.Next()) {
+          if (!wires.Current().IsSame(outer)) contours.push_back(loft(TopoDS::Wire(wires.Current())));
+        }
+        solids.push_back(brepBoolean(contours, BrepOperation::Difference, 0.0).shape);
+        continue;
+      }
       if (scaleX == scaleY) {
         gp_Trsf placement;
         placement.SetScale(gp_Pnt(0, 0, 0), scaleX);

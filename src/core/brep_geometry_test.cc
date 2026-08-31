@@ -822,6 +822,75 @@ TEST_CASE("B-Rep tapered extrusion preserves profiles and holes", "[brep]")
   CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
 }
 
+TEST_CASE("B-Rep zero-scale extrusion closes at an apex", "[brep]")
+{
+  ModuleInstantiation inst("linear_extrude");
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 8);
+  extrusion->scale_x = extrusion->scale_y = 0;
+  auto circle = std::make_shared<CircleNode>(
+    &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  circle->r = 4;
+  extrusion->children = {circle};
+  bool hollow = false;
+  double offset = 0;
+  SECTION("smooth cone")
+  {
+  }
+  SECTION("hexagonal pyramid")
+  {
+    circle->discretizer = CurveDiscretizer(6.0);
+  }
+  SECTION("offset profile converges to the origin apex")
+  {
+    offset = 5;
+    auto translate = std::make_shared<TransformNode>(&inst, "translate");
+    translate->matrix.translate(Vector3d(offset, 0, 0));
+    translate->children = {circle};
+    extrusion->children = {translate};
+  }
+  SECTION("hollow cone")
+  {
+    auto inner = std::make_shared<CircleNode>(&inst, circle->discretizer);
+    inner->r = 2;
+    auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+    difference->children = {circle, inner};
+    extrusion->children = {difference};
+    hollow = true;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->numFacets() == 0);
+  CHECK(brep->getBoundingBox().max().z() == Catch::Approx(8).margin(0.001));
+  if (circle->discretizer.isFnSpecified()) {
+    CHECK(brep->surfaceCount(BrepSurfaceType::Plane) == 7);
+  } else {
+    CHECK(brep->surfaceCount(BrepSurfaceType::Cone) + brep->surfaceCount(BrepSurfaceType::BSpline) +
+            brep->surfaceCount(BrepSurfaceType::Bezier) + brep->surfaceCount(BrepSurfaceType::Other) >
+          0);
+  }
+  const auto occupied = [&](double x, double z) {
+    auto probe = BrepGeometry::cube(0.1, 0.1, 0.1);
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(Vector3d(x + offset * (1 - z / 8), 0, z));
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    return !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty();
+  };
+  CHECK(occupied(1.5, 4));
+  CHECK_FALSE(occupied(3, 4));
+  CHECK_FALSE(occupied(1, 7));
+  CHECK(occupied(0, 4) == !hollow);
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
 TEST_CASE("Unsupported B-Rep extrusion variants do not silently become meshes", "[brep]")
 {
   ModuleInstantiation inst("linear_extrude");
