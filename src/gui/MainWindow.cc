@@ -2738,6 +2738,7 @@ void MainWindow::setAnalysisMode(AnalysisMode mode)
       qglview->getRenderer() == geomRenderer.get()) {
     geomRenderer = std::make_shared<PolySetRenderer>(rootGeom);
     qglview->setRenderer(geomRenderer);
+    qglview->updateColorScheme();
   }
   // The viewport paints on its own schedule, so unlike the CLI export path the
   // mode only has to be set before the next paint rather than before a
@@ -3095,6 +3096,7 @@ void MainWindow::onExperimentalChanged()
       qglview->getRenderer() == geomRenderer.get()) {
     geomRenderer = std::make_shared<PolySetRenderer>(rootGeom);
     qglview->setRenderer(geomRenderer);
+    qglview->updateColorScheme();
     qglview->update();
   }
   viewActionAnalysisViewCanny->setVisible(Feature::ExperimentalCannyMap.is_enabled());

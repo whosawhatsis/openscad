@@ -59,6 +59,8 @@ def main():
         transparent = render('color([1,0,0,0.5]) cube(20,center=true);' + rear)
         opaque = render('color([1,0,0,0.51]) cube(20,center=true);' + rear)
         assert sum(transparent) > sum(opaque), "transparent surface occludes rear edges"
+        assert render('color([1,0,0,0]) cube(20,center=true);' + rear) == transparent, \
+            "zero alpha suppressed the transparent object's own edges"
         same_color = render('color("red") translate([-10,-10,-10]) cube([10,20,20]);'
                             'color("red") translate([0,-10,-10]) cube([10,20,20]);')
         assert not any(same_color[y * 128 + x] for y in range(55, 73) for x in range(63, 66)), \

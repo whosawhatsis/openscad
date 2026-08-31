@@ -1,6 +1,5 @@
 #version 120
 varying vec3 normal;
-varying float depth;
 varying vec4 rawColor;
 varying float smoothAngle;
 uniform int layer;
