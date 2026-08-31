@@ -54,6 +54,8 @@ const Feature Feature::ExperimentalUnicodeIdentifiers(
   "Allow non-ASCII characters in identifiers, following Unicode Standard Annex #31.");
 const Feature Feature::ExperimentalProcessIsolation(
   "process-isolation", "Run each window's computation in an isolated process (requires restart).");
+const Feature Feature::ExperimentalEditorEnhancements("editor-enhancements",
+                                                      "Enable experimental editor enhancements.");
 
 #ifdef ENABLE_PYTHON
 const Feature Feature::ExperimentalPythonEngine(

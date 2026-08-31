@@ -133,6 +133,8 @@ public:
   ~ScadLexer2() override;
 
   const char *language() const override;
+  const char *blockStart(int *style = nullptr) const override;
+  const char *blockEnd(int *style = nullptr) const override;
 
   void styleText(int start, int end) override;
   void autoScroll(int error_pos);
