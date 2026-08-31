@@ -36,6 +36,12 @@ public:
   virtual ~Renderer() = default;
 
   virtual void prepare(const ShaderUtils::ShaderInfo *shaderinfo) = 0;
+  //! Angle-based smooth shading, set by the view before prepare(). It is deliberately
+  //! not inferred from the shader type: every analysis mode shares AGENT_RENDERING, and
+  //! smoothing normals under the normal-map or chromatic shaders would change what those
+  //! modes measure rather than only how the model looks.
+  void setSmoothShading(bool enabled) { smooth_shading_ = enabled; }
+  [[nodiscard]] bool smoothShading() const { return smooth_shading_; }
   virtual void draw(bool showedges, const ShaderUtils::ShaderInfo *shaderinfo) const = 0;
   [[nodiscard]] virtual BoundingBox getBoundingBox() const = 0;
 
@@ -70,6 +76,7 @@ public:
                                                       int mouse_x, int mouse_y, double tolerance);
 
 protected:
+  bool smooth_shading_{false};
   std::map<ColorMode, Color4f> colormap_;
   const ColorScheme *colorscheme_{nullptr};
   void setupShader();

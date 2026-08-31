@@ -233,13 +233,17 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
           last_color = color;
         }
         vbo_builder.setMaterialParams(csgobj.leaf->roughness, csgobj.leaf->metallic);
+        // Smooth shading is a property of the Shaded mode's lighting, so it is applied
+        // only when that shader is bound. Smoothing the default view would move every
+        // render regression image in the suite.
+        const double smooth_angle = smoothShading() ? csgobj.leaf->polyset->smoothAngle() : 0.0;
 
         add_shader_pointers(vbo_builder, shaderinfo);
 
         if (color.a() == 1.0f) {
           // object is opaque, draw normally
           vbo_builder.create_surface(*csgobj.leaf->polyset, csgobj.leaf->matrix, last_color,
-                                     enable_barycentric, override_color);
+                                     enable_barycentric, override_color, smooth_angle);
           if (const auto csg_vs = std::dynamic_pointer_cast<OpenCSGVertexState>(vertex_states.back())) {
             csg_vs->setCsgObjectIndex(csgobj.leaf->index);
             vertex_state_container->addPrimitive(
@@ -257,7 +261,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
           vertex_states.emplace_back(std::move(cull));
 
           vbo_builder.create_surface(*csgobj.leaf->polyset, csgobj.leaf->matrix, last_color,
-                                     enable_barycentric, override_color);
+                                     enable_barycentric, override_color, smooth_angle);
           if (const auto csg_vs = std::dynamic_pointer_cast<OpenCSGVertexState>(vertex_states.back())) {
             csg_vs->setCsgObjectIndex(csgobj.leaf->index);
 
@@ -307,6 +311,10 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
           last_color = color;
         }
         vbo_builder.setMaterialParams(csgobj.leaf->roughness, csgobj.leaf->metallic);
+        // Smooth shading is a property of the Shaded mode's lighting, so it is applied
+        // only when that shader is bound. Smoothing the default view would move every
+        // render regression image in the suite.
+        const double smooth_angle = smoothShading() ? csgobj.leaf->polyset->smoothAngle() : 0.0;
 
         add_shader_pointers(vbo_builder, shaderinfo);
 
@@ -327,7 +335,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
           tmp *= Eigen::Scaling(1.0, 1.0, 1.1);
         }
         vbo_builder.create_surface(*csgobj.leaf->polyset, tmp, last_color, enable_barycentric,
-                                   override_color);
+                                   override_color, smooth_angle);
         if (const auto csg_vs = std::dynamic_pointer_cast<OpenCSGVertexState>(vertex_states.back())) {
           csg_vs->setCsgObjectIndex(csgobj.leaf->index);
           vertex_state_container->addPrimitive(

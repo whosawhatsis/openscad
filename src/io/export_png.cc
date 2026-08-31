@@ -77,8 +77,16 @@ std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const
   glview->setShowAxes(options["axes"]);
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
-  if (options["depth"]) glview->setAnalysisMode(AnalysisMode::Depth);
-  if (options.canny) glview->setAnalysisMode(AnalysisMode::Canny);
+  // The superset of both branches: smooth-shading generalized this from depth-only to every
+  // analysis mode, and analysis-views added Canny. Canny is tested first so it keeps the
+  // precedence it had, where it overrode a depth selection.
+  AnalysisMode mode = AnalysisMode::Default;
+  if (options.canny) mode = AnalysisMode::Canny;
+  else if (options["shaded"]) mode = AnalysisMode::Shaded;
+  else if (options["depth-metric"]) mode = AnalysisMode::DepthMetric;
+  else if (options["depth-metric10um"]) mode = AnalysisMode::DepthMetricFine;
+  else if (options["depth"]) mode = AnalysisMode::Depth;
+  glview->setAnalysisMode(mode);
   glview->edge_width = options.edgeWidth;
   glview->setDepthOptions(depthOptions);
   glview->paintGL();

@@ -177,10 +177,18 @@ bool is_approximately_convex(const PolySet& ps)
 // Get as or convert the geometry to a PolySet.
 std::shared_ptr<const PolySet> getGeometryAsPolySet(const std::shared_ptr<const Geometry>& geom)
 {
+  // A conversion produces a brand new PolySet, so anything the source carried outside
+  // its vertices is dropped unless it is copied over. The smoothing tolerance is the
+  // one that bites: an evaluated model reaches the renderer through here, so without
+  // this a boolean result shades at the default no matter what its parts recorded.
+  const auto carry = [&geom](auto ps) {
+    if (ps) ps->setSmoothAngle(geom->smoothAngle());
+    return ps;
+  };
   if (const auto geomlist = std::dynamic_pointer_cast<const GeometryList>(geom)) {
     PolySetBuilder builder;
     builder.appendGeometry(geom);
-    return builder.build();
+    return carry(builder.build());
   } else if (auto ps = std::dynamic_pointer_cast<const PolySet>(geom)) {
     return ps;
   }
@@ -189,7 +197,7 @@ std::shared_ptr<const PolySet> getGeometryAsPolySet(const std::shared_ptr<const 
     if (!N->isEmpty()) {
       if (auto ps = CGALUtils::createPolySetFromNefPolyhedron3(*N->p3)) {
         ps->setConvexity(N->getConvexity());
-        return ps;
+        return carry(std::move(ps));
       }
       LOG(message_group::Error, "Nef->PolySet failed.");
     }
@@ -198,7 +206,7 @@ std::shared_ptr<const PolySet> getGeometryAsPolySet(const std::shared_ptr<const 
 #endif
 #ifdef ENABLE_MANIFOLD
   if (auto mani = std::dynamic_pointer_cast<const ManifoldGeometry>(geom)) {
-    return mani->toPolySet();
+    return carry(mani->toPolySet());
   }
 #endif
   return nullptr;

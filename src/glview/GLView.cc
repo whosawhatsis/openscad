@@ -524,6 +524,10 @@ void GLView::paintGL()
       glEnable(GL_LIGHTING);
     }
 
+    // Smooth shading belongs to the Shaded mode only, so it is decided here where the
+    // mode is known rather than in the renderer, which only sees a shader type shared
+    // by every analysis mode.
+    this->renderer->setSmoothShading(analysis_mode == AnalysisMode::Shaded);
     this->renderer->prepare(active_shader);
     // Phong emits premultiplied material RGB plus an unattenuated reflected
     // highlight, so its RGB must not be multiplied by alpha a second time.
