@@ -119,14 +119,29 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
       const auto geometry = static_cast<const LeafNode&>(node).createGeometry();
       const auto *polygon = dynamic_cast<const Polygon2d *>(geometry.get());
       if (!polygon) return {};
-      const auto clean = ClipperUtils::sanitize(*polygon);
-      if (clean->isEmpty()) return std::make_unique<BrepGeometry>(nullptr);
-      if (clean->outlines().size() != 1) return {};
-      std::vector<std::array<double, 2>> outline;
-      for (const auto& point : clean->outlines().front().vertices) {
-        outline.push_back({point.x(), point.y()});
+      const auto scaleBits = ClipperUtils::scaleBitsFromPrecision();
+      const auto contours = ClipperUtils::sanitize(ClipperUtils::fromPolygon2d(*polygon, scaleBits));
+      const double scale = std::ldexp(1.0, -scaleBits);
+      // Keep the contour tree: subtracting a hole with its own holes restores islands,
+      // independently of authored path order or winding. Top-level regions are unioned.
+      const auto extrudeContour = [&](const auto& extrude,
+                                      const Clipper2Lib::PolyPath64& contour) -> BrepGeometry {
+        std::vector<std::array<double, 2>> outline;
+        for (const auto& point : contour.Polygon()) {
+          outline.push_back({scale * point.x, scale * point.y});
+        }
+        std::vector<BrepGeometry> operands{BrepGeometry::prism(outline, extrusionHeight)};
+        for (const auto& child : contour) operands.push_back(extrude(extrude, *child));
+        BrepFilletDiagnostics diagnostics;
+        return BrepGeometry::boolean(operands, BrepOperation::Difference, 0.0, diagnostics);
+      };
+      std::vector<BrepGeometry> regions;
+      for (const auto& contour : *contours) {
+        regions.push_back(extrudeContour(extrudeContour, *contour));
       }
-      return std::make_unique<BrepGeometry>(BrepGeometry::prism(outline, extrusionHeight));
+      BrepFilletDiagnostics diagnostics;
+      return std::make_unique<BrepGeometry>(
+        BrepGeometry::boolean(regions, BrepOperation::Union, 0.0, diagnostics));
     }
     if (dynamic_cast<const LeafNode *>(&node)) return {};
   }

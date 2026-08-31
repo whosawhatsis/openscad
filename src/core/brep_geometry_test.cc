@@ -507,6 +507,56 @@ TEST_CASE("Linear extrusion preserves analytic and polygonal profiles", "[brep]"
   REQUIRE_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
 }
 
+TEST_CASE("B-Rep extrusion preserves polygon contour nesting", "[brep]")
+{
+  ModuleInstantiation inst("linear_extrude");
+  auto polygon = std::make_shared<PolygonNode>(&inst);
+  polygon->points = {{0, 0}, {10, 0}, {10, 10}, {0, 10}, {2, 2},  {8, 2},  {8, 8},  {2, 8},
+                     {4, 4}, {6, 4},  {6, 6},   {4, 6},  {12, 0}, {14, 0}, {14, 2}, {12, 2}};
+  polygon->paths = {{0, 1, 2, 3}, {4, 5, 6, 7}};
+  bool island = false, disconnected = false;
+  SECTION("hole")
+  {
+  }
+  SECTION("reversed hole before outer contour")
+  {
+    polygon->paths = {{7, 6, 5, 4}, {3, 2, 1, 0}};
+  }
+  SECTION("island inside a hole and disconnected region")
+  {
+    polygon->paths = {{8, 9, 10, 11}, {4, 5, 6, 7}, {12, 13, 14, 15}, {0, 1, 2, 3}};
+    island = disconnected = true;
+  }
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(0.0));
+  extrusion->height = Vector3d(0, 0, 8);
+  extrusion->children = {polygon};
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  REQUIRE(brep->numFacets() == 0);
+  const auto occupied = [&](double x, double y) {
+    auto probe = BrepGeometry::cube(0.5, 0.5, 1.0);
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(Vector3d(x, y, 3.0));
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    return !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0.0, diagnostics)
+              .isEmpty();
+  };
+  CHECK(occupied(0.5, 0.5));
+  CHECK_FALSE(occupied(2.5, 2.5));
+  CHECK(occupied(4.5, 4.5) == island);
+  CHECK(occupied(12.5, 0.5) == disconnected);
+  CHECK_FALSE(occupied(10.5, 0.5));
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
 TEST_CASE("Unsupported B-Rep extrusion variants do not silently become meshes", "[brep]")
 {
   ModuleInstantiation inst("linear_extrude");
