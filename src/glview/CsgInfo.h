@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -24,6 +25,17 @@ class CsgInfo;
    open: the caller must finish sending the leaves before it opens the one this text goes into.
  */
 std::string export_csg_products(const CsgInfo& csgInfo, const std::string& filename);
+
+/*!
+   Rebuilds a product list from a document and the payloads that came with it.
+
+   The window never sees the worker's files, only what arrived on the channel, so every leaf is
+   resolved by name from `payloads`. False if the document is not a product list, or if it names a
+   leaf that never arrived -- compositing a list with missing geometry would silently drop part of
+   the model, which is worse than refusing it.
+ */
+bool import_csg_products(CsgInfo& csgInfo, const std::string& document,
+                         const std::map<std::string, std::string>& payloads);
 
 /*
    Small helper class for compiling and normalizing node trees into CSG products
