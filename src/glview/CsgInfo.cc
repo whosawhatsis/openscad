@@ -72,8 +72,9 @@ json writeChain(const std::vector<CSGChainObject>& chain, const std::string& fil
                       // otherwise lose material() -- and with it the surface parameters the
                       // viewport shades from.
                       {"materialName", object.leaf->materialName},
-                      {"roughness", object.leaf->roughness},
-                      {"metallic", object.leaf->metallic},
+                      {"finish",
+                       {object.leaf->finish.roughness, object.leaf->finish.metallic,
+                        object.leaf->finish.reflectance, object.leaf->finish.emission}},
                       {"label", object.leaf->label},
                       {"index", object.leaf->index},
                       {"flags", object.flags}});
@@ -155,10 +156,19 @@ bool readChain(const json& input, std::vector<CSGChainObject>& output,
     const auto channels = item.value("color", std::vector<float>{});
     if (channels.size() != 4) return false;
 
+    // A leaf's surface finish is what the viewport shades from; without it an isolated preview
+    // draws every body with the default material.
+    SurfaceFinish finish;
+    if (const auto values = item.value("finish", std::vector<float>{}); values.size() == 4) {
+      finish.roughness = values[0];
+      finish.metallic = values[1];
+      finish.reflectance = values[2];
+      finish.emission = values[3];
+    }
     auto leaf = std::make_shared<CSGLeaf>(
       polyset, matrix, Color4f(channels[0], channels[1], channels[2], channels[3]),
-      item.value("materialName", std::string{}), item.value("roughness", -1.0f),
-      item.value("metallic", 0.0f), item.value("label", std::string{}), item.value("index", 0));
+      item.value("materialName", std::string{}), finish, item.value("label", std::string{}),
+      item.value("index", 0));
     output.emplace_back(leaf, static_cast<CSGNode::Flag>(item.value("flags", 0)));
   }
   return true;

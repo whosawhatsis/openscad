@@ -232,7 +232,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
           last_color = color;
         }
-        vbo_builder.setMaterialParams(csgobj.leaf->roughness, csgobj.leaf->metallic);
+        vbo_builder.setFinish(csgobj.leaf->finish);
         // Smooth shading is a property of the Shaded mode's lighting, so it is applied
         // only when that shader is bound. Smoothing the default view would move every
         // render regression image in the suite.
@@ -310,7 +310,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         if (getShaderColor(colormode, c, csgobj.leaf->materialName, color)) {
           last_color = color;
         }
-        vbo_builder.setMaterialParams(csgobj.leaf->roughness, csgobj.leaf->metallic);
+        vbo_builder.setFinish(csgobj.leaf->finish);
         // Smooth shading is a property of the Shaded mode's lighting, so it is applied
         // only when that shader is bound. Smoothing the default view would move every
         // render regression image in the suite.

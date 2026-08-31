@@ -141,7 +141,10 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
     getShaderColor(ColorMode::MATERIAL, color, polyset->materialName(), color);
-    vbo_builder.setMaterialParams(polyset->shaderRoughness(), polyset->metallic());
+    // Fallback only: a PolySet that went through a material() carries its finish
+    // per face, and create_surface prefers that. This covers the single-material
+    // geometry whose attributes still ride on the object itself.
+    vbo_builder.setFinish({polyset->shaderRoughness(), polyset->metallic()});
     add_shader_pointers(vbo_builder, shaderinfo);
 
     // Smooth shading is a property of the Shaded mode's lighting, so it is applied

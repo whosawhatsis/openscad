@@ -20,6 +20,7 @@
 
 #include "geometry/Geometry.h"
 #include "geometry/PolySet.h"
+#include "geometry/SurfaceFinish.h"
 #include "geometry/PolySetBuilder.h"
 #include "geometry/PolySetUtils.h"
 #include "geometry/linalg.h"
@@ -51,21 +52,33 @@ std::shared_ptr<ManifoldGeometry> createManifoldFromTriangularPolySet(const Poly
 
   std::set<uint32_t> originalIDs;
   std::map<uint32_t, Color4f> originalIDToColor;
+  std::map<uint32_t, SurfaceFinish> originalIDToFinish;
 
-  std::map<std::optional<Color4f>, std::vector<size_t>> colorToFaceIndices;
+  // Faces are grouped into runs by the pair, not by color alone: an original ID
+  // is the only thing that survives a boolean, so two faces may only share one
+  // if they agree on everything it carries.
+  using Surface = std::pair<std::optional<Color4f>, std::optional<SurfaceFinish>>;
+  std::map<Surface, std::vector<size_t>> surfaceToFaceIndices;
   for (size_t i = 0, n = ps.indices.size(); i < n; i++) {
     auto color_index = i < ps.color_indices.size() ? ps.color_indices[i] : -1;
-    std::optional<Color4f> color;
+    Surface surface;
     if (color_index >= 0) {
-      color = ps.colors[color_index];
+      if (ps.colors[color_index].isValid()) surface.first = ps.colors[color_index];
+      if (static_cast<size_t>(color_index) < ps.finishes.size()) {
+        surface.second = ps.finishes[color_index];
+      }
     }
-    colorToFaceIndices[color].push_back(i);
+    surfaceToFaceIndices[surface].push_back(i);
   }
-  auto next_id = manifold::Manifold::ReserveIDs(colorToFaceIndices.size());
-  for (const auto& [color, faceIndices] : colorToFaceIndices) {
+  auto next_id = manifold::Manifold::ReserveIDs(surfaceToFaceIndices.size());
+  for (const auto& [surface, faceIndices] : surfaceToFaceIndices) {
+    const auto& color = surface.first;
     auto id = next_id++;
     if (color.has_value()) {
       originalIDToColor[id] = color.value();
+    }
+    if (surface.second.has_value()) {
+      originalIDToFinish[id] = surface.second.value();
     }
 
     mesh.runIndex.push_back(mesh.triVerts.size());
@@ -99,7 +112,8 @@ std::shared_ptr<ManifoldGeometry> createManifoldFromTriangularPolySet(const Poly
     }
   }
 
-  return std::make_shared<ManifoldGeometry>(mani, originalIDs, originalIDToColor);
+  return std::make_shared<ManifoldGeometry>(mani, originalIDs, originalIDToColor, std::set<uint32_t>{},
+                                            originalIDToFinish);
 }
 
 }  // namespace

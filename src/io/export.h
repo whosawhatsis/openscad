@@ -404,6 +404,10 @@ void export_usda_animation(const std::vector<std::shared_ptr<const Geometry>>& f
                            std::ostream& output, const ExportInfo& exportInfo);
 void export_usdz_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo);
+//! Whether an animation can be written as one rigidly-transformed object per body, rather than
+//! as new topology per frame. Exposed because the .blend exporter makes the same decision.
+bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames);
+
 void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
                            std::ostream& output, const ExportInfo& exportInfo);
 void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,

@@ -352,7 +352,7 @@ void VBOBuilder::addShaderData()
   vertex_data->addAttributeData(
     std::make_shared<AttributeData<GLubyte, 4, GL_UNSIGNED_BYTE>>());  // barycentric
   vertex_data->addAttributeData(
-    std::make_shared<AttributeData<GLfloat, 2, GL_FLOAT>>());  // roughness, metallic
+    std::make_shared<AttributeData<GLfloat, 4, GL_FLOAT>>());  // SurfaceFinish
 }
 
 void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t primitive_index,
@@ -394,7 +394,8 @@ void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t pri
   // Written here, alongside barycentric, so the two shader attribute arrays get
   // exactly one entry per vertex and stay aligned.
   addAttributeValues(*(vertex_data->attributes()[shader_attributes_index_ + MATERIAL_ATTRIB]),
-                     material_roughness_, material_metallic_);
+                     material_finish_.roughness, material_finish_.metallic, material_finish_.reflectance,
+                     material_finish_.emission);
 }
 
 void VBOBuilder::create_triangle(const Color4f& color, const Vector3d& p0, const Vector3d& p1,
@@ -479,6 +480,10 @@ void VBOBuilder::create_surface(const PolySet& ps, const Transform3d& m, const C
   }
 
   auto has_colors = !ps.color_indices.empty();
+  // The finish set by the caller is the fallback for a PolySet that carries no
+  // finish channel of its own - which is every PolySet that never went through
+  // a material(), and the whole F5 path, where the finish comes off the CSG leaf.
+  const SurfaceFinish default_finish = material_finish_;
 
   // One pass over the whole PolySet, not per facet: the corner normals depend on
   // neighbouring faces, so they cannot be derived inside the loop below.
@@ -502,6 +507,7 @@ void VBOBuilder::create_surface(const PolySet& ps, const Transform3d& m, const C
                             ps.colors[color_index].isValid()
                           ? ps.colors[color_index]
                           : default_color;
+    material_finish_ = color_index < ps.finishes.size() ? ps.finishes[color_index] : default_finish;
     if (poly.size() == 3) {
       const Vector3d p0 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(0)], m);
       const Vector3d p1 = uniqueMultiply(vert_mult_map, ps.vertices[poly.at(1)], m);

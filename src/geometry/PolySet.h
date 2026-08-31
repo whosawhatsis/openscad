@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "geometry/Geometry.h"
+#include "geometry/SurfaceFinish.h"
 #include "geometry/GeometryUtils.h"
 #include "geometry/Polygon2d.h"
 #include "geometry/linalg.h"
@@ -25,6 +26,15 @@ public:
   // Per polygon color, indexing the colors vector below. Can be empty, and -1 means no specific color.
   std::vector<int32_t> color_indices;
   std::vector<Color4f> colors;
+  // Shading parameters, parallel to colors and indexed by the same
+  // color_indices: entry i is the finish of the surface whose color is
+  // colors[i]. Either empty (every face takes the default finish) or exactly as
+  // long as colors. Deliberately not a second per-face index channel - sharing
+  // one means every place that already copies or remaps colors carries the
+  // finish for free and the two cannot fall out of step. The cost is that
+  // anything deduplicating colors must key on the pair, since two bodies may
+  // share a color while differing in finish.
+  std::vector<SurfaceFinish> finishes;
 
   PolySet(unsigned int dim, boost::tribool convex = unknown);
 
@@ -40,6 +50,7 @@ public:
   void transform(const Transform3d& mat) override;
   void resize(const Vector3d& newsize, const Eigen::Matrix<bool, 3, 1>& autosize) override;
   void setColor(const Color4f& c) override;
+  void setFinish(const SurfaceFinish& f) override;
 
   bool isConvex() const;
   boost::tribool convexValue() const { return convex_; }
