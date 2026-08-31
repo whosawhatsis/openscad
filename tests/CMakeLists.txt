@@ -1562,6 +1562,8 @@ add_test(NAME compute_worker
 # CTEST_ENVIRONMENT is consumed by the regression-test helpers, not by a plain add_test, so the
 # binary location has to be handed over explicitly. The test fails rather than skips without it.
 set_tests_properties(compute_worker PROPERTIES ENVIRONMENT "OPENSCAD_BINARY=${OPENSCAD_BINPATH}")
+# The test imports tests/ipc_channel.py, which is beside it in the source tree.
+set_tests_properties(compute_worker PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
 ####################
 # Extra Debug Info #

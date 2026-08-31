@@ -106,6 +106,8 @@
 #include "glview/RenderSettings.h"
 #include "handle_dep.h"
 #include "io/export.h"
+#include "json/json.hpp"
+
 #include "io/ipc_channel.h"
 #include "io/ipc_endpoint.h"
 #include "openscad_gui.h"
@@ -826,8 +828,28 @@ int compute_worker_main()
 
   IpcMessage message;
   while (channel->read(message)) {
-    // Request handling belongs to the next step; for now the worker only proves it is connected
-    // and that it leaves when told.
+    // Anything unrecognised is skipped rather than treated as an error: a newer parent must not be
+    // able to wedge an older worker just by sending a message it has not heard of.
+    if (message.name != "request") continue;
+
+    nlohmann::json answer;
+    try {
+      const auto request = nlohmann::json::parse(message.payload);
+      // Echoed back so a parent that has several requests in flight can match them up.
+      if (request.contains("requestId")) answer["requestId"] = request["requestId"];
+      const auto command = request.at("command").get<std::string>();
+      if (command != "preview" && command != "render") {
+        throw std::runtime_error("unknown command '" + command + "'");
+      }
+      // Evaluating the request is the next step. Answering it is this one.
+      answer["ok"] = true;
+    } catch (const std::exception& e) {
+      // A request the worker cannot make sense of is reported and the worker stays up. Exiting
+      // would cost the window its warm caches over a malformed message.
+      answer["ok"] = false;
+      answer["error"] = e.what();
+    }
+    channel->write("done", answer.dump());
   }
   return 0;
 }
@@ -836,9 +858,7 @@ int compute_worker_main()
 
 int openscad_main(int argc, char **argv)
 {
-  // Before everything else, including argument parsing: this mode has no command line beyond its
-  // own name, and must not reach any GUI setup.
-  if (argc == 2 && std::string(argv[1]) == "--compute-worker") return compute_worker_main();
+  const bool compute_worker = argc == 2 && std::string(argv[1]) == "--compute-worker";
 
 #if defined(ENABLE_CGAL) && defined(USE_MIMALLOC)
   // call init_mimalloc before any GMP variables are initialized. (defined in src/openscad_mimalloc.h)
@@ -880,6 +900,11 @@ int openscad_main(int argc, char **argv)
   CGAL::set_warning_behaviour(CGAL::THROW_EXCEPTION);
 #endif
   Builtins::initialize();
+
+  // After the initialization a worker needs -- builtins, the application path, the allocator and
+  // CGAL's error behaviour -- and before any argument parsing, so this mode never reaches the
+  // options table or anything that would put a window on screen.
+  if (compute_worker) return compute_worker_main();
 
   auto original_path = fs::current_path();
 

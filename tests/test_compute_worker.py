@@ -12,14 +12,20 @@ inherited HANDLE, which Python's subprocess does not expose. The Windows side of
 covered by the ComputeWorker unit tests, which spawn a real child on every platform.
 """
 
+import json
 import os
 import socket
 import subprocess
 import sys
 import unittest
 
+from ipc_channel import read_json_message, read_message, request, write_message
+
 CHANNEL_VARIABLE = "OPENSCAD_IPC_CHANNEL"
 TIMEOUT = 30
+# A worker that is going to answer answers promptly; waiting the full process timeout for a reply
+# that is never coming just makes a red run slow.
+REPLY_TIMEOUT = 10
 
 
 def openscad_binary():
@@ -33,8 +39,10 @@ def openscad_binary():
     return path
 
 
-@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
-class ComputeWorkerEntryPoint(unittest.TestCase):
+class WorkerFixture:
+    """Spawning helper shared by the test cases below. Deliberately not a TestCase: inheriting from
+    one would re-run its tests in every subclass."""
+
     def start_worker(self, channel_value=None, with_channel=True):
         """Starts a worker. Returns (process, parent_socket); parent_socket is None when the
         worker was deliberately given no usable channel."""
@@ -74,6 +82,9 @@ class ComputeWorkerEntryPoint(unittest.TestCase):
             process.kill()
         process.wait(timeout=TIMEOUT)
 
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerEntryPoint(WorkerFixture, unittest.TestCase):
     def test_worker_exits_when_the_channel_closes(self):
         """The window has gone. The worker must go too, rather than linger as an orphan."""
         process, parent = self.start_worker()
@@ -96,6 +107,72 @@ class ComputeWorkerEntryPoint(unittest.TestCase):
         parent.close()
         process.wait(timeout=TIMEOUT)
         self.assertNotIn(b"Usage", process.stderr.read())
+
+
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerRequests(WorkerFixture, unittest.TestCase):
+    """The request protocol itself.
+
+    Control travels over the same framed channel as payloads rather than over stdin/stdout: a
+    request is a message named "request" carrying JSON, and the worker answers with one named
+    "done". Nothing here evaluates geometry yet -- what is being pinned down is that the worker
+    understands a request at all, survives a bad one, and stays available for the next.
+    """
+
+    def exchange(self, **fields):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, **fields)
+        reply = read_json_message(parent)
+        self.assertIsNotNone(reply, "the worker closed the channel instead of answering")
+        return process, parent, reply
+
+    def test_worker_answers_a_request(self):
+        _, _, (name, body) = self.exchange(command="preview", requestId=7)
+        self.assertEqual(name, "done")
+        self.assertEqual(body.get("requestId"), 7)
+        self.assertTrue(body.get("ok"), f"expected success, got {body}")
+
+    def test_worker_reports_an_unknown_command_without_dying(self):
+        """A request it does not understand is an error to report, not a reason to take the
+        window's worker down."""
+        process, parent, (name, body) = self.exchange(command="not-a-command", requestId=1)
+        self.assertEqual(name, "done")
+        self.assertFalse(body.get("ok"))
+        self.assertIn("error", body)
+        self.assertIsNone(process.poll(), "the worker exited instead of reporting the error")
+
+    def test_worker_survives_malformed_json(self):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        write_message(parent, "request", "{ this is not json")
+        name, body = read_json_message(parent)
+        self.assertEqual(name, "done")
+        self.assertFalse(body.get("ok"))
+        self.assertIsNone(process.poll())
+
+    def test_worker_ignores_a_message_it_does_not_know(self):
+        """Forward compatibility: a name from a newer parent must not wedge an older worker."""
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        write_message(parent, "something-from-the-future", b"\x00\x01")
+        request(parent, command="preview", requestId=2)
+        name, body = read_json_message(parent)
+        self.assertEqual(name, "done")
+        self.assertEqual(body.get("requestId"), 2)
+
+    def test_worker_serves_several_requests_in_order(self):
+        """The worker is persistent -- that is what makes a repeat render cheap. Each request is
+        answered, in order, over one connection."""
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        for identifier in range(4):
+            request(parent, command="preview", requestId=identifier)
+            name, body = read_json_message(parent)
+            self.assertEqual(name, "done")
+            self.assertEqual(body.get("requestId"), identifier)
+        self.assertIsNone(process.poll())
 
 
 if __name__ == "__main__":
