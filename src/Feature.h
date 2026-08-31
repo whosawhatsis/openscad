@@ -30,7 +30,6 @@ public:
   static const Feature ExperimentalStructuredDiagnostics;
   static const Feature ExperimentalMultiMaterial;
   static const Feature ExperimentalEditorEnhancements;
-  static const Feature ExperimentalCannyMap;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif

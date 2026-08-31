@@ -17,7 +17,7 @@ def main():
             output = root / "map.png"
             scene.write_text(source)
             command = [executable, str(scene), "-o", str(output),
-                       "--enable=canny-map", "--export-format=cannymap", "--edge-width=" + width,
+                       "--export-format=cannymap", "--edge-width=" + width,
                        "--backend=" + backend, "--imgsize=128,128",
                        "--camera=0,0,80,0,0,0", "--projection=o"]
             if final:

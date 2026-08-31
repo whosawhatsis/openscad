@@ -843,10 +843,6 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       // Declared inside the branch: this is an else-if chain with the video
       // encoder, so there is nowhere earlier to hoist it to.
       const AnalysisMode agent_mode = analysis_mode_for(export_format);
-      if (agent_mode == AnalysisMode::Canny && !Feature::ExperimentalCannyMap.is_enabled()) {
-        LOG(message_group::Error, "Canny export requires --enable=canny-map");
-        return 1;
-      }
       if (agent_mode != AnalysisMode::Default) {
         if (!glview && agent_mode != AnalysisMode::Canny) {
           // These formats are produced by a shader on the preview path. --render

@@ -2,7 +2,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
 #include <memory>
-#include "Feature.h"
 #include "geometry/PolySet.h"
 #include "glview/OffscreenView.h"
 #include "glview/PolySetRenderer.h"
@@ -12,12 +11,6 @@ TEST_CASE("feature edge rendering restores state and reuses its buffers", "[feat
 {
   PlatformUtils::registerApplicationPath(
     std::filesystem::path(__FILE__).parent_path().parent_path().string());
-  const bool enabled = Feature::ExperimentalCannyMap.is_enabled();
-  Feature::enable_feature("canny-map", true);
-  struct RestoreFeature {
-    bool enabled;
-    ~RestoreFeature() { Feature::enable_feature("canny-map", enabled); }
-  } restore{enabled};
   auto mesh = std::make_shared<PolySet>(3);
   mesh->vertices = {{-10, -10, 0}, {10, -10, 0}, {10, 10, 0}, {-10, 10, 0}};
   mesh->indices = {{0, 1, 2}, {0, 2, 3}};
