@@ -14,6 +14,8 @@
 
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QString>
 #include <QStringList>
 #include <catch2/catch_all.hpp>
@@ -22,6 +24,7 @@
 #include <memory>
 #include <string>
 
+#include "io/ipc_endpoint.h"
 #include "io/ipc_message.h"
 #include "json/json.hpp"
 
@@ -255,4 +258,43 @@ TEST_CASE("A cancelled render leaves the worker alive", "[gui][ComputeWorkerInte
   worker->startRender(
     QString::fromStdString(writeModel("cube([10, 10, 10]);", "openscad-worker-after-cancel")), {}, {});
   REQUIRE(waitFor([&] { return completed; }));
+}
+
+TEST_CASE("A worker exits when its parent lets go of the channel", "[gui][ComputeWorkerIntegration]")
+{
+  // The contract compute_worker_main() states: "A worker whose window has gone must exit rather
+  // than linger, or a session leaks one process per window." It reaches that conclusion by seeing
+  // end-of-stream on its channel -- which can only happen if this process holds the only other
+  // end.
+  //
+  // It did not. 122 orphaned workers were found on one machine, reparented to init, the oldest
+  // seven hours old, one of them belonging to the installed build. Each held *both* ends of its
+  // own socketpair: OPENSCAD_IPC_CHANNEL named one descriptor, and the parent's end had been
+  // inherited across the spawn as well, so the worker was holding its own channel open and read()
+  // could never end.
+  //
+  // Driven at this level rather than through ComputeWorker because the point is what happens when
+  // the parent closes the channel *without* killing the child, and ComputeWorker's destructor
+  // kills it.
+  ensureApplication();
+  const QString program = QStringLiteral(OPENSCAD_BINARY_PATH);
+  REQUIRE_FALSE(program.isEmpty());
+
+  auto channel = std::make_unique<IpcChannelPair>();
+  REQUIRE(channel->valid());
+
+  QProcess worker;
+  auto environment = QProcessEnvironment::systemEnvironment();
+  environment.insert(QStringLiteral("OPENSCAD_IPC_CHANNEL"),
+                     QString::fromStdString(channel->childArgument()));
+  worker.setProcessEnvironment(environment);
+  worker.start(program, QStringList{QStringLiteral("--compute-worker")});
+  REQUIRE(worker.waitForStarted());
+  channel->releaseChildEnd();
+
+  channel.reset();  // the window goes away; nothing else should be holding the channel open
+
+  const bool exited = worker.waitForFinished(10000);
+  if (!exited) worker.kill(), worker.waitForFinished();
+  CHECK(exited);
 }
