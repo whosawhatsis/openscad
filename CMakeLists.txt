@@ -1582,6 +1582,9 @@ file(GLOB_RECURSE TEST_SOURCES
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
   "src/io/*_test.cc"
+  # Not GUI_TEST_SOURCES: the parts of glview that these cover are in CORE_SOURCES and build
+  # headless, so their tests should run in a headless build too.
+  "src/glview/*_test.cc"
 )
 file(GLOB_RECURSE GUI_TEST_SOURCES
   "src/gui/*_test.cc"

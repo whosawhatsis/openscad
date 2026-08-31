@@ -10,8 +10,10 @@
 
 #include "geometry/PolySet.h"
 #include "io/ipc_endpoint.h"
+#include "io/ipc_channel.h"
 #include "io/ipc_geometry.h"
 #include "json/json.hpp"
+#include "utils/printutils.h"
 
 using json = nlohmann::json;
 
@@ -100,4 +102,103 @@ std::string export_csg_products(const CsgInfo& csgInfo, const std::string& filen
   // opening a payload sends the previous one. Writing this into a stream taken before those calls
   // would append it to the last leaf instead.
   return document.dump();
+}
+
+namespace {
+
+//! Resolves a leaf by the name its payload arrived under. Decoded meshes are shared: a name that
+//! appears in several products is one PolySet, as it was on the worker's side.
+std::shared_ptr<const PolySet> readGeometry(
+  const std::string& name, const std::map<std::string, std::string>& payloads,
+  std::map<std::string, std::shared_ptr<const PolySet>>& decoded)
+{
+  const auto already = decoded.find(name);
+  if (already != decoded.end()) return already->second;
+
+  const auto payload = payloads.find(ipc_payload_name(name));
+  if (payload == payloads.end()) return {};
+  std::shared_ptr<const PolySet> polyset =
+    import_ipc_polyset_buffer(payload->second.data(), payload->second.size(), name);
+  if (!polyset) return {};
+  decoded.emplace(name, polyset);
+  return polyset;
+}
+
+bool readChain(const json& input, std::vector<CSGChainObject>& output,
+               const std::map<std::string, std::string>& payloads,
+               std::map<std::string, std::shared_ptr<const PolySet>>& decoded)
+{
+  for (const auto& item : input) {
+    const auto name = item.value("geometry", std::string{});
+    auto polyset = readGeometry(name, payloads, decoded);
+    if (!polyset) {
+      LOG(message_group::Error, "Preview refers to geometry '%1$s', which did not arrive.", name);
+      return false;
+    }
+
+    Transform3d matrix = Transform3d::Identity();
+    const auto values = item.value("matrix", std::vector<double>{});
+    if (values.size() != 16) return false;
+    for (int row = 0; row < 4; ++row) {
+      for (int column = 0; column < 4; ++column) {
+        matrix.matrix()(row, column) = values[row * 4 + column];
+      }
+    }
+
+    const auto channels = item.value("color", std::vector<float>{});
+    if (channels.size() != 4) return false;
+
+    auto leaf = std::make_shared<CSGLeaf>(polyset, matrix,
+                                          Color4f(channels[0], channels[1], channels[2], channels[3]),
+                                          item.value("label", std::string{}), item.value("index", 0));
+    output.emplace_back(leaf, static_cast<CSGNode::Flag>(item.value("flags", 0)));
+  }
+  return true;
+}
+
+bool readProducts(const json& input, std::shared_ptr<CSGProducts>& output,
+                  const std::map<std::string, std::string>& payloads,
+                  std::map<std::string, std::shared_ptr<const PolySet>>& decoded)
+{
+  if (!input.is_array() || input.empty()) return true;  // nothing of this kind is not a failure
+  auto products = std::make_shared<CSGProducts>();
+  // CSGProducts starts with one empty product of its own. Appending to that would return one more
+  // product than was sent, and the extra would compound on every hop.
+  products->products.clear();
+  for (const auto& item : input) {
+    CSGProduct product;
+    if (!readChain(item.value("intersections", json::array()), product.intersections, payloads,
+                   decoded) ||
+        !readChain(item.value("subtractions", json::array()), product.subtractions, payloads, decoded)) {
+      return false;
+    }
+    products->products.push_back(std::move(product));
+  }
+  output = std::move(products);
+  return true;
+}
+
+}  // namespace
+
+bool import_csg_products(CsgInfo& csgInfo, const std::string& document,
+                         const std::map<std::string, std::string>& payloads)
+{
+  json parsed;
+  try {
+    parsed = json::parse(document);
+  } catch (const std::exception&) {
+    return false;
+  }
+  // A document without this key is something else entirely -- an error report, a truncated write --
+  // and treating it as an empty preview would blank the window instead of saying so.
+  if (!parsed.is_object() || !parsed.contains("products")) return false;
+
+  // Shared across the three lists, so a leaf appearing in more than one is decoded once, exactly as
+  // it was sent once.
+  std::map<std::string, std::shared_ptr<const PolySet>> decoded;
+  return readProducts(parsed["products"], csgInfo.root_products, payloads, decoded) &&
+         readProducts(parsed.value("highlights", json::array()), csgInfo.highlights_products, payloads,
+                      decoded) &&
+         readProducts(parsed.value("background", json::array()), csgInfo.background_products, payloads,
+                      decoded);
 }
