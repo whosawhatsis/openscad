@@ -20,6 +20,9 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pngdecode import gain  # noqa: E402
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--openscad", required=True, help="Specify OpenSCAD executable.")
 args, remaining_args = parser.parse_known_args()
@@ -39,61 +42,6 @@ if not os.path.exists(inputfile):
     failquit("cant find input file named: " + inputfile)
 if not os.path.exists(args.openscad):
     failquit("cant find openscad executable named: " + args.openscad)
-
-
-def channels(png, pick=min):
-    """Per-pixel reduction over the color channels, in scanline order. `min` is
-    how close each pixel gets to white, which is what a saturating highlight
-    does; `max` is how bright it gets in any one channel, which is what a
-    colored emission does - an emissive red part glows red, so it never moves
-    the min. Decoded with zlib rather than PIL, which this suite cannot assume
-    is installed."""
-    import struct
-    import zlib
-
-    pos, idat, width, bpp = 8, b"", 0, 0
-    while pos < len(png):
-        length, = struct.unpack(">I", png[pos:pos + 4])
-        ctype = png[pos + 4:pos + 8]
-        data = png[pos + 8:pos + 8 + length]
-        if ctype == b"IHDR":
-            width, _h, depth, color = struct.unpack(">IIBB", data[:10])
-            if depth != 8 or color not in (2, 6):
-                failquit("expected 8-bit RGB/RGBA png, got depth %d color %d" % (depth, color))
-            bpp = 3 if color == 2 else 4
-        elif ctype == b"IDAT":
-            idat += data
-        pos += length + 12
-
-    raw = zlib.decompress(idat)
-    stride = width * bpp
-    prev = bytearray(stride)
-    out = []
-    for row in range(0, len(raw), stride + 1):
-        f = raw[row]
-        line = bytearray(raw[row + 1:row + 1 + stride])
-        for i in range(stride):
-            a = line[i - bpp] if i >= bpp else 0
-            b = prev[i]
-            c = prev[i - bpp] if i >= bpp else 0
-            if f == 1: line[i] = (line[i] + a) & 0xFF
-            elif f == 2: line[i] = (line[i] + b) & 0xFF
-            elif f == 3: line[i] = (line[i] + (a + b) // 2) & 0xFF
-            elif f == 4:
-                p = a + b - c
-                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
-                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xFF
-        for i in range(0, stride, bpp):
-            out.append(pick(line[i], line[i + 1], line[i + 2]))
-        prev = line
-    return out
-
-
-def gain(a, b, pick=min):
-    """How much more than b the most-gaining pixel of a gets, under `pick`. The
-    two renders share a camera and a background, so the background cancels and
-    only the material's own response is measured."""
-    return max(x - y for x, y in zip(channels(a, pick), channels(b, pick)))
 
 
 def render(mode):
