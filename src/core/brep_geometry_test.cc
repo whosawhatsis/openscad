@@ -737,6 +737,91 @@ TEST_CASE("B-Rep rotational extrusion rejects invalid sweeps", "[brep]")
   REQUIRE(result->isEmpty());
 }
 
+TEST_CASE("B-Rep tapered extrusion preserves profiles and holes", "[brep]")
+{
+  ModuleInstantiation inst("linear_extrude");
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(0.0));
+  extrusion->height = Vector3d(0, 0, 8);
+  extrusion->scale_x = extrusion->scale_y = 0.5;
+  auto circle = std::make_shared<CircleNode>(
+    &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  circle->r = 4;
+  extrusion->children = {circle};
+  bool hole = false, curved = true;
+  SECTION("smooth circular taper")
+  {
+  }
+  SECTION("nonuniform scale")
+  {
+    extrusion->scale_y = 0.75;
+  }
+  SECTION("widening taper")
+  {
+    extrusion->scale_x = extrusion->scale_y = 1.5;
+  }
+  SECTION("nonuniform polygon with diagonal edges")
+  {
+    auto polygon = std::make_shared<PolygonNode>(&inst);
+    polygon->points = {{4, 0}, {0, 4}, {-4, 0}, {0, -4}};
+    extrusion->children = {polygon};
+    extrusion->scale_y = 0.75;
+    curved = false;
+  }
+  SECTION("centered oblique taper")
+  {
+    extrusion->center = true;
+    extrusion->height = Vector3d(4, 2, 8);
+  }
+  SECTION("hollow taper")
+  {
+    auto inner = std::make_shared<CircleNode>(*circle);
+    inner->r = 2;
+    auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+    difference->children = {circle, inner};
+    extrusion->children = {difference};
+    hole = true;
+  }
+  SECTION("intentional hexagonal profile")
+  {
+    circle->discretizer = CurveDiscretizer(6.0);
+    curved = false;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->numFacets() == 0);
+  // Probe at both ends: the base is wide, while the top has narrowed.
+  const auto occupied = [&](double x, double z, double y = 0.0) {
+    auto probe = BrepGeometry::cube(0.1, 0.1, 0.1);
+    Vector3d point(x, y, z);
+    point.x() += extrusion->height.x() * z / 8;
+    point.y() += extrusion->height.y() * z / 8;
+    if (extrusion->center) point -= extrusion->height / 2;
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(point);
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    return !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty();
+  };
+  CHECK(occupied(3, 0.2));
+  CHECK(occupied(3, 7.5) == (extrusion->scale_x > 1));
+  CHECK(occupied(1.5, 7.5));
+  CHECK(occupied(0, 4) == !hole);
+  if (curved) {
+    CHECK(occupied(0, 7.5, 2.5) == (extrusion->scale_y > 0.5));
+    CHECK(brep->surfaceCount(BrepSurfaceType::Cone) + brep->surfaceCount(BrepSurfaceType::BSpline) +
+            brep->surfaceCount(BrepSurfaceType::Bezier) + brep->surfaceCount(BrepSurfaceType::Other) >
+          0);
+  }
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
 TEST_CASE("Unsupported B-Rep extrusion variants do not silently become meshes", "[brep]")
 {
   ModuleInstantiation inst("linear_extrude");
@@ -746,9 +831,9 @@ TEST_CASE("Unsupported B-Rep extrusion variants do not silently become meshes", 
   {
     extrusion->twist = 45.0;
   }
-  SECTION("scale")
+  SECTION("collapsed scale")
   {
-    extrusion->scale_x = 2.0;
+    extrusion->scale_x = 0.0;
   }
   const auto previousBackend = RenderSettings::inst()->backend3D;
   RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;

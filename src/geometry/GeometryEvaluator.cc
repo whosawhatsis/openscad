@@ -100,8 +100,9 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
   }
   if (const auto *extrusion = dynamic_cast<const LinearExtrudeNode *>(&node)) {
     if (extrusionHeight > 0.0) return {};
-    if (extrusion->twist != 0.0 || extrusion->scale_x != 1.0 || extrusion->scale_y != 1.0) {
-      LOG(message_group::Error, "OpenCASCADE linear_extrude does not yet support twist or scale");
+    if (extrusion->twist != 0.0 || extrusion->scale_x <= 0.0 || extrusion->scale_y <= 0.0) {
+      LOG(message_group::Error,
+          "OpenCASCADE linear_extrude does not yet support twist or nonpositive scale");
       return std::make_unique<BrepGeometry>(nullptr);
     }
     if (extrusion->height.z() <= 0.0) return std::make_unique<BrepGeometry>(nullptr);
@@ -120,6 +121,8 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
       auto result = std::make_unique<BrepGeometry>(
         BrepGeometry::boolean(operands, BrepOperation::Union, 0.0, unused));
       if (!result->isEmpty()) {
+        if (extrusion->scale_x != 1.0 || extrusion->scale_y != 1.0)
+          *result = result->taper(extrusion->height.z(), extrusion->scale_x, extrusion->scale_y);
         Transform3d placement = Transform3d::Identity();
         placement(0, 2) = extrusion->height.x() / extrusion->height.z();
         placement(1, 2) = extrusion->height.y() / extrusion->height.z();

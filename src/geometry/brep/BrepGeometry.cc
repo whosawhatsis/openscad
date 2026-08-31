@@ -75,6 +75,11 @@ size_t BrepGeometry::memsize() const
   return sizeof(*this);
 }
 
+BrepGeometry BrepGeometry::taper(double height, double scaleX, double scaleY) const
+{
+  return BrepGeometry(brepTaper(shape_, height, scaleX, scaleY));
+}
+
 BoundingBox BrepGeometry::getBoundingBox() const
 {
   BoundingBox result;

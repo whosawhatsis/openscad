@@ -48,6 +48,49 @@ const TopoDS_Shape& shapeFrom(const std::shared_ptr<void>& shape)
   return *std::static_pointer_cast<TopoDS_Shape>(shape);
 }
 
+// Both caps are transformed copies of one profile, with corresponding edge order.
+std::shared_ptr<void> ruledSolid(const TopoDS_Face& first, const TopoDS_Face& last)
+{
+  BRepBuilderAPI_Sewing sewing(Precision::Confusion());
+  sewing.Add(first.Reversed());
+  sewing.Add(last);
+  TopExp_Explorer aEdges(first, TopAbs_EDGE), bEdges(last, TopAbs_EDGE);
+  for (; aEdges.More() && bEdges.More(); aEdges.Next(), bEdges.Next()) {
+    const auto a = TopoDS::Edge(aEdges.Current()), b = TopoDS::Edge(bEdges.Current());
+    const BRepAdaptor_Curve curveA(a), curveB(b);
+    if (curveA.GetType() == GeomAbs_Line && curveB.GetType() == GeomAbs_Line) {
+      std::vector<gp_Pnt> points;
+      for (const auto& point :
+           {curveA.Value(curveA.FirstParameter()), curveA.Value(curveA.LastParameter()),
+            curveB.Value(curveB.LastParameter()), curveB.Value(curveB.FirstParameter())}) {
+        if (points.empty() || point.Distance(points.back()) > Precision::Confusion())
+          points.push_back(point);
+      }
+      if (points.size() > 1 && points.front().Distance(points.back()) <= Precision::Confusion())
+        points.pop_back();
+      if (points.size() < 3) continue;  // Fixed axis edges sweep no area.
+      BRepBuilderAPI_MakePolygon boundary;
+      for (const auto& point : points) boundary.Add(point);
+      boundary.Close();
+      BRepBuilderAPI_MakeFace planar(boundary.Wire(), true);
+      if (planar.IsDone()) {
+        sewing.Add(planar.Face());
+        continue;
+      }
+    }
+    sewing.Add(BRepFill::Face(a, b));
+  }
+  if (aEdges.More() || bEdges.More()) throw std::runtime_error("B-Rep sweep cap edges do not match");
+  sewing.Perform();
+  if (sewing.NbFreeEdges() || sewing.NbMultipleEdges() ||
+      sewing.SewedShape().ShapeType() != TopAbs_SHELL)
+    throw std::runtime_error("B-Rep ruled sweep is not a closed shell");
+  auto solid = BRepBuilderAPI_MakeSolid(TopoDS::Shell(sewing.SewedShape())).Solid();
+  if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+    throw std::runtime_error("B-Rep ruled sweep does not form a valid solid");
+  return std::make_shared<TopoDS_Shape>(solid);
+}
+
 }  // namespace
 
 bool brepIsEmpty(const std::shared_ptr<void>& shape)
@@ -123,48 +166,9 @@ std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double a
           const gp_Ax1 zAxis(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1));
           first.SetRotation(zAxis, start + angle * segment / segments);
           last.SetRotation(zAxis, start + angle * (segment + 1) / segments);
-          BRepBuilderAPI_Sewing sewing(Precision::Confusion());
-          sewing.Add(BRepBuilderAPI_Transform(face.Reversed(), first * toXZ, true).Shape());
-          sewing.Add(BRepBuilderAPI_Transform(face, last * toXZ, true).Shape());
-          for (TopExp_Explorer edges(face, TopAbs_EDGE); edges.More(); edges.Next()) {
-            Bnd_Box edgeBounds;
-            BRepBndLib::AddOptimal(edges.Current(), edgeBounds, false, false);
-            // An edge on the axis stays fixed and contributes no swept face.
-            if (std::abs(edgeBounds.CornerMin().X()) <= Precision::Confusion() &&
-                std::abs(edgeBounds.CornerMax().X()) <= Precision::Confusion())
-              continue;
-            const auto a =
-              TopoDS::Edge(BRepBuilderAPI_Transform(edges.Current(), first * toXZ, true).Shape());
-            const auto b =
-              TopoDS::Edge(BRepBuilderAPI_Transform(edges.Current(), last * toXZ, true).Shape());
-            const BRepAdaptor_Curve curveA(a), curveB(b);
-            if (curveA.GetType() == GeomAbs_Line) {
-              std::vector<gp_Pnt> points;
-              for (const auto& point :
-                   {curveA.Value(curveA.FirstParameter()), curveA.Value(curveA.LastParameter()),
-                    curveB.Value(curveB.LastParameter()), curveB.Value(curveB.FirstParameter())}) {
-                if (points.empty() || point.Distance(points.back()) > Precision::Confusion())
-                  points.push_back(point);
-              }
-              if (points.size() > 1 && points.front().Distance(points.back()) <= Precision::Confusion())
-                points.pop_back();
-              if (points.size() < 3) continue;
-              BRepBuilderAPI_MakePolygon boundary;
-              for (const auto& point : points) boundary.Add(point);
-              boundary.Close();
-              sewing.Add(BRepBuilderAPI_MakeFace(boundary.Wire(), true).Face());
-            } else {
-              sewing.Add(BRepFill::Face(a, b));
-            }
-          }
-          sewing.Perform();
-          if (sewing.NbFreeEdges() || sewing.NbMultipleEdges() ||
-              sewing.SewedShape().ShapeType() != TopAbs_SHELL)
-            throw std::runtime_error("B-Rep faceted sweep is not a closed shell");
-          auto solid = BRepBuilderAPI_MakeSolid(TopoDS::Shell(sewing.SewedShape())).Solid();
-          if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
-            throw std::runtime_error("B-Rep faceted sweep does not form a valid solid");
-          solids.push_back(std::make_shared<TopoDS_Shape>(solid));
+          solids.push_back(
+            ruledSolid(TopoDS::Face(BRepBuilderAPI_Transform(face, first * toXZ, true).Shape()),
+                       TopoDS::Face(BRepBuilderAPI_Transform(face, last * toXZ, true).Shape())));
         }
         continue;
       }
@@ -184,6 +188,45 @@ std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double a
       return std::make_shared<TopoDS_Shape>(unify.Shape());
     }
     return result;
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
+}
+
+std::shared_ptr<void> brepTaper(const std::shared_ptr<void>& profile, double height, double scaleX,
+                                double scaleY)
+{
+  if (brepIsEmpty(profile)) return {};
+  if (!std::isfinite(height) || !std::isfinite(scaleX) || !std::isfinite(scaleY) || height <= 0 ||
+      scaleX <= 0 || scaleY <= 0)
+    throw std::invalid_argument("B-Rep taper requires positive finite height and scales");
+  try {
+    std::vector<std::shared_ptr<void>> solids;
+    for (TopExp_Explorer faces(shapeFrom(profile), TopAbs_FACE); faces.More(); faces.Next()) {
+      const auto face = TopoDS::Face(faces.Current());
+      const BRepAdaptor_Surface surface(face);
+      if (surface.GetType() != GeomAbs_Plane) continue;
+      const auto plane = surface.Plane();
+      if (std::abs(plane.Axis().Direction().Z()) < 1.0 - Precision::Angular() ||
+          std::abs(plane.Location().Z()) > Precision::Confusion())
+        continue;
+      TopoDS_Face top;
+      if (scaleX == scaleY) {
+        gp_Trsf placement;
+        placement.SetScale(gp_Pnt(0, 0, 0), scaleX);
+        placement.SetTranslationPart(gp_Vec(0, 0, height));
+        top = TopoDS::Face(BRepBuilderAPI_Transform(face, placement, true).Shape());
+      } else {
+        gp_GTrsf placement;
+        placement.SetValue(1, 1, scaleX);
+        placement.SetValue(2, 2, scaleY);
+        placement.SetValue(3, 4, height);
+        top = TopoDS::Face(BRepBuilderAPI_GTransform(face, placement, true).Shape());
+      }
+      solids.push_back(ruledSolid(face, top));
+    }
+    if (solids.empty()) throw std::runtime_error("B-Rep taper has no planar profile faces");
+    return brepBoolean(solids, BrepOperation::Union, 0.0).shape;
   } catch (const Standard_Failure& error) {
     throw std::runtime_error(error.GetMessageString());
   }

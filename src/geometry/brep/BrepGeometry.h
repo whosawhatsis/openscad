@@ -39,6 +39,7 @@ public:
   // Map the z=0 profile faces to XZ, then revolve about Z; angles are in radians.
   // Zero segments means a smooth revolution; positive counts create chordal sweep segments.
   [[nodiscard]] BrepGeometry revolve(double angle, double start, int segments = 0) const;
+  [[nodiscard]] BrepGeometry taper(double height, double scaleX, double scaleY) const;
 
   [[nodiscard]] size_t memsize() const override;
   [[nodiscard]] BoundingBox getBoundingBox() const override;
