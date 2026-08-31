@@ -13,6 +13,7 @@
 #include "core/CSGNode.h"
 #include "geometry/PolySet.h"
 #include "gui/Editor.h"
+#include "gui/parameter/ParameterWidget.h"
 
 #include "platform/PlatformUtils.h"
 
@@ -102,6 +103,21 @@ MainWindow *runInOwnWindow(const QString& source, const bool preview)
   return compiled ? window : nullptr;
 }
 
+//! Renders again in a window that has already finished one, and waits for it the same way.
+void renderAgain(MainWindow *window)
+{
+  bool compiled = false;
+  QObject::connect(window, &MainWindow::compilationDone, window,
+                   [&compiled](SourceFile *) { compiled = true; });
+  window->designActionRender->trigger();
+  QElapsedTimer timer;
+  timer.start();
+  while (!compiled && timer.elapsed() < 60000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  QVERIFY2(compiled, "the second render never finished");
+}
+
 }  // namespace
 
 void TestMainWindow::checkIsolatedRenderProducesGeometry()
@@ -132,6 +148,32 @@ void TestMainWindow::checkIsolatedPreviewProducesProducts()
   // Products alone would also be there if the window had quietly previewed in-process, which is
   // exactly what it did before this was wired -- so the test has to say where they came from.
   QCOMPARE(window->isolatedPreviewsForTest(), 1);
+}
+
+void TestMainWindow::checkIsolatedRenderUsesCustomizerValues()
+{
+  // The worker parses its own copy of the source, so without being told the Customizer's values it
+  // renders the document's defaults -- an F6 (and any export taken from it) that quietly ignores
+  // what the user set in the pane.
+  Feature::enable_feature("process-isolation");
+  auto *window = runInOwnWindow(QStringLiteral("pw_side = 5; cube([pw_side, 5, 5]);"), false);
+  QVERIFY2(window != nullptr, "the first isolated render never finished");
+  auto polyset = std::dynamic_pointer_cast<const PolySet>(window->rootGeom);
+  QVERIFY(polyset != nullptr);
+  // Guards the measurement: if the default were already 20 the assertion below would prove nothing.
+  QCOMPARE(polyset->getBoundingBox().sizes().x(), 5.0);
+
+  ParameterSet values;
+  values["pw_side"].put_value<double>(20);
+  window->activeEditor->parameterWidget->importValuesForTest(values);
+
+  // The source is unchanged, so setParameters() keeps the values just injected.
+  renderAgain(window);
+  Feature::enable_feature("process-isolation", false);
+
+  polyset = std::dynamic_pointer_cast<const PolySet>(window->rootGeom);
+  QVERIFY2(polyset != nullptr, "the second isolated render produced no mesh");
+  QCOMPARE(polyset->getBoundingBox().sizes().x(), 20.0);
 }
 
 void TestMainWindow::checkInProcessPreviewProducesProducts()

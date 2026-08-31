@@ -1,6 +1,8 @@
 #include "gui/ComputeWorker.h"
 
 #include <QByteArray>
+#include <QFile>
+#include <QTimer>
 #include <QMetaObject>
 #include <QProcess>
 #include <QThread>
@@ -29,6 +31,11 @@ constexpr auto kPreviewOutputName = "preview.json";
 
 }  // namespace
 
+namespace {
+//! How long a child gets to notice a cancellation before it is killed instead.
+constexpr int kCancelGracePeriodMs = 1000;
+}  // namespace
+
 struct ComputeWorker::Private {
   QString program;
   QStringList arguments;
@@ -37,6 +44,12 @@ struct ComputeWorker::Private {
   std::unique_ptr<IpcChannelPair> channel;
   //! One request at a time per worker, run off the GUI thread.
   QThread *renderThread = nullptr;
+  //! The file whose existence tells the child to abandon the request it is running. Named after
+  //! the request's own input, which lives in a directory the parent owns.
+  QString cancelFile;
+  //! Counts requests, so an escalation timer can tell whether the one it was armed for is still
+  //! the one running.
+  unsigned long long requestSerial = 0;
 };
 
 ComputeWorker::ComputeWorker(QString program, QStringList arguments, QString channelEnvironmentVariable)
@@ -123,6 +136,21 @@ void ComputeWorker::cancel()
   if (isRunning()) d->process.kill();
 }
 
+void ComputeWorker::cancelRequest()
+{
+  if (d->cancelFile.isEmpty()) return;
+  QFile file(d->cancelFile);
+  file.open(QIODevice::WriteOnly);
+  file.close();
+
+  // A child that has noticed will have answered by now. One that has not is somewhere it cannot
+  // notice, and waiting longer only leaves the window stuck.
+  const auto serial = d->requestSerial;
+  QTimer::singleShot(kCancelGracePeriodMs, this, [this, serial] {
+    if (d->requestSerial == serial && d->renderThread) cancel();
+  });
+}
+
 bool ComputeWorker::waitForFinished()
 {
   if (d->process.state() == QProcess::NotRunning) return true;
@@ -176,6 +204,11 @@ void ComputeWorker::startRequest(
 
 void ComputeWorker::requestFinished()
 {
+  if (!d->cancelFile.isEmpty()) {
+    QFile::remove(d->cancelFile);
+    d->cancelFile.clear();
+  }
+  ++d->requestSerial;
   if (!d->renderThread) return;
   d->renderThread->quit();
   d->renderThread->wait();
@@ -194,8 +227,12 @@ void ComputeWorker::startRender(const QString& scadPath, const QString& paramete
     return;
   }
 
+  d->cancelFile = scadPath + QStringLiteral(".cancel");
+  QFile::remove(d->cancelFile);
+
   nlohmann::json request;
   request["command"] = "render";
+  request["cancelFile"] = d->cancelFile.toStdString();
   request["input"] = scadPath.toStdString();
   request["output"] = kRenderOutputName;
   if (!parameterFile.isEmpty()) request["parameterFile"] = parameterFile.toStdString();
@@ -234,8 +271,12 @@ void ComputeWorker::startPreview(const QString& scadPath, const QString& paramet
     return;
   }
 
+  d->cancelFile = scadPath + QStringLiteral(".cancel");
+  QFile::remove(d->cancelFile);
+
   nlohmann::json request;
   request["command"] = "preview";
+  request["cancelFile"] = d->cancelFile.toStdString();
   request["input"] = scadPath.toStdString();
   request["output"] = kPreviewOutputName;
   request["normalizationLimit"] = normalizationLimit;
