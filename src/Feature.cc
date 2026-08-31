@@ -52,6 +52,8 @@ const Feature Feature::ExperimentalAiFeatures("ai-features",
 const Feature Feature::ExperimentalUnicodeIdentifiers(
   "unicode-identifiers",
   "Allow non-ASCII characters in identifiers, following Unicode Standard Annex #31.");
+const Feature Feature::ExperimentalProcessIsolation(
+  "process-isolation", "Run each window's computation in an isolated process (requires restart).");
 
 #ifdef ENABLE_PYTHON
 const Feature Feature::ExperimentalPythonEngine(

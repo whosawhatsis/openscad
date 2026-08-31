@@ -1586,6 +1586,11 @@ file(GLOB_RECURSE TEST_SOURCES
   # headless, so their tests should run in a headless build too.
   "src/glview/*_test.cc"
 )
+# Tests for sources that sit directly in src/, such as Feature.cc. Deliberately GLOB and not
+# GLOB_RECURSE: recursing from src/ would sweep up src/gui/*_test.cc and build the GUI tests into
+# headless builds, where they cannot link.
+file(GLOB TEST_SOURCES_TOPLEVEL "src/*_test.cc")
+list(APPEND TEST_SOURCES ${TEST_SOURCES_TOPLEVEL})
 file(GLOB_RECURSE GUI_TEST_SOURCES
   "src/gui/*_test.cc"
 )
