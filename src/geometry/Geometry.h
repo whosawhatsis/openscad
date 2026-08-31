@@ -151,7 +151,6 @@ protected:
   float roughness_{0.0f};
   bool hasRoughness_{false};
   float metallic_{0.0f};
-  double smooth_angle_{24.0};
   std::map<std::string, double> finishParams_;
   bool bodyBoundary_{false};
   Color4f bodyColor_;
