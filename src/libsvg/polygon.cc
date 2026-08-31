@@ -60,6 +60,7 @@ void polygon::set_attrs(attr_map_t& attrs, void *context)
     path.push_back(path[0]);
   }
   path_list.push_back(path);
+  if (reinterpret_cast<const fnContext *>(context)->retainCurves) retain_polygon(path);
 }
 
 }  // namespace libsvg

@@ -61,6 +61,9 @@
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_BezierCurve.hxx>
+#include <math_Function.hxx>
+#include <math_GaussSingleIntegration.hxx>
+#include <TColStd_Array1OfReal.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <Geom_Line.hxx>
 #include <GeomConvert.hxx>
@@ -720,8 +723,9 @@ std::shared_ptr<void> brepMinkowski(const std::vector<std::shared_ptr<void>>& op
   }
 }
 
-std::shared_ptr<void> brepBezierPrism(
-  const std::vector<std::vector<std::vector<std::array<double, 2>>>>& contours, double height)
+template <size_t N>
+static std::shared_ptr<void> bezierPrismImpl(
+  const std::vector<std::vector<std::vector<std::array<double, N>>>>& contours, double height)
 {
   try {
     std::vector<std::pair<std::shared_ptr<void>, int>> regions;
@@ -734,25 +738,57 @@ std::shared_ptr<void> brepBezierPrism(
           throw std::invalid_argument("Invalid font curve degree");
         TColgp_Array1OfPnt poles(1, curve.size());
         for (size_t i = 0; i < curve.size(); ++i) poles(i + 1) = gp_Pnt(curve[i][0], curve[i][1], 0);
-        if (curve.size() == 2) wire.Add(BRepBuilderAPI_MakeEdge(poles(1), poles(2)).Edge());
-        else wire.Add(BRepBuilderAPI_MakeEdge(new Geom_BezierCurve(poles)).Edge());
-        // Three-point Gaussian integration is exact for the degree-five area integrand
-        // of a cubic Bezier curve. Preserve the font's nonzero-winding fill rule.
-        const auto evaluate = [](std::vector<std::array<double, 2>> p, double t) {
-          for (size_t n = p.size(); n > 1; --n)
-            for (size_t i = 0; i < n - 1; ++i)
-              for (int c = 0; c < 2; ++c) p[i][c] = (1 - t) * p[i][c] + t * p[i + 1][c];
-          return p.front();
-        };
-        std::vector<std::array<double, 2>> derivative;
-        for (size_t i = 1; i < curve.size(); ++i)
-          derivative.push_back({(curve.size() - 1) * (curve[i][0] - curve[i - 1][0]),
-                                (curve.size() - 1) * (curve[i][1] - curve[i - 1][1])});
-        const double q = std::sqrt(15.0) / 10;
-        for (const auto& sample :
-             {std::pair{0.5 - q, 5.0 / 18}, std::pair{0.5, 4.0 / 9}, std::pair{0.5 + q, 5.0 / 18}}) {
-          const auto p = evaluate(curve, sample.first), d = evaluate(derivative, sample.first);
-          signedArea += sample.second * (p[0] * d[1] - p[1] * d[0]);
+        if constexpr (N == 3) {
+          TColStd_Array1OfReal weights(1, curve.size());
+          for (size_t i = 0; i < curve.size(); ++i) {
+            if (!std::isfinite(curve[i][2]) || curve[i][2] <= 0)
+              throw std::invalid_argument("Invalid rational profile weight");
+            weights(i + 1) = curve[i][2];
+          }
+          Handle(Geom_BezierCurve) rational = new Geom_BezierCurve(poles, weights);
+          if (curve.size() == 2) wire.Add(BRepBuilderAPI_MakeEdge(poles(1), poles(2)).Edge());
+          else wire.Add(BRepBuilderAPI_MakeEdge(rational).Edge());
+          class AreaIntegrand : public math_Function
+          {
+          public:
+            Handle(Geom_BezierCurve) curve;
+            gp_Pnt origin;
+            Standard_Boolean Value(Standard_Real t, Standard_Real& value) override
+            {
+              gp_Pnt p;
+              gp_Vec d;
+              curve->D1(t, p, d);
+              value = (p.X() - origin.X()) * d.Y() - (p.Y() - origin.Y()) * d.X();
+              return std::isfinite(value);
+            }
+          } integrand;
+          integrand.curve = rational;
+          integrand.origin = gp_Pnt(contour.front().front()[0], contour.front().front()[1], 0);
+          // Numerical integration determines winding only; the retained geometry is exact.
+          math_GaussSingleIntegration integral(integrand, 0, 1, 16, 1e-10);
+          if (!integral.IsDone()) throw std::runtime_error("Rational profile winding failed");
+          signedArea += integral.Value();
+        } else {
+          if (curve.size() == 2) wire.Add(BRepBuilderAPI_MakeEdge(poles(1), poles(2)).Edge());
+          else wire.Add(BRepBuilderAPI_MakeEdge(new Geom_BezierCurve(poles)).Edge());
+          // Three-point Gaussian integration is exact for the degree-five area integrand
+          // of a cubic Bezier curve. Preserve the font's nonzero-winding fill rule.
+          const auto evaluate = [](std::vector<std::array<double, 2>> p, double t) {
+            for (size_t n = p.size(); n > 1; --n)
+              for (size_t i = 0; i < n - 1; ++i)
+                for (int c = 0; c < 2; ++c) p[i][c] = (1 - t) * p[i][c] + t * p[i + 1][c];
+            return p.front();
+          };
+          std::vector<std::array<double, 2>> derivative;
+          for (size_t i = 1; i < curve.size(); ++i)
+            derivative.push_back({(curve.size() - 1) * (curve[i][0] - curve[i - 1][0]),
+                                  (curve.size() - 1) * (curve[i][1] - curve[i - 1][1])});
+          const double q = std::sqrt(15.0) / 10;
+          for (const auto& sample :
+               {std::pair{0.5 - q, 5.0 / 18}, std::pair{0.5, 4.0 / 9}, std::pair{0.5 + q, 5.0 / 18}}) {
+            const auto p = evaluate(curve, sample.first), d = evaluate(derivative, sample.first);
+            signedArea += sample.second * (p[0] * d[1] - p[1] * d[0]);
+          }
         }
       }
       if (!wire.IsDone()) throw std::runtime_error("Font outline is disconnected");
@@ -783,6 +819,18 @@ std::shared_ptr<void> brepBezierPrism(
   } catch (const Standard_Failure& error) {
     throw std::runtime_error(error.GetMessageString());
   }
+}
+
+std::shared_ptr<void> brepBezierPrism(
+  const std::vector<std::vector<std::vector<std::array<double, 2>>>>& contours, double height)
+{
+  return bezierPrismImpl(contours, height);
+}
+
+std::shared_ptr<void> brepRationalPrism(
+  const std::vector<std::vector<std::vector<std::array<double, 3>>>>& contours, double height)
+{
+  return bezierPrismImpl(contours, height);
 }
 
 std::shared_ptr<void> brepShadowProjection(const std::shared_ptr<void>& shape, double height)

@@ -139,6 +139,7 @@ void rect::set_attrs(attr_map_t& attrs, void *context)
     path.push_back(Eigen::Vector3d(get_x(), get_y() + get_height(), 0));
     path.push_back(Eigen::Vector3d(get_x(), get_y(), 0));
     path_list.push_back(path);
+    if (reinterpret_cast<const fnContext *>(context)->retainCurves) retain_polygon(path);
   }
 }
 

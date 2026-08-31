@@ -744,6 +744,8 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
   imported->dpi = 72;
   imported->center = false;
   bool unsupported = false;
+  bool faceted = false;
+  size_t curvedFaces = 2;
   SECTION("absolute controls")
   {
   }
@@ -755,10 +757,51 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
   {
     imported->center = true;
   }
-  SECTION("arcs do not silently become polygons")
+  SECTION("elliptical arc")
   {
     imported->id = "arc";
-    unsupported = true;
+  }
+  SECTION("circle")
+  {
+    imported->id = "circle";
+    curvedFaces = 4;
+  }
+  SECTION("ellipse")
+  {
+    imported->id = "ellipse";
+    curvedFaces = 4;
+  }
+  SECTION("rectangle")
+  {
+    imported->id = "rect";
+    curvedFaces = 0;
+  }
+  SECTION("rounded rectangle")
+  {
+    imported->id = "rounded";
+    curvedFaces = 4;
+  }
+  SECTION("polygon")
+  {
+    imported->id = "polygon";
+    curvedFaces = 0;
+  }
+  SECTION("zero-radius arc becomes a line")
+  {
+    imported->id = "zeroarc";
+    curvedFaces = 0;
+  }
+  SECTION("opposite-winding circular hole")
+  {
+    imported->id = "ring";
+    curvedFaces = 8;
+  }
+  SECTION("explicit circle facets")
+  {
+    imported->id = "circle";
+    imported->discretizer = CurveDiscretizer(6.0);
+    faceted = true;
+    curvedFaces = 0;
   }
   SECTION("strokes do not silently become fills")
   {
@@ -781,7 +824,32 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     return;
   }
   REQUIRE_FALSE(brep->isEmpty());
-  CHECK(brep->surfaceCount(BrepSurfaceType::Other) == 2);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Other) == curvedFaces);
+  if (faceted) {
+    CHECK(brep->surfaceCount(BrepSurfaceType::Plane) == 8);
+    return;
+  }
+  if (imported->id.get() == "ring") {
+    auto probe = BrepGeometry::cube(0.1, 0.1, 0.1);
+    Transform3d placement = Transform3d::Identity();
+    placement.translate(Vector3d(7, 16, 1));
+    probe.transform(placement);
+    BrepFilletDiagnostics diagnostics;
+    CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
+  }
+  if (imported->id.get() == "circle") {
+    const auto occupied = [&](double offset) {
+      auto probe = BrepGeometry::cube(0.01, 0.01, 0.01);
+      Transform3d placement = Transform3d::Identity();
+      placement.translate(Vector3d(7 + offset, 16 + offset, 1));
+      probe.transform(placement);
+      BrepFilletDiagnostics diagnostics;
+      return !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics)
+                .isEmpty();
+    };
+    CHECK(occupied(2.7));
+    CHECK_FALSE(occupied(2.9));  // An unweighted quadratic would bulge into this probe.
+  }
   CHECK(brep->getBoundingBox().min().x() == Catch::Approx(imported->center ? -4 : 3).margin(1e-5));
   CHECK(brep->getBoundingBox().max().x() == Catch::Approx(imported->center ? 4 : 11).margin(1e-5));
 }

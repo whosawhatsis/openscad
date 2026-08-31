@@ -61,6 +61,7 @@ struct fnContext {
   std::function<std::optional<int>(double, double)> getCircularSegmentCount;
   const int pathSegmentCount;
   bool retainCurves{false};
+  bool polygonalCircles{false};
 
 private:
   std::atomic<int> matches{0};
@@ -101,6 +102,9 @@ protected:
   [[nodiscard]] Clipper2Lib::JoinType get_stroke_linejoin() const;
   [[nodiscard]] const std::string get_style(const std::string& name) const;
   void draw_ellipse(path_t& path, double x, double y, double rx, double ry, void *context);
+  static path_list_t ellipse_curves(double x, double y, double rx, double ry, double rotation,
+                                    double start, double sweep);
+  void retain_polygon(const path_t& points);
   void offset_path(path_list_t& path_list, path_t& path, double stroke_width,
                    Clipper2Lib::EndType stroke_linecap);
   void collect_transform_matrices(std::vector<Eigen::Matrix3d>& matrices, shape *s);

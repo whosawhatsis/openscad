@@ -82,8 +82,14 @@ static double vector_angle(double ux, double uy, double vx, double vy)
 void path::arc_to(path_t& path, double x1, double y1, double rx, double ry, double x2, double y2,
                   double angle, bool large, bool sweep, void *context)
 {
-  native_curves_valid = false;
   const auto *fValues = reinterpret_cast<const fnContext *>(context);
+  if (fValues->retainCurves) {
+    if (x1 == x2 && y1 == y2) return;
+    if (rx == 0 || ry == 0) {
+      path.push_back(Eigen::Vector3d(x2, y2, 0));
+      return;
+    }
+  }
 
   // http://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes
 
@@ -136,6 +142,9 @@ void path::arc_to(path_t& path, double x1, double y1, double rx, double ry, doub
     fValues->getCircularSegmentCount(rmax, delta)
       .value_or(3);  // because we are creating a section of an ellipse, not the full ellipse
   unsigned int steps = std::max(fn, static_cast<unsigned int>((std::fabs(delta) * 10.0 / 180) + 4));
+  if (fValues->retainCurves && !fValues->polygonalCircles && !path.empty())
+    retained_curves.push_back({path_list.size() - 1, path.size() - 1, path.size() + steps,
+                               ellipse_curves(cx, cy, rx, ry, angle, theta, delta)});
   for (unsigned int a = 0; a <= steps; ++a) {
     double phi = theta + delta * a / steps;
 
@@ -160,7 +169,7 @@ void path::curve_to(path_t& path, double x, double y, double cx1, double cy1, do
     retained_curves.push_back({path_list.size() - 1,
                                path.size() - 1,
                                path.size() - 1 + fn,
-                               {{x, y, 0}, {cx1, cy1, 0}, {x2, y2, 0}}});
+                               {{{x, y, 1}, {cx1, cy1, 1}, {x2, y2, 1}}}});
   for (int idx = 1; idx <= fn; ++idx) {
     const double a = idx * (1.0 / (double)fn);
     const double xx = x * t(a, 2) + cx1 * 2 * t(a, 1) * a + x2 * a * a;
@@ -183,7 +192,7 @@ void path::curve_to(path_t& path, double x, double y, double cx1, double cy1, do
     retained_curves.push_back({path_list.size() - 1,
                                path.size() - 1,
                                path.size() - 1 + fn,
-                               {{x, y, 0}, {cx1, cy1, 0}, {cx2, cy2, 0}, {x2, y2, 0}}});
+                               {{{x, y, 1}, {cx1, cy1, 1}, {cx2, cy2, 1}, {x2, y2, 1}}}});
   for (int idx = 1; idx <= fn; ++idx) {
     const double a = idx * (1.0 / (double)fn);
     const double xx = x * t(a, 3) + cx1 * 3 * t(a, 2) * a + cx2 * 3 * t(a, 1) * a * a + x2 * a * a * a;
@@ -516,12 +525,14 @@ void path::set_attrs(attr_map_t& attrs, void *context)
       bezier_contours.emplace_back();
       for (size_t i = 0; i + 1 < points.size();) {
         if (curve != retained_curves.end() && curve->contour == c && curve->first == i) {
-          bezier_contours.back().push_back(curve->poles);
+          bezier_contours.back().insert(bezier_contours.back().end(), curve->curves.begin(),
+                                        curve->curves.end());
           i = curve->last;
           ++curve;
         } else {
           if ((points[i] - points[i + 1]).norm() > 1e-12)
-            bezier_contours.back().push_back({points[i], points[i + 1]});
+            bezier_contours.back().push_back(
+              {{points[i].x(), points[i].y(), 1}, {points[i + 1].x(), points[i + 1].y(), 1}});
           ++i;
         }
       }

@@ -280,8 +280,10 @@ void shape::apply_transform()
   for (auto& contour : bezier_contours)
     for (auto& curve : contour)
       for (auto& pole : curve) {
+        const double weight = pole.z();
         pole.z() = 1;
         for (auto it = matrices.rbegin(); it != matrices.rend(); ++it) pole = *it * pole;
+        pole.z() = weight;
       }
 }
 
@@ -291,7 +293,7 @@ const bezier_contours_t& shape::get_bezier_contours() const
     if (!s->native_style_valid)
       throw std::runtime_error("Native SVG strokes and even-odd fills are not supported yet");
   if (!native_curves_valid)
-    throw std::runtime_error("Native SVG import currently requires closed line/Bezier paths");
+    throw std::runtime_error("Native SVG import requires a supported closed profile");
   return bezier_contours;
 }
 
@@ -325,13 +327,49 @@ void shape::draw_ellipse(path_t& path, double x, double y, double rx, double ry,
   const auto *fValues = reinterpret_cast<const fnContext *>(context);
   double rmax = fmax(rx, ry);
   unsigned long fn = fValues->getCircularSegmentCount(rmax, 360.0).value_or(3);
-  if (fn < 40) fn = 40;  // Use the old value as a minimum
+  if (fn < 40 && !(fValues->retainCurves && fValues->polygonalCircles)) fn = 40;
   for (unsigned long idx = 1; idx <= fn; ++idx) {
     const double a = idx * 360.0 / fn;
     const double xx = rx * sin_degrees(a) + x;
     const double yy = ry * cos_degrees(a) + y;
     path.push_back(Eigen::Vector3d(xx, yy, 0));
   }
+  if (fValues->retainCurves) {
+    if (fValues->polygonalCircles) retain_polygon(path);
+    else {
+      bezier_contours.push_back(ellipse_curves(x, y, rx, ry, 0, 0, 360));
+      native_curves_valid = true;
+    }
+  }
+}
+
+path_list_t shape::ellipse_curves(double x, double y, double rx, double ry, double rotation,
+                                  double start, double sweep)
+{
+  path_list_t curves;
+  const int count = std::max(1, static_cast<int>(std::ceil(std::abs(sweep) / 90)));
+  const double step = sweep / count;
+  const auto pole = [&](double angle, double weight) {
+    const double px = rx * cos_degrees(angle) / weight, py = ry * sin_degrees(angle) / weight;
+    return Eigen::Vector3d(x + cos_degrees(rotation) * px - sin_degrees(rotation) * py,
+                           y + sin_degrees(rotation) * px + cos_degrees(rotation) * py, weight);
+  };
+  for (int i = 0; i < count; ++i) {
+    const double a = start + i * step;
+    curves.push_back({pole(a, 1), pole(a + step / 2, cos_degrees(step / 2)), pole(a + step, 1)});
+  }
+  return curves;
+}
+
+void shape::retain_polygon(const path_t& points)
+{
+  bezier_contours.emplace_back();
+  for (size_t i = 0; i < points.size(); ++i) {
+    const auto& p = points[i];
+    const auto& q = points[(i + 1) % points.size()];
+    if ((p - q).norm() > 1e-12) bezier_contours.back().push_back({{p.x(), p.y(), 1}, {q.x(), q.y(), 1}});
+  }
+  native_curves_valid = true;
 }
 
 std::vector<std::shared_ptr<shape>> shape::clone_children()

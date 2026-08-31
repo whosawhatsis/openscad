@@ -81,6 +81,12 @@ BrepGeometry BrepGeometry::cutProjection(double height) const
   return BrepGeometry(brepCutProjection(shape_, height));
 }
 
+BrepGeometry BrepGeometry::rationalPrism(
+  const std::vector<std::vector<std::vector<std::array<double, 3>>>>& contours, double height)
+{
+  return BrepGeometry(brepRationalPrism(contours, height));
+}
+
 BrepGeometry BrepGeometry::shadowProjection(double height) const
 {
   return BrepGeometry(brepShadowProjection(shape_, height));

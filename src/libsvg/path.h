@@ -39,7 +39,7 @@ protected:
 private:
   struct RetainedCurve {
     size_t contour, first, last;
-    path_t poles;
+    path_list_t curves;
   };
   std::vector<RetainedCurve> retained_curves;
   [[nodiscard]] inline double t(double t, int exp) const { return std::pow(1.0 - t, exp); }

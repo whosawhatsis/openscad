@@ -93,6 +93,7 @@ std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::s
       [&discretizer](double r, double angle) { return discretizer.getCircularSegmentCount(r, angle); },
       discretizer.getPathSegmentCount());
     scadContext.retainCurves = curves != nullptr;
+    scadContext.polygonalCircles = discretizer.isFnSpecified();
     if (curves) curves->clear();
     if (id) {
       scadContext.selector = [&scadContext, id, layer](const libsvg::shape *s) {
@@ -208,8 +209,8 @@ std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::s
             for (const auto& curve : contour) {
               contours.back().emplace_back();
               for (const auto& v : curve)
-                contours.back().back().push_back(
-                  {scale.x() * (-viewbox.x() + v.x()) - cx, scale.y() * (-viewbox.y() - v.y()) + cy});
+                contours.back().back().push_back({scale.x() * (-viewbox.x() + v.x()) - cx,
+                                                  scale.y() * (-viewbox.y() - v.y()) + cy, v.z()});
             }
           }
           curves->push_back(std::move(contours));

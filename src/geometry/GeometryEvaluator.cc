@@ -84,7 +84,7 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
                  false, imported->modinst->location(), &curves);
       std::vector<BrepGeometry> shapes;
       for (const auto& contours : curves)
-        shapes.push_back(BrepGeometry::bezierPrism(contours, extrusionHeight));
+        shapes.push_back(BrepGeometry::rationalPrism(contours, extrusionHeight));
       BrepFilletDiagnostics unused;
       auto result = BrepGeometry::boolean(shapes, BrepOperation::Union, 0, unused);
       if (imported->center && !result.isEmpty()) {
