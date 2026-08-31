@@ -106,6 +106,8 @@
 #include "glview/RenderSettings.h"
 #include "handle_dep.h"
 #include "io/export.h"
+#include "io/ipc_channel.h"
+#include "io/ipc_endpoint.h"
 #include "openscad_gui.h"
 #include "openscad_mimalloc.h"
 #include "platform/PlatformUtils.h"
@@ -797,8 +799,47 @@ struct CommaSeparatedVector {
 };
 
 // OpenSCAD
+namespace {
+
+/*!
+   Serves a compute worker's channel until the parent finishes with it.
+
+   Recognised before any option parsing, so it works in a HEADLESS build and never reaches the code
+   that would put a window on screen. The channel arrives through the environment, not the command
+   line: a descriptor number is not secret, but it has no business being visible in a process list.
+
+   Returning when the channel ends is the whole contract. A worker whose window has gone must exit
+   rather than linger, or a session leaks one process per window.
+ */
+int compute_worker_main()
+{
+  const char *argument = std::getenv(kIpcChannelEnvironmentVariable);
+  if (argument == nullptr) {
+    LOG(message_group::Error, "No compute worker channel in %1$s.", kIpcChannelEnvironmentVariable);
+    return 1;
+  }
+  const auto channel = ipc_channel_from_argument(argument);
+  if (!channel) {
+    LOG(message_group::Error, "Compute worker channel '%1$s' is not usable.", argument);
+    return 1;
+  }
+
+  IpcMessage message;
+  while (channel->read(message)) {
+    // Request handling belongs to the next step; for now the worker only proves it is connected
+    // and that it leaves when told.
+  }
+  return 0;
+}
+
+}  // namespace
+
 int openscad_main(int argc, char **argv)
 {
+  // Before everything else, including argument parsing: this mode has no command line beyond its
+  // own name, and must not reach any GUI setup.
+  if (argc == 2 && std::string(argv[1]) == "--compute-worker") return compute_worker_main();
+
 #if defined(ENABLE_CGAL) && defined(USE_MIMALLOC)
   // call init_mimalloc before any GMP variables are initialized. (defined in src/openscad_mimalloc.h)
   init_mimalloc();
