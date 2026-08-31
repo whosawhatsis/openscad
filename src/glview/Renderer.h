@@ -56,6 +56,8 @@ public:
 
   bool getColorSchemeColor(ColorMode colormode, Color4f& outcolor) const;
   bool getShaderColor(Renderer::ColorMode colormode, const Color4f& object_color,
+                      const std::string& materialName, Color4f& outcolor) const;
+  bool getShaderColor(Renderer::ColorMode colormode, const Color4f& object_color,
                       Color4f& outcolor) const;
   virtual void setColorScheme(const ColorScheme& cs);
 

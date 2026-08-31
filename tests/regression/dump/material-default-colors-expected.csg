@@ -1,0 +1,34 @@
+material([1, 1, 0, 1], name = "PLA") {
+	cube(size = [10, 10, 10], center = false);
+}
+material([0.5, 0.5, 0, 0.8], name = "PETG") {
+	multmatrix([[1, 0, 0, 20], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+}
+material([1, 0, 0, 1], name = "PLA") {
+	multmatrix([[1, 0, 0, 40], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+}
+material([1, 1, 0, 0.25], name = "PLA") {
+	multmatrix([[1, 0, 0, 60], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+}
+material([-1, -1, -1, -1], name = "ABS") {
+	multmatrix([[1, 0, 0, 80], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+}
+multmatrix([[1, 0, 0, 0], [0, 1, 0, 20], [0, 0, 1, 0], [0, 0, 0, 1]]) {
+	material([0.5, 0.5, 0, 0.8], name = "PETG") {
+		cube(size = [10, 10, 10], center = false);
+	}
+}
+color([0, 0, 1, 1]) {
+	multmatrix([[1, 0, 0, 20], [0, 1, 0, 20], [0, 0, 1, 0], [0, 0, 0, 1]]) {
+		cube(size = [10, 10, 10], center = false);
+	}
+}
+

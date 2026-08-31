@@ -5,6 +5,11 @@ varying vec3 vEyePosition;
 varying vec4 vColor;
 attribute vec3 barycentric;
 varying vec3 vBC;
+// x = roughness, y = metalness. Zero roughness means the model set none, and
+// the fragment shader substitutes the value that reproduces the look this
+// shader had before material attributes existed.
+attribute vec2 material;
+varying vec2 vMaterial;
 
 void main(void)
 {
@@ -14,5 +19,6 @@ void main(void)
   vEyePosition = vec3(gl_ModelViewMatrix * gl_Vertex);
   vColor = gl_Color;
   vBC = barycentric;
+  vMaterial = material;
   gl_Position = ftransform();
 }

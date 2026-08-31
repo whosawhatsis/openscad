@@ -70,7 +70,8 @@
 
 std::shared_ptr<CSGNode> CSGNode::createEmptySet()
 {
-  return std::shared_ptr<CSGNode>(new CSGLeaf(nullptr, Transform3d(), Color4f(), "empty()", 0));
+  return std::shared_ptr<CSGNode>(
+    new CSGLeaf(nullptr, Transform3d(), Color4f(), "", 64.0f, 0.0f, "empty()", 0));
 }
 
 std::shared_ptr<CSGNode> CSGOperation::createCSGNode(OpenSCADOperator type,
@@ -123,8 +124,15 @@ std::shared_ptr<CSGNode> CSGOperation::createCSGNode(OpenSCADOperator type,
 }
 
 CSGLeaf::CSGLeaf(const std::shared_ptr<const PolySet>& ps, Transform3d matrix, Color4f color,
-                 std::string label, const int index)
-  : label(std::move(label)), matrix(std::move(matrix)), color(std::move(color)), index(index)
+                 std::string materialName, float roughness, float metallic, std::string label,
+                 const int index)
+  : label(std::move(label)),
+    matrix(std::move(matrix)),
+    color(std::move(color)),
+    materialName(std::move(materialName)),
+    roughness(roughness),
+    metallic(metallic),
+    index(index)
 {
   if (ps && !ps->isEmpty()) this->polyset = ps;
   CSGLeaf::initBoundingBox();

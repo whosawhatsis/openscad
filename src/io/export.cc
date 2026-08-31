@@ -106,6 +106,8 @@ Containers& containers()
     add_item(*containers, {FileFormat::CHROMATIC_PNG, "chromatic", "png", "Chromatic 3-Point PNG"});
     add_item(*containers, {FileFormat::PDF, "pdf", "pdf", "PDF"});
     add_item(*containers, {FileFormat::POV, "pov", "pov", "POV"});
+    add_item(*containers, {FileFormat::USDA, "usda", "usda", "USDA"});
+    add_item(*containers, {FileFormat::USDZ, "usdz", "usdz", "USDZ"});
 
     // Alias
     containers->identifierToInfo["stl"] = containers->identifierToInfo["asciistl"];
@@ -181,7 +183,7 @@ bool is3D(FileFormat format)
   return format == FileFormat::ASCII_STL || format == FileFormat::BINARY_STL ||
          format == FileFormat::OBJ || format == FileFormat::OFF || format == FileFormat::WRL ||
          format == FileFormat::_3MF || format == FileFormat::NEFDBG || format == FileFormat::NEF3 ||
-         format == FileFormat::POV ||
+         format == FileFormat::POV || format == FileFormat::USDA || format == FileFormat::USDZ ||
          // Internal worker transport: 3D for dispatch, but absent from the identifier table, so
          // all3D() -- which iterates that table -- still never offers it to a user.
          format == FileFormat::IPC_GEOMETRY;
@@ -234,6 +236,8 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
   case FileFormat::SVG:          export_svg(root_geom, output, exportInfo); break;
   case FileFormat::PDF:          export_pdf(root_geom, output, exportInfo); break;
   case FileFormat::POV:          export_pov(root_geom, output, exportInfo); break;
+  case FileFormat::USDA:         export_usda(root_geom, output, exportInfo); break;
+  case FileFormat::USDZ:         export_usdz(root_geom, output, exportInfo); break;
   case FileFormat::IPC_GEOMETRY: export_ipc_geometry(root_geom, output); break;
 #ifdef ENABLE_CGAL
   case FileFormat::NEFDBG: export_nefdbg(root_geom, output); break;

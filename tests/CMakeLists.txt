@@ -140,6 +140,7 @@ set(TEST_PYTHON_DIR     "${CCSD}/data/python")
 # Test runner Python scripts
 set(STLEXPORTSANITYTEST_PY   "${CCSD}/stlexportsanitytest.py")
 set(MULTISTLEXPORTTEST_PY    "${CCSD}/multistlexporttest.py")
+set(MATERIALRENDERTEST_PY    "${CCSD}/materialrendertest.py")
 set(EXPORT_IMPORT_PNGTEST_PY "${CCSD}/export_import_pngtest.py")
 set(EXPORT_PNGTEST_PY        "${CCSD}/export_pngtest.py")
 set(SHOULDFAIL_PY            "${CCSD}/shouldfail.py")
@@ -964,6 +965,7 @@ list(APPEND EXPORT_3MF_MULTI_MATERIAL_TEST_FILES ${TEST_SCAD_DIR}/misc/multi-stl
 list(APPEND EXPORT_3MF_LAZY_UNION_TEST_FILES ${TEST_SCAD_DIR}/experimental/lazyunion-color-cubes.scad)
 
 list(APPEND EXPORT_POV_TEST_FILES ${TEST_SCAD_DIR}/pov/pov-export.scad)
+list(APPEND EXPORT_POV_MATERIAL_TEST_FILES ${TEST_SCAD_DIR}/pov/pov-material.scad)
 
 list(APPEND EXPORT_IMPORT_3D_FILES
 ${TEST_SCAD_DIR}/3D/features/mirror-tests.scad
@@ -1035,6 +1037,7 @@ add_cmdline_test(export-3mf              EXPERIMENTAL OPENSCAD SUFFIX 3mf FILES 
 add_cmdline_test(export-3mf-stdio        EXPERIMENTAL OPENSCAD SUFFIX 3mf FILES ${EXPORT_3MF_TEST_FILES} STDIO ARGS --enable=predictible-output --export-format 3mf)
 endif()
 add_cmdline_test(export-pov-as-is        EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold)
+add_cmdline_test(export-pov-material     EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_MATERIAL_TEST_FILES} ARGS --enable=predictible-output --enable=multi-material --backend=manifold)
 add_cmdline_test(export-pov-translate-1  EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=0,0,0,0,0,0,140)
 add_cmdline_test(export-pov-translate-2  EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=10,0,0,0,0,0,140)
 add_cmdline_test(export-pov-translate-3  EXPERIMENTAL OPENSCAD SUFFIX pov FILES ${EXPORT_POV_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --camera=0,10,0,0,0,0,140)
@@ -1115,6 +1118,7 @@ add_cmdline_test(export-svg-fill-only SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX 
 # with anything. It's self-contained and returns != 0 on error
 add_cmdline_test(export-stl-sanitytest  SCRIPT ${STLEXPORTSANITYTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/normal-nan.scad ARGS ${OPENSCAD_EXE_ARG})
 add_cmdline_test(export-multi-stl       EXPERIMENTAL SCRIPT ${MULTISTLEXPORTTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/multi-stl-bodies.scad ARGS ${OPENSCAD_EXE_ARG} --enable=predictible-output --enable=multi-material --export-format asciistl --render)
+add_cmdline_test(material-shading       EXPERIMENTAL SCRIPT ${MATERIALRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 
 # Export/import color support
 add_cmdline_test(offcolorpngtest EXPERIMENTAL SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX png FILES ${COLOR_3D_TEST_FILES} EXPECTEDDIR render-manifold ARGS ${OPENSCAD_EXE_ARG} --format=OFF --backend=manifold --render)
@@ -1311,6 +1315,30 @@ list(APPEND EXPERIMENTAL_TEXTMETRICS_FILES
 add_cmdline_test(echo           EXPERIMENTAL OPENSCAD SUFFIX echo FILES ${EXPERIMENTAL_TEXTMETRICS_ECHO_FILES} ARGS --enable=textmetrics)
 add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} ARGS --enable=textmetrics)
 add_cmdline_test(preview-cgal   EXPERIMENTAL OPENSCAD SUFFIX png  FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} EXPECTEDDIR preview ARGS --enable=textmetrics --backend=cgal)
+
+#
+# Feature 15: procedural bump on material() and color().
+#
+list(APPEND EXPERIMENTAL_MATERIAL_BUMP_FILES
+  ${TEST_SCAD_DIR}/misc/material-bump-tests.scad
+)
+add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_BUMP_FILES} ARGS --enable=multi-material)
+
+#
+# Feature 15: parameters that were dropped must warn, not be swallowed.
+#
+list(APPEND EXPERIMENTAL_MATERIAL_DROPPED_FILES
+  ${TEST_SCAD_DIR}/misc/material-dropped-params.scad
+)
+add_cmdline_test(echo           EXPERIMENTAL OPENSCAD SUFFIX echo FILES ${EXPERIMENTAL_MATERIAL_DROPPED_FILES} ARGS --enable=multi-material)
+
+#
+# Feature 15: default colors for named materials.
+#
+list(APPEND EXPERIMENTAL_MATERIAL_COLOR_FILES
+  ${TEST_SCAD_DIR}/misc/material-default-colors.scad
+)
+add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_COLOR_FILES} ARGS --enable=multi-material)
 add_cmdline_test(throwntogether EXPERIMENTAL OPENSCAD SUFFIX png  FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} ARGS --preview=throwntogether --enable=textmetrics)
 add_cmdline_test(render-csg-cgal      EXPERIMENTAL SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX png FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} EXPECTEDDIR render ARGS ${OPENSCAD_EXE_ARG} --format=csg --render --enable=textmetrics)
 add_cmdline_test(render-cgal    EXPERIMENTAL OPENSCAD SUFFIX png FILES ${EXPERIMENTAL_TEXTMETRICS_FILES} EXPECTEDDIR render ARGS --render --enable=textmetrics --backend=cgal)

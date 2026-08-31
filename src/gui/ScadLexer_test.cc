@@ -49,7 +49,7 @@ TEST_CASE("editor highlights the wrapper modules")
 {
   const std::string source = "color(\"red\") cube(1);\nmaterial(\"PLA\") cube(1);\n";
 
-  // color() is the module material() was modelled on, so it is the reference:
+  // color() is the module material() was modeled on, so it is the reference:
   // whatever style it gets, material() must get the same one.
   const int colorStyle = styleOfWord(source, "color");
   REQUIRE(colorStyle > 0);

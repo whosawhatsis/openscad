@@ -488,7 +488,7 @@ void GeometryEvaluator::addToParent(const State& state, const AbstractNode& node
   // Anything that combined several children must not: the operations that are
   // defined to inherit the first operand's attributes (CsgOpNode, CgalAdvNode)
   // do so themselves, and doing it here as well would repaint a whole union
-  // with the colour of whichever body happened to come first.
+  // with the color of whichever body happened to come first.
   if (Feature::ExperimentalMultiMaterial.is_enabled() && geom && !geom->isBodyBoundary() &&
       geom->materialName().empty() && !geom->hasBodyColor() && children != this->visitedchildren.end() &&
       children->second.size() == 1 && children->second.front().second) {
@@ -542,21 +542,28 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
       if ((geom = res.constptr())) {
         auto mutableGeom = res.asMutableGeometry();
         if (mutableGeom) {
-          // color() always carries a colour; material() need not, so a
+          // color() always carries a color; material() need not, so a
           // colourless material() must not paint an unset Color4f.
           if (!node.isMaterial || node.color.isValid()) mutableGeom->setColor(node.color);
           if (Feature::ExperimentalMultiMaterial.is_enabled()) {
             // Both wrappers declare a body, so either can be exported as its own
             // object or file. Only material() declares what the body is made
-            // *of*: its colour is the volume's material and is what a
+            // *of*: its color is the volume's material and is what a
             // body-combining operation inherits from its first operand. color()
             // stays purely visual - it never repaints a boolean product, so a
             // model that only uses color() renders exactly as it does with this
             // feature disabled.
+            // Appearance, not identity: color() carries these too, and unlike the
+            // body color they never propagate through a boolean.
+            if (node.hasPbrRoughness) {
+              mutableGeom->setRoughness(static_cast<float>(node.pbrRoughness));
+            }
+            if (node.hasMetallic) mutableGeom->setMetallic(static_cast<float>(node.metallic));
+            if (!node.finishParams.empty()) mutableGeom->setFinishParams(node.finishParams);
             if (node.isMaterial) {
-              // material("PLA") with no colour is the natural minimal form now
+              // material("PLA") with no color is the natural minimal form now
               // that the name comes first; it names the material without
-              // claiming what colour it is, so leave the geometry's colour
+              // claiming what color it is, so leave the geometry's color
               // alone rather than flooding it with an unset Color4f.
               if (node.color.isValid()) mutableGeom->setBodyColor(node.color);
               mutableGeom->setMaterialName(node.materialName);

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <map>
+#include <string>
+
 #include <cassert>
 #include <cstddef>
 #include <list>
@@ -43,6 +47,29 @@ public:
   void setConvexity(int c) { this->convexity = c; }
   virtual void setColor(const Color4f& c) {}
   void setMaterialName(std::string name) { materialName_ = std::move(name); }
+  // Roughness reaches the shader as the user wrote it: the microfacet BRDF is
+  // parameterized on roughness directly, so there is nothing to convert and
+  // exporters and renderer read the same number. Zero means "not set", which is
+  // what the shader's default branch tests for.
+  void setRoughness(float r)
+  {
+    roughness_ = r;
+    hasRoughness_ = true;
+  }
+  [[nodiscard]] bool hasRoughness() const { return hasRoughness_; }
+  [[nodiscard]] float roughness() const { return roughness_; }
+  //! Roughness as the shader wants it: a negative value means the model set none, so
+  //! that an explicit roughness = 0 (a mirror) stays distinguishable from "not set".
+  //! Zero cannot be the sentinel, because zero is a meaningful roughness.
+  [[nodiscard]] float shaderRoughness() const { return hasRoughness_ ? roughness_ : -1.0f; }
+  // Extra POV-Ray finish parameters, carried as a map because only the POV
+  // exporter reads them so far. TODO fold these into the metadata channel that
+  // materialName uses on the process-isolation branch, so they survive the
+  // compute worker transport too.
+  void setFinishParams(std::map<std::string, double> params) { finishParams_ = std::move(params); }
+  [[nodiscard]] const std::map<std::string, double>& finishParams() const { return finishParams_; }
+  void setMetallic(float m) { metallic_ = m; }
+  [[nodiscard]] float metallic() const { return metallic_; }
   [[nodiscard]] const std::string& materialName() const { return materialName_; }
   void setBodyBoundary(bool boundary = true) { bodyBoundary_ = boundary; }
   [[nodiscard]] bool isBodyBoundary() const { return bodyBoundary_; }
@@ -54,19 +81,23 @@ public:
   [[nodiscard]] bool hasBodyColor() const { return hasBodyColor_; }
   [[nodiscard]] const Color4f& bodyColor() const { return bodyColor_; }
   // Body identity only. This deliberately does not repaint the geometry with
-  // the body colour: a geometry that came out of a boolean or a render() node
-  // already carries the per-face colours of the operands it was built from, and
-  // flooding it with one colour is what color()/render() colour preservation
+  // the body color: a geometry that came out of a boolean or a render() node
+  // already carries the per-face colors of the operands it was built from, and
+  // flooding it with one color is what color()/render() color preservation
   // exists to prevent. color() itself paints, in the ColorNode visitor.
   void copyBodyAttributes(const Geometry& other)
   {
     materialName_ = other.materialName_;
+    roughness_ = other.roughness_;
+    hasRoughness_ = other.hasRoughness_;
+    metallic_ = other.metallic_;
+    finishParams_ = other.finishParams_;
     bodyBoundary_ = other.bodyBoundary_;
     bodyColor_ = other.bodyColor_;
     hasBodyColor_ = other.hasBodyColor_;
   }
   // A body-combining operation consumes its operands and produces one body,
-  // which takes the first operand's colour as well as its name.
+  // which takes the first operand's color as well as its name.
   void takeBodyAttributesFrom(const Geometry& other)
   {
     copyBodyAttributes(other);
@@ -95,6 +126,10 @@ protected:
   double smooth_angle_{24.0};
   int convexity{1};
   std::string materialName_;
+  float roughness_{0.0f};
+  bool hasRoughness_{false};
+  float metallic_{0.0f};
+  std::map<std::string, double> finishParams_;
   bool bodyBoundary_{false};
   Color4f bodyColor_;
   bool hasBodyColor_{false};
