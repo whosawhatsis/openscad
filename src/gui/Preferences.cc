@@ -59,6 +59,7 @@
 #include <QWidget>
 #include <boost/algorithm/string.hpp>
 #include <cassert>
+#include <cmath>
 #include <list>
 #include <tuple>
 #include <unordered_map>
@@ -213,6 +214,17 @@ void Preferences::init()
     getValue("advanced/cgalCacheSize").toULongLong() /
     (1024ul * 1024ul);  // carry over old settings if they exist
   this->defaultmap["advanced/openCSGLimit"] = RenderSettings::inst()->openCSGTermLimit;
+  this->defaultmap["view/featureEdgeWidth"] = 1.0;
+  connect(featureEdgeWidth, &QLineEdit::editingFinished, this, [this]() {
+    bool valid;
+    const double width = featureEdgeWidth->text().toDouble(&valid);
+    if (valid && std::isfinite(width) && width >= 0.0) {
+      QSettingsCached().setValue("view/featureEdgeWidth", width);
+      emit requestRedraw();
+    } else {
+      featureEdgeWidth->setText(getValue("view/featureEdgeWidth").toString());
+    }
+  });
   this->defaultmap["advanced/forceGoldfeather"] = false;
   this->defaultmap["advanced/undockableWindows"] = false;
   this->defaultmap["advanced/reorderWindows"] = true;
@@ -1959,6 +1971,7 @@ QVariant Preferences::getValue(const QString& key) const
 void Preferences::updateGUI()
 {
   readMaterialColors();
+  featureEdgeWidth->setText(getValue("view/featureEdgeWidth").toString());
   const auto found =
     this->colorSchemeChooser->findItems(getValue("3dview/colorscheme").toString(), Qt::MatchExactly);
   if (!found.isEmpty())

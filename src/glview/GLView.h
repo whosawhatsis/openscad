@@ -52,8 +52,12 @@ enum class AnalysisMode {
   Normal,
   Coordinate,
   Flat,
-  Chromatic
+  Chromatic,
+  Canny,
+  Wireframe
 };
+
+class FeatureEdgeResources;
 
 class GLView
 {
@@ -142,6 +146,9 @@ public:
   std::unique_ptr<ShaderUtils::ShaderInfo> edge_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> phong_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_normal_shader;
+  double edge_width = 1.0;
+  std::string feature_edge_error;
+  std::shared_ptr<FeatureEdgeResources> feature_edge_resources;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_coord_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_chromatic_shader;
   std::shared_ptr<Renderer> renderer;

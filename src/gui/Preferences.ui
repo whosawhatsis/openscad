@@ -157,6 +157,17 @@
          </widget>
         </item>
         <item>
+         <layout class="QHBoxLayout" name="featureEdgeWidthLayout">
+          <item><widget class="QLabel" name="featureEdgeWidthLabel">
+           <property name="text"><string>Feature edge width (pixels):</string></property>
+           <property name="buddy"><cstring>featureEdgeWidth</cstring></property>
+          </widget></item>
+          <item><widget class="QLineEdit" name="featureEdgeWidth">
+           <property name="text"><string>1</string></property>
+          </widget></item>
+         </layout>
+        </item>
+        <item>
          <widget class="QCheckBox" name="checkBoxMouseCentricZoom">
           <property name="text">
            <string>mouse centric zoom</string>

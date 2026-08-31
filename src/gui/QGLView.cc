@@ -220,6 +220,7 @@ void QGLView::resizeGL(int w, int h)
 
 void QGLView::paintGL()
 {
+  edge_width = GlobalPreferences::inst()->getValue("view/featureEdgeWidth").toDouble() * getDPI();
   GLView::paintGL();
 
   if (statusLabel) {
@@ -481,6 +482,10 @@ const QImage& QGLView::grabFrame(bool transparent)
 
 bool QGLView::save(const char *filename) const
 {
+  if (!feature_edge_error.empty()) return false;
+  if (analysisMode() == AnalysisMode::Canny) {
+    return frame.convertToFormat(QImage::Format_Grayscale8).save(filename, "PNG");
+  }
   return this->frame.save(filename, "PNG");
 }
 

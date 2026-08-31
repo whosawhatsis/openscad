@@ -2411,7 +2411,8 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
 #else
     // Choose PolySetRenderer for PolySet and Polygon2d, and for Manifold since we
     // know that all geometries are convertible to PolySet.
-    if (RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
+    if (Feature::ExperimentalCannyMap.is_enabled() ||
+        RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
         std::dynamic_pointer_cast<const PolySet>(this->rootGeom) ||
         std::dynamic_pointer_cast<const Polygon2d>(this->rootGeom)) {
       this->geomRenderer = std::make_shared<PolySetRenderer>(this->rootGeom);
@@ -3224,6 +3225,12 @@ void MainWindow::setAnalysisMode(AnalysisMode mode)
     QSettingsCached().setValue("view/showDepth", false);
   }
   this->qglview->setAnalysisMode(mode);
+  if ((mode == AnalysisMode::Canny || mode == AnalysisMode::Wireframe) && rootGeom &&
+      qglview->getRenderer() == geomRenderer.get()) {
+    geomRenderer = std::make_shared<PolySetRenderer>(rootGeom);
+    qglview->setRenderer(geomRenderer);
+    qglview->updateColorScheme();
+  }
   // The viewport paints on its own schedule, so unlike the CLI export path the
   // mode only has to be set before the next paint rather than before a
   // particular one - but it still has to force that paint.
@@ -3253,6 +3260,16 @@ void MainWindow::on_viewActionAnalysisViewCoordinate_triggered()
 void MainWindow::on_viewActionAnalysisViewFlat_triggered()
 {
   setAnalysisMode(AnalysisMode::Flat);
+}
+
+void MainWindow::on_viewActionAnalysisViewCanny_triggered()
+{
+  setAnalysisMode(AnalysisMode::Canny);
+}
+
+void MainWindow::on_viewActionAnalysisViewWireframe_triggered()
+{
+  setAnalysisMode(AnalysisMode::Wireframe);
 }
 
 void MainWindow::on_viewActionAnalysisViewChromatic_triggered()
@@ -3566,6 +3583,20 @@ void MainWindow::onAIDockVisibilityChanged(bool isVisible)
 
 void MainWindow::onExperimentalChanged()
 {
+  if (Feature::ExperimentalCannyMap.is_enabled() && rootGeom &&
+      qglview->getRenderer() == geomRenderer.get()) {
+    geomRenderer = std::make_shared<PolySetRenderer>(rootGeom);
+    qglview->setRenderer(geomRenderer);
+    qglview->updateColorScheme();
+    qglview->update();
+  }
+  viewActionAnalysisViewCanny->setVisible(Feature::ExperimentalCannyMap.is_enabled());
+  viewActionAnalysisViewWireframe->setVisible(Feature::ExperimentalCannyMap.is_enabled());
+  if (!Feature::ExperimentalCannyMap.is_enabled() &&
+      (qglview->analysisMode() == AnalysisMode::Canny ||
+       qglview->analysisMode() == AnalysisMode::Wireframe)) {
+    viewActionAnalysisViewDefault->trigger();
+  }
   bool aiEnabled = Feature::ExperimentalAiFeatures.is_enabled();
   if (this->aiDock) {
     this->aiDock->toggleViewAction()->setVisible(aiEnabled);
@@ -4523,6 +4554,8 @@ void MainWindow::setupMenusAndActions()
   analysisViewGroup->addAction(this->viewActionAnalysisViewNormal);
   analysisViewGroup->addAction(this->viewActionAnalysisViewCoordinate);
   analysisViewGroup->addAction(this->viewActionAnalysisViewFlat);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewCanny);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewWireframe);
   analysisViewGroup->addAction(this->viewActionAnalysisViewChromatic);
   this->viewActionAnalysisViewDefault->setChecked(true);
   if (this->qglview->hasOpenCSGSupport()) {

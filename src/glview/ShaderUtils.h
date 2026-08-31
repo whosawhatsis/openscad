@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <string>
+#include <functional>
 #include "glview/system-gl.h"
 
 namespace ShaderUtils {
@@ -25,6 +26,10 @@ struct ShaderInfo {
   ShaderType type;
   std::unordered_map<std::string, int> uniforms;
   std::unordered_map<std::string, int> attributes;
+  bool captureSurface = false;
+  // Surface-data consumers can composite each complete CSG product independently.
+  std::function<void()> beginProduct;
+  std::function<void()> endProduct;
 };
 
 std::string loadShaderSource(const std::string& name);

@@ -75,6 +75,7 @@ enum class FileFormat {
   DEPTHMAP,
   PFM,
   NORMALMAP_PNG,
+  CANNYMAP_PNG,
   COORDINATEMAP_PNG,
   FLATMAP_PNG,
   CHROMATIC_PNG,
@@ -423,6 +424,8 @@ struct ViewOption {
 };
 
 struct ViewOptions {
+  double edgeWidth = 1.0;
+  bool canny = false;
   Previewer previewer{Previewer::OPENCSG};
   RenderType renderer{RenderType::OPENCSG};
 

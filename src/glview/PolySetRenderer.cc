@@ -248,6 +248,13 @@ void PolySetRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
 
 void PolySetRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shaderinfo) const
 {
+  if (shaderinfo && shaderinfo->captureSurface && !polygon_vertex_state_containers_.empty()) {
+    glUseProgram(shaderinfo->resource.shader_program);
+    // Pure 2D: rasterize its filled contours, without the ordinary display outlines.
+    for (const auto& state : polygon_vertex_state_containers_.front().states()) state->draw();
+    glUseProgram(0);
+    return;
+  }
   drawPolySets(showedges, shaderinfo);
   drawPolygons();
 }

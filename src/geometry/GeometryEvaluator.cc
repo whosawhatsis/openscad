@@ -497,7 +497,6 @@ void GeometryEvaluator::addToParent(const State& state, const AbstractNode& node
     copy->copyBodyAttributes(*children->second.front().second);
     attributedGeom = std::move(copy);
   }
-
   // Carry the smoothing tolerance across whatever this node did to its children. A
   // boolean produces a new PolySet, so without this the result falls back to the
   // default and a model built from parts with a coarse $fa loses its smoothing the

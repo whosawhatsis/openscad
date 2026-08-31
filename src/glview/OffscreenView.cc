@@ -14,6 +14,7 @@
 
 #include "io/imageutils.h"
 #include "Feature.h"
+#include "lodepng/lodepng.h"
 #include "utils/printutils.h"
 #include "glview/OffscreenContextFactory.h"
 #include "glview/fbo.h"
@@ -115,6 +116,10 @@ OffscreenView::OffscreenView(uint32_t width, uint32_t height)
 
 OffscreenView::~OffscreenView()
 {
+#ifndef NULLGL
+  if (ctx) ctx->makeCurrent();
+  teardownShader();
+#endif
   fbo.reset();
 }
 
@@ -127,15 +132,14 @@ void OffscreenView::display_opencsg_warning()
 
 bool OffscreenView::save(const char *filename) const
 {
+  if (!feature_edge_error.empty()) return false;
   std::ofstream fstream(filename, std::ios::out | std::ios::binary);
   if (!fstream.is_open()) {
     std::cerr << "Can't open file " << filename << " for writing";
     return false;
   } else {
-    save_framebuffer(this->ctx.get(), fstream, this->transparentBackground());
-    fstream.close();
+    return save(fstream);
   }
-  return true;
 }
 
 bool OffscreenView::saveDepth(std::ostream& output, DepthProfile profile) const
@@ -250,6 +254,24 @@ bool OffscreenView::saveDepth(std::ostream& output, const DepthmapOptions& optio
 
 bool OffscreenView::save(std::ostream& output) const
 {
+  if (!feature_edge_error.empty()) return false;
+  if (analysisMode() == AnalysisMode::Canny) {
+    const auto rgba = ctx->getFramebuffer();
+    std::vector<unsigned char> gray(ctx->width() * ctx->height());
+    for (unsigned y = 0; y < ctx->height(); ++y) {
+      for (unsigned x = 0; x < ctx->width(); ++x) {
+        gray[y * ctx->width() + x] = rgba[4 * ((ctx->height() - 1 - y) * ctx->width() + x)];
+      }
+    }
+    lodepng::State state;
+    state.encoder.auto_convert = false;
+    state.info_raw.colortype = state.info_png.color.colortype = LCT_GREY;
+    state.info_raw.bitdepth = state.info_png.color.bitdepth = 8;
+    std::vector<unsigned char> encoded;
+    if (lodepng::encode(encoded, gray.data(), ctx->width(), ctx->height(), state)) return false;
+    output.write(reinterpret_cast<const char *>(encoded.data()), encoded.size());
+    return output.good();
+  }
   return save_framebuffer(this->ctx.get(), output, this->transparentBackground());
 }
 

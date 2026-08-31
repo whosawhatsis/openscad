@@ -146,6 +146,7 @@ public:
   virtual void accept(GeometryVisitor& visitor) const = 0;
 
 protected:
+  double smooth_angle_{24.0};
   int convexity{1};
   float roughness_{0.0f};
   bool hasRoughness_{false};

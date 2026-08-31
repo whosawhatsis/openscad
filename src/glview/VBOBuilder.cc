@@ -565,6 +565,10 @@ void VBOBuilder::create_surface(const PolySet& ps, const Transform3d& m, const C
     createVertexState(GL_TRIANGLES, triangle_count * 3, elements_type, writeIndex(), elements_offset);
   vertex_state_container_.states().emplace_back(std::move(vertex_state));
   addAttributePointers(last_size);
+  // OpenCSG copies the first two callbacks as the position-only primitive draw.
+  // Append metadata after those callbacks so its stencil/depth pass stays intact.
+  vertex_state_container_.states().back()->glBegin().emplace_back(
+    [angle = ps.smoothAngle()]() { glMultiTexCoord1f(GL_TEXTURE1, static_cast<float>(angle)); });
 }
 
 void VBOBuilder::create_edges(const Polygon2d& polygon, const Transform3d& m, const Color4f& color)

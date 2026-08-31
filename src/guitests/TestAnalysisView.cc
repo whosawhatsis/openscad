@@ -72,6 +72,12 @@ void TestAnalysisView::checkMenuActionsSetTheMode()
   window->viewActionAnalysisViewFlat->trigger();
   QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Flat);
 
+  window->viewActionAnalysisViewCanny->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Canny);
+
+  window->viewActionAnalysisViewWireframe->trigger();
+  QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Wireframe);
+
   window->viewActionAnalysisViewShaded->trigger();
   QCOMPARE(window->qglview->analysisMode(), AnalysisMode::Shaded);
 

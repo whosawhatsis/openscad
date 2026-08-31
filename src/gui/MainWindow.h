@@ -469,6 +469,8 @@ public slots:
   void on_viewActionAnalysisViewNormal_triggered();
   void on_viewActionAnalysisViewCoordinate_triggered();
   void on_viewActionAnalysisViewFlat_triggered();
+  void on_viewActionAnalysisViewCanny_triggered();
+  void on_viewActionAnalysisViewWireframe_triggered();
   void on_viewActionAnalysisViewChromatic_triggered();
   void on_viewActionThrownTogether_triggered();
   void updateViewModeAfterGLInit();

@@ -345,6 +345,7 @@ void OpenCSGRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shader
                    shaderinfo->type == ShaderUtils::ShaderType::AGENT_RENDERING);
 
   const auto draw_product = [&](const auto& product) {
+    if (shaderinfo && shaderinfo->beginProduct) shaderinfo->beginProduct();
     if (product->primitives().size() > 1) {
 #if OPENCSG_VERSION >= 0x0180
       if (enable_shader) OpenCSG::setVertexShader(opencsg_vertex_shader_code_);
@@ -389,6 +390,7 @@ void OpenCSGRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shader
     }
     GL_TRACE0("glDepthFunc(GL_LEQUAL)");
     GL_CHECKD(glDepthFunc(GL_LEQUAL));
+    if (shaderinfo && shaderinfo->endProduct) shaderinfo->endProduct();
   };
 
   const bool select_rendering =
@@ -397,7 +399,7 @@ void OpenCSGRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shader
     Feature::ExperimentalTransparencyOrdering.is_enabled() &&
     std::any_of(vertex_state_containers_.begin(), vertex_state_containers_.end(),
                 [](const auto& product) { return product->transparent(); });
-  if (select_rendering || !has_transparency) {
+  if (select_rendering || (shaderinfo && shaderinfo->captureSurface) || !has_transparency) {
     for (const auto& product : vertex_state_containers_) draw_product(product);
     return;
   }

@@ -1291,6 +1291,7 @@ else()
     src/glview/VertexState.cc
     src/glview/VBORenderer.cc
     src/glview/GLView.cc
+    src/glview/FeatureEdges.cc
     src/glview/hershey.cc
     src/glview/OffscreenView.cc
     src/glview/PolySetRenderer.cc

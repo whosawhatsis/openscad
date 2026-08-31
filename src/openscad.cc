@@ -462,6 +462,7 @@ static AnalysisMode analysis_mode_for(FileFormat format)
 {
   switch (format) {
   case FileFormat::NORMALMAP_PNG:     return AnalysisMode::Normal;
+  case FileFormat::CANNYMAP_PNG:      return AnalysisMode::Canny;
   case FileFormat::COORDINATEMAP_PNG: return AnalysisMode::Coordinate;
   case FileFormat::FLATMAP_PNG:       return AnalysisMode::Flat;
   case FileFormat::CHROMATIC_PNG:     return AnalysisMode::Chromatic;
@@ -842,8 +843,12 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       // Declared inside the branch: this is an else-if chain with the video
       // encoder, so there is nowhere earlier to hoist it to.
       const AnalysisMode agent_mode = analysis_mode_for(export_format);
+      if (agent_mode == AnalysisMode::Canny && !Feature::ExperimentalCannyMap.is_enabled()) {
+        LOG(message_group::Error, "Canny export requires --enable=canny-map");
+        return 1;
+      }
       if (agent_mode != AnalysisMode::Default) {
-        if (!glview) {
+        if (!glview && agent_mode != AnalysisMode::Canny) {
           // These formats are produced by a shader on the preview path. --render
           // routes to export_png(root_geom, ...), which builds its own view and
           // would silently write an ordinary shaded image instead - a wrong
@@ -868,10 +873,13 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       bool success = true;
       bool const wrote = with_output(
         cmd.is_stdout, filename_str,
-        [&success, &root_geom, &cmd, &camera, &glview, &depthmapOptions](std::ostream& stream) {
+        [&success, &root_geom, &cmd, &camera, &glview, &depthmapOptions,
+         agent_mode](std::ostream& stream) {
           if (cmd.viewOptions.renderer == RenderType::BACKEND_SPECIFIC ||
               cmd.viewOptions.renderer == RenderType::GEOMETRY) {
-            success = export_png(root_geom, cmd.viewOptions, camera, depthmapOptions, stream);
+            auto options = cmd.viewOptions;
+            options.canny = agent_mode == AnalysisMode::Canny;
+            success = export_png(root_geom, options, camera, depthmapOptions, stream);
           } else {
             success = export_png(*glview, stream);
           }
@@ -1795,6 +1803,7 @@ po::options_description build_options_description()
     ("backend", po::value<std::string>(),
       "3D rendering backend to use: 'CGAL' (old/slow) or 'Manifold' (new/fast) [default]")
     ("imgsize", po::value<std::string>(), "=width,height of exported png")
+    ("edge-width", po::value<double>()->default_value(1.0), "Feature edge width in pixels (finite, nonnegative)")
     ("render", po::value<std::string>()->implicit_value(""),
       "for full geometry evaluation when exporting png")
     ("preview", po::value<std::string>()->implicit_value(""),
@@ -2047,6 +2056,11 @@ int openscad_main(int argc, char **argv)
 
   if (vm.count("csglimit")) {
     RenderSettings::inst()->openCSGTermLimit = vm["csglimit"].as<unsigned int>();
+  }
+  viewOptions.edgeWidth = vm["edge-width"].as<double>();
+  if (!std::isfinite(viewOptions.edgeWidth) || viewOptions.edgeWidth < 0.0) {
+    LOG(message_group::Error, "Edge width must be finite and nonnegative");
+    return 1;
   }
 
   if (vm.count("o")) {

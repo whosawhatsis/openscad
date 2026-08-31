@@ -1,4 +1,6 @@
 #include "glview/GLView.h"
+#include "glview/FeatureEdges.h"
+#include "Feature.h"
 #include "geometry/linalg.h"
 #include "glview/ShaderUtils.h"
 #include "core/Selection.h"
@@ -219,6 +221,7 @@ void GLView::drawChromaticGauge()
 
 void GLView::teardownShader()
 {
+  feature_edge_resources.reset();
   if (edge_shader == nullptr) return;  // if OpenGL context was not initialized
   if (edge_shader->resource.shader_program) {
     glDeleteProgram(edge_shader->resource.shader_program);
@@ -251,6 +254,11 @@ void GLView::teardownShader()
     glDeleteShader(agent_chromatic_shader->resource.vertex_shader);
     glDeleteShader(agent_chromatic_shader->resource.fragment_shader);
   }
+  edge_shader.reset();
+  phong_shader.reset();
+  agent_normal_shader.reset();
+  agent_coord_shader.reset();
+  agent_chromatic_shader.reset();
 }
 
 void GLView::setRenderer(std::shared_ptr<Renderer> r)
@@ -417,6 +425,8 @@ void GLView::teardownDepthShading()
 
 void GLView::paintGL()
 {
+  const bool pureEdges =
+    analysis_mode == AnalysisMode::Canny || analysis_mode == AnalysisMode::Wireframe;
   glDisable(GL_LIGHTING);
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
@@ -485,12 +495,12 @@ void GLView::paintGL()
   setupCamera();
 
   // The crosshair should be fixed at the center of the viewport...
-  if (showcrosshairs) GLView::showCrosshairs(crosshaircol);
+  if (showcrosshairs && !pureEdges) GLView::showCrosshairs(crosshaircol);
   glTranslated(cam.object_trans.x(), cam.object_trans.y(), cam.object_trans.z());
   // ...the axis lines need to follow the object translation.
-  if (showaxes) GLView::showAxes(axescolor);
+  if (showaxes && !pureEdges) GLView::showAxes(axescolor);
   // mark the scale along the axis lines
-  if (showaxes && showscale) GLView::showScalemarkers(axescolor);
+  if (showaxes && showscale && !pureEdges) GLView::showScalemarkers(axescolor);
 
   glEnable(GL_LIGHTING);
   glDepthFunc(GL_LESS);
@@ -549,7 +559,29 @@ void GLView::paintGL()
     // Phong emits premultiplied material RGB plus an unattenuated reflected
     // highlight, so its RGB must not be multiplied by alpha a second time.
     if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    this->renderer->draw(active_showedges, active_shader);
+    const bool featureEdges =
+      Feature::ExperimentalCannyMap.is_enabled() &&
+      (showedges || analysis_mode == AnalysisMode::Canny || analysis_mode == AnalysisMode::Wireframe);
+    if (!featureEdges) feature_edge_error.clear();
+    if (analysis_mode != AnalysisMode::Canny && analysis_mode != AnalysisMode::Wireframe) {
+      if (featureEdges && analysis_mode == AnalysisMode::Shaded) {
+        glUseProgram(phong_shader->resource.shader_program);
+        glUniform1i(phong_shader->uniforms.at("showEdges"), GL_FALSE);
+        glUseProgram(0);
+      }
+      this->renderer->draw(featureEdges ? false : active_showedges, active_shader);
+    }
+    if (featureEdges) {
+      try {
+        drawFeatureEdges(
+          *this, analysis_mode == AnalysisMode::Canny,
+          analysis_mode != AnalysisMode::Canny && analysis_mode != AnalysisMode::Wireframe);
+        feature_edge_error.clear();
+      } catch (const std::exception& error) {
+        if (feature_edge_error != error.what()) LOG(message_group::Error, "%1$s", error.what());
+        feature_edge_error = error.what();
+      }
+    }
     if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (depth_preview_polarity(analysisDepthUnits()).invert) {
       // OpenCSG relies on black fog while constructing its internal CSG mask.
@@ -589,15 +621,15 @@ void GLView::paintGL()
   Vector3d eyedir(this->modelview[2], this->modelview[6], this->modelview[10]);
   glColor3f(1, 0, 0);
   for (const SelectedObject& obj : this->selected_obj) {
-    showObject(obj, eyedir);
+    if (!pureEdges) showObject(obj, eyedir);
   }
   glColor3f(0, 1, 0);
   for (const SelectedObject& obj : this->shown_obj) {
-    showObject(obj, eyedir);
+    if (!pureEdges) showObject(obj, eyedir);
   }
   if (showDepth()) teardownDepthShading();
   glDisable(GL_LIGHTING);
-  if (showaxes) GLView::showSmallaxes(axescolor);
+  if (showaxes && !pureEdges) GLView::showSmallaxes(axescolor);
 
   // Workaround for inconsistent QT behavior related to handling custom OpenGL widgets that
   // leave non opaque alpha values in final output.
