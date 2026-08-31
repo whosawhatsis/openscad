@@ -5,6 +5,10 @@
 
 struct IpcMessage;
 
+// How the parent tells its worker which end of the channel is its own. An environment variable
+// rather than a command-line argument, so it is not visible to anything listing processes.
+inline constexpr auto kIpcChannelEnvironmentVariable = "OPENSCAD_IPC_CHANNEL";
+
 // The connected channel a window and its private compute worker talk over.
 //
 // io/ipc_channel.h is the framing and knows nothing about transports; this is the other half.
