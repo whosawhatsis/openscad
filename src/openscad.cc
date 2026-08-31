@@ -885,16 +885,18 @@ int compute_worker_main()
       const Camera camera;
       const CmdLineExportOptions exportOptions;
       const fs::path originalPath = fs::path(input).parent_path();
-      const std::string noParameterFile;
-      const std::string noSetName;
+      // The Customizer's values are not in the .scad file, so unless the request carries them the
+      // worker renders the file's defaults -- a window that shows one thing and exports another.
+      const std::string parameterFile = request.value("parameterFile", std::string{});
+      const std::string setName = request.value("setName", std::string{});
       const int result =
         cmdline(CommandLine{false,
                             input,
                             false,
                             output,
                             originalPath,
-                            noParameterFile,
-                            noSetName,
+                            parameterFile,
+                            setName,
                             viewOptions,
                             camera,
                             preview ? FileFormat::IPC_PRODUCTS : FileFormat::IPC_GEOMETRY,

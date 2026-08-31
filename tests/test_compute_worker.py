@@ -340,5 +340,66 @@ class ComputeWorkerPreview(WorkerFixture, unittest.TestCase):
                         "identical cubes were sent as separate meshes")
 
 
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerParameters(WorkerFixture, unittest.TestCase):
+    """Customizer values have to reach the worker, or every render uses the file's defaults.
+
+    A window that shows one thing and exports another is the failure this guards against: the
+    values the user set in the Customizer are not in the .scad file, so unless the request carries
+    them the worker cannot know about them.
+    """
+
+    MODEL = "size = 10;  // [1:100]\ncube(size);"
+
+    def write_parameters(self, size, set_name="test"):
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        path = os.path.join(directory, "params.json")
+        with open(path, "w") as handle:
+            json.dump({"parameterSets": {set_name: {"size": str(size)}},
+                       "fileFormatVersion": "1"}, handle)
+        return path
+
+    def render_with(self, **extra):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, command="render", requestId=1,
+                input=self.write_scad(self.MODEL), output="result.osig", **extra)
+        payloads, done = self.read_until_done(parent)
+        return payloads, done
+
+    def test_a_parameter_set_changes_the_geometry(self):
+        default_payloads, default_done = self.render_with()
+        self.assertTrue(default_done.get("ok"), f"default render failed: {default_done}")
+
+        big_payloads, big_done = self.render_with(
+            parameterFile=self.write_parameters(80), setName="test")
+        self.assertTrue(big_done.get("ok"), f"parameterised render failed: {big_done}")
+
+        # Same topology either way -- a cube is a cube -- so the payloads are the same length and
+        # only the coordinates differ. Comparing bytes is what shows the value was applied.
+        self.assertNotEqual(default_payloads["result.osig"], big_payloads["result.osig"],
+                            "the parameter set did not change the geometry")
+
+    def test_a_missing_parameter_set_behaves_as_it_does_on_the_command_line(self):
+        """Naming a set that is not in the file falls back to the defaults, silently -- which is
+        exactly what `openscad -p file -P absent` does today (verified: exit 0, no warning, output
+        written). Arguably that should be an error, but changing it is a behaviour change to the
+        Customizer rather than to process isolation, so what is pinned here is that the worker
+        agrees with the command line. If the CLI is ever made stricter, this test should follow it
+        rather than be deleted."""
+        default_payloads, _ = self.render_with()
+        payloads, done = self.render_with(
+            parameterFile=self.write_parameters(80, set_name="other"), setName="absent")
+        self.assertTrue(done.get("ok"))
+        self.assertEqual(payloads["result.osig"], default_payloads["result.osig"],
+                         "a missing set should leave the defaults in place, as the CLI does")
+
+    def test_a_request_without_parameters_still_renders(self):
+        _, done = self.render_with()
+        self.assertTrue(done.get("ok"))
+
+
 if __name__ == "__main__":
     unittest.main()
