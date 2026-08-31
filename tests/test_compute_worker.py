@@ -444,6 +444,47 @@ class ComputeWorkerWorkingDirectory(WorkerFixture, unittest.TestCase):
         _, done = self.render_from(self.SOURCE)
         self.assertFalse(done.get("ok"))
 
+class ComputeWorkerIncludeReload(WorkerFixture, unittest.TestCase):
+    """An edit to an included file has to reach the next render.
+
+    The worker is persistent, and StatCache memoizes stat() by path with no invalidation of its
+    own. SourceFileCache asks it whether an include has changed, so without clearing it between
+    requests every later render of a document keeps the version of its includes that the first
+    render saw -- the model on screen stops matching the files on disk, with nothing to say so.
+    """
+
+    def test_an_edited_include_is_picked_up_by_the_next_render(self):
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        include = os.path.join(directory, "shape.scad")
+        model = os.path.join(directory, "model.scad")
+        with open(model, "w") as handle:
+            handle.write("include <shape.scad>\nshape();\n")
+
+        def write_include(size):
+            with open(include, "w") as handle:
+                handle.write("module shape() { cube(%d); }\n" % size)
+            # Coarse mtime resolution would otherwise hide the edit from a correct implementation
+            # too, which would make this test pass for the wrong reason.
+            stamp = os.path.getmtime(include) + 10
+            os.utime(include, (stamp, stamp))
+
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+
+        write_include(7)
+        request(parent, command="render", requestId=1, input=model, output="first.osig")
+        first, done = self.read_until_done(parent)
+        self.assertTrue(done.get("ok"), f"first render failed: {done}")
+
+        write_include(30)
+        request(parent, command="render", requestId=2, input=model, output="second.osig")
+        second, done = self.read_until_done(parent)
+        self.assertTrue(done.get("ok"), f"second render failed: {done}")
+
+        self.assertNotEqual(first["first.osig"], second["second.osig"],
+                            "the worker rendered the include it had already seen")
+
 
 if __name__ == "__main__":
     unittest.main()
