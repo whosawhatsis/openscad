@@ -901,6 +901,11 @@ int compute_worker_main()
       // be said separately or its relative includes cannot be found.
       const auto workingDirectory = request.value("workingDirectory", std::string{});
       const auto sourcePath = request.value("sourcePath", std::string{});
+      // The window owns this preference, so a preview normalized in the worker has to be told it
+      // or the product list would differ from the one the same model produces in-process.
+      if (request.contains("normalizationLimit")) {
+        RenderSettings::inst()->openCSGTermLimit = request["normalizationLimit"].get<unsigned int>();
+      }
       // Falls back to the document's own directory when one is named, since that is what relative
       // paths in the model are written against -- not wherever the text happens to have been read
       // from.

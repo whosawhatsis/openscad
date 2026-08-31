@@ -1,12 +1,17 @@
 #pragma once
 
 #include <QObject>
+#include <cstddef>
+#include <functional>
+#include <map>
 #include <memory>
+#include <string>
 #include <QString>
 #include <QStringList>
 #include <memory>
 
 class QByteArray;
+class CsgInfo;
 struct IpcMessage;
 
 /*!
@@ -64,6 +69,16 @@ public:
   void startRender(const QString& scadPath, const QString& parameterFile, const QString& setName,
                    const QString& sourcePath = {});
 
+  /*!
+     Asks for a preview. Answers as `previewDone` or `previewFailed`.
+
+     A preview is not a mesh: it is the CSG product list the window composites, plus the mesh for
+     each leaf. `normalizationLimit` is the window's OpenCSG limit, which decides how far the
+     product list is normalized -- the worker cannot know it.
+   */
+  void startPreview(const QString& scadPath, const QString& parameterFile, const QString& setName,
+                    const QString& sourcePath, std::size_t normalizationLimit);
+
 signals:
   //! The geometry a render produced. Never null: a failure comes through renderFailed instead.
   void renderDone(std::shared_ptr<const class Geometry>);
@@ -71,9 +86,21 @@ signals:
   //! never come.
   void renderFailed(QString reason);
 
+  //! The product lists a preview produced, with every leaf already resolved from its payload.
+  void previewDone(std::shared_ptr<CsgInfo>);
+  void previewFailed(QString reason);
+
 private:
-  //! Runs on the caller's thread; turns the worker's answer into one signal or the other.
-  void finishRender(const std::shared_ptr<const class Geometry>& geometry, const QString& error);
+  /*!
+     Sends a request on a thread of its own and delivers the result back on the caller's thread.
+
+     `deliver` is called exactly once, with the payloads that arrived and the worker's answer, or
+     with an error. Exactly once is the contract that keeps a window from waiting forever.
+   */
+  void startRequest(const std::string& request,
+                    std::function<void(std::map<std::string, std::string>&&, const QString&)> deliver);
+  //! Lets go of the finished request's thread. Runs on the caller's thread.
+  void requestFinished();
 
   struct Private;
   std::unique_ptr<Private> d;

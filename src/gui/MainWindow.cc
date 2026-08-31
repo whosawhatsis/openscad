@@ -119,6 +119,7 @@
 #include "glview/preview/CSGTreeNormalizer.h"
 #include "glview/preview/ThrownTogetherRenderer.h"
 #include "gui/AboutDialog.h"
+#include "glview/CsgInfo.h"
 #include "gui/ComputeWorker.h"
 #include "io/ipc_endpoint.h"
 #include "gui/GeometryWorker.h"
@@ -1146,20 +1147,7 @@ void MainWindow::compileCSG()
       this->backgroundProducts.reset();
     }
 
-    if (this->rootProduct && (this->rootProduct->size() >
-                              GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt())) {
-      LOG(message_group::UI_Warning, "Normalized tree has %1$d elements!", this->rootProduct->size());
-      LOG(message_group::UI_Warning, "OpenCSG rendering has been disabled.");
-    }
-#ifdef ENABLE_OPENCSG
-    else {
-      LOG("Normalized tree has %1$d elements!", (this->rootProduct ? this->rootProduct->size() : 0));
-      this->previewRenderer = std::make_shared<OpenCSGRenderer>(
-        this->rootProduct, this->highlightsProducts, this->backgroundProducts);
-    }
-#endif  // ifdef ENABLE_OPENCSG
-    this->thrownTogetherRenderer = std::make_shared<ThrownTogetherRenderer>(
-      this->rootProduct, this->highlightsProducts, this->backgroundProducts);
+    createPreviewRenderers();
     LOG("Compile and preview finished.");
     renderStatistic.printRenderingTime();
     this->processEvents();
@@ -1906,10 +1894,66 @@ void MainWindow::actionRenderPreview()
   }
 }
 
-void MainWindow::csgRender()
+// Builds the renderers a preview draws from, given the product lists. Shared by the in-process
+// path and the isolated one, which differ only in where the products came from.
+void MainWindow::createPreviewRenderers()
 {
-  if (this->rootNode) compileCSG();
+  if (this->rootProduct && (this->rootProduct->size() >
+                            GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt())) {
+    LOG(message_group::UI_Warning, "Normalized tree has %1$d elements!", this->rootProduct->size());
+    LOG(message_group::UI_Warning, "OpenCSG rendering has been disabled.");
+  }
+#ifdef ENABLE_OPENCSG
+  else {
+    LOG("Normalized tree has %1$d elements!", (this->rootProduct ? this->rootProduct->size() : 0));
+    this->previewRenderer = std::make_shared<OpenCSGRenderer>(
+      this->rootProduct, this->highlightsProducts, this->backgroundProducts);
+  }
+#endif  // ifdef ENABLE_OPENCSG
+  this->thrownTogetherRenderer = std::make_shared<ThrownTogetherRenderer>(
+    this->rootProduct, this->highlightsProducts, this->backgroundProducts);
+}
 
+/*!
+   UNFINISHED. Wiring csgRender() to this makes a preview never complete: neither previewDone nor
+   previewFailed reaches the window, so it waits forever. The worker side is not the problem -- it
+   answers preview requests correctly and has tests that prove it -- so what is missing is on this
+   side of the channel. Left here, unreferenced, because deleting it would lose the analysis; do not
+   call it until a GUI test for an isolated preview passes.
+ */
+void MainWindow::startIsolatedPreview()
+{
+  const QString sourceFile = writeSourceForWorker();
+  if (sourceFile.isEmpty()) return;  // writeSourceForWorker has already reported why
+  // The window owns the OpenCSG limit, so the worker is told how far to normalize.
+  const auto limit = 2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
+  this->computeWorker->startPreview(sourceFile, {}, {}, this->activeEditor->filepath, limit);
+}
+
+void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
+{
+  this->rootProduct = products->root_products;
+  this->highlightsProducts = products->highlights_products;
+  this->backgroundProducts = products->background_products;
+  createPreviewRenderers();
+  LOG("Compile and preview finished.");
+  renderStatistic.printRenderingTime();
+  progress_report_fin();
+  updateStatusBar(nullptr);
+  finishPreview();
+}
+
+void MainWindow::isolatedPreviewFailed(const QString& reason)
+{
+  LOG(message_group::Error, "%1$s", reason.toStdString());
+  progress_report_fin();
+  updateStatusBar(nullptr);
+  compileEnded();
+}
+
+// What a preview does once its products exist, whichever process produced them.
+void MainWindow::finishPreview()
+{
   selectPreviewViewMode();
 
   if (animateWidget->dumpPictures()) {
@@ -1920,6 +1964,14 @@ void MainWindow::csgRender()
   }
 
   compileEnded();
+}
+
+void MainWindow::csgRender()
+{
+  // NOT routed through the compute worker yet: an isolated preview never completes, so previews
+  // stay in-process even when isolation is on. See startIsolatedPreview().
+  if (this->rootNode) compileCSG();
+  finishPreview();
 }
 
 void MainWindow::sendToExternalTool(ExternalToolInterface& externalToolService)
@@ -2018,24 +2070,32 @@ void MainWindow::cgalRender()
   else this->geometryWorker->start(this->tree);
 }
 
-void MainWindow::startIsolatedRender()
+QString MainWindow::writeSourceForWorker()
 {
   // What the user sees is the editor's contents, which may never have been saved. The worker reads
   // a copy, and is told where the document really lives so its relative includes still resolve.
   this->workerSourceDirectory = std::make_unique<QTemporaryDir>();
   if (!this->workerSourceDirectory->isValid()) {
     isolatedRenderFailed(tr("Could not create a temporary directory for the compute worker."));
-    return;
+    return {};
   }
   const QString sourceFile = this->workerSourceDirectory->filePath(QStringLiteral("source.scad"));
   QFile file(sourceFile);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
     isolatedRenderFailed(tr("Could not write the source for the compute worker."));
-    return;
+    return {};
   }
   file.write(this->activeEditor->toPlainText().toUtf8());
   file.close();
+  return sourceFile;
+}
 
+void MainWindow::startIsolatedRender()
+{
+  // What the user sees is the editor's contents, which may never have been saved. The worker reads
+  // a copy, and is told where the document really lives so its relative includes still resolve.
+  const QString sourceFile = writeSourceForWorker();
+  if (sourceFile.isEmpty()) return;
   this->computeWorker->startRender(sourceFile, {}, {}, this->activeEditor->filepath);
 }
 
