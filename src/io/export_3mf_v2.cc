@@ -64,6 +64,8 @@ struct ExportContext {
   Lib3MF::PColorGroup colorgroup;
   Lib3MF::PBaseMaterialGroup basematerialgroup;
   int modelcount;
+  std::vector<std::string> bodyNames;
+  size_t bodyIndex{0};
   Lib3MF_uint32 defaultColorId;
   ExportColorMap materialColors;
   Color4f selectedColor;
@@ -167,8 +169,8 @@ bool append_polyset(const std::shared_ptr<const PolySet>& ps, ExportContext& ctx
     if (!mesh) return false;
 
     const int mesh_count = count_mesh_objects(ctx.model);
-    const auto modelname =
-      ctx.modelcount == 1 ? "OpenSCAD Model" : "OpenSCAD Model " + std::to_string(mesh_count);
+    const auto modelname = ctx.bodyIndex < ctx.bodyNames.size() ? ctx.bodyNames[ctx.bodyIndex++]
+                                                                : std::string("OpenSCAD Model");
     const auto partname = ctx.modelcount == 1 ? "" : "Part " + std::to_string(mesh_count);
     mesh->SetName(modelname);
     if (ctx.basematerialgroup) {
@@ -403,6 +405,7 @@ void export_3mf(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
                     .colorgroup = colorgroup,
                     .basematerialgroup = basematerialgroup,
                     .modelcount = 1,
+                    .bodyNames = export_body_names(export_bodies(geom)),
                     .defaultColorId = defaultColorId,
                     .materialColors = materialColors,
                     .selectedColor = color,

@@ -42,6 +42,36 @@ public:
   [[nodiscard]] unsigned int getConvexity() const { return convexity; }
   void setConvexity(int c) { this->convexity = c; }
   virtual void setColor(const Color4f& c) {}
+  void setMaterialName(std::string name) { materialName_ = std::move(name); }
+  [[nodiscard]] const std::string& materialName() const { return materialName_; }
+  void setBodyBoundary(bool boundary = true) { bodyBoundary_ = boundary; }
+  [[nodiscard]] bool isBodyBoundary() const { return bodyBoundary_; }
+  void setBodyColor(const Color4f& color)
+  {
+    bodyColor_ = color;
+    hasBodyColor_ = true;
+  }
+  [[nodiscard]] bool hasBodyColor() const { return hasBodyColor_; }
+  [[nodiscard]] const Color4f& bodyColor() const { return bodyColor_; }
+  // Body identity only. This deliberately does not repaint the geometry with
+  // the body colour: a geometry that came out of a boolean or a render() node
+  // already carries the per-face colours of the operands it was built from, and
+  // flooding it with one colour is what color()/render() colour preservation
+  // exists to prevent. color() itself paints, in the ColorNode visitor.
+  void copyBodyAttributes(const Geometry& other)
+  {
+    materialName_ = other.materialName_;
+    bodyBoundary_ = other.bodyBoundary_;
+    bodyColor_ = other.bodyColor_;
+    hasBodyColor_ = other.hasBodyColor_;
+  }
+  // A body-combining operation consumes its operands and produces one body,
+  // which takes the first operand's colour as well as its name.
+  void takeBodyAttributesFrom(const Geometry& other)
+  {
+    copyBodyAttributes(other);
+    if (hasBodyColor_) setColor(bodyColor_);
+  }
 
   virtual void transform(const Transform3d& /*mat*/) { assert(!"transform not implemented!"); }
   virtual void resize(const Vector3d& /*newsize*/, const Eigen::Matrix<bool, 3, 1>& /*autosize*/)
@@ -53,6 +83,10 @@ public:
 
 protected:
   int convexity{1};
+  std::string materialName_;
+  bool bodyBoundary_{false};
+  Color4f bodyColor_;
+  bool hasBodyColor_{false};
 };
 
 /**
@@ -99,6 +133,7 @@ public:
     assert(false && "not implemented");
     return 0;
   }
+  void transform(const Transform3d& mat) override;
 
   [[nodiscard]] const Geometries& getChildren() const { return this->children; }
 

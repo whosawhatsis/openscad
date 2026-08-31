@@ -26,6 +26,7 @@ public:
   static const Feature ExperimentalUnicodeIdentifiers;
   static const Feature ExperimentalProcessIsolation;
   static const Feature ExperimentalEditorEnhancements;
+  static const Feature ExperimentalMultiMaterial;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif

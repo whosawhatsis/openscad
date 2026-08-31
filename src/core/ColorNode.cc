@@ -39,6 +39,8 @@
 #include "core/Children.h"
 #include "core/ColorUtil.h"
 #include "core/ModuleInstantiation.h"
+#include "Feature.h"
+#include "core/Material.h"
 #include "core/Parameters.h"
 #include "core/module.h"
 #include "geometry/linalg.h"
@@ -46,12 +48,16 @@
 
 using namespace boost::assign;  // bring 'operator+=()' into scope
 
-static std::shared_ptr<AbstractNode> builtin_color(const ModuleInstantiation *inst, Arguments arguments,
-                                                   const Children& children)
+static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiation *inst,
+                                                        Arguments arguments, const Children& children,
+                                                        bool isMaterial)
 {
   auto node = std::make_shared<ColorNode>(inst);
+  node->isMaterial = isMaterial;
 
-  Parameters parameters = Parameters::parse(std::move(arguments), inst->location(), {"c", "alpha"});
+  Parameters parameters = Parameters::parse(std::move(arguments), inst->location(),
+                                            isMaterial ? std::vector<std::string>{"name", "c", "alpha"}
+                                                       : std::vector<std::string>{"c", "alpha"});
   if (parameters["c"].type() == Value::Type::VECTOR) {
     const auto& vec = parameters["c"].toVector();
     Vector4f color;
@@ -83,19 +89,45 @@ static std::shared_ptr<AbstractNode> builtin_color(const ModuleInstantiation *in
           "color() expects alpha between 0.0 and 1.0. Value of %1$.1f is out of range", node->color.a());
     }
   }
+  if (isMaterial && parameters["name"].type() == Value::Type::STRING) {
+    const auto& name = parameters["name"].toString();
+    if (Material::isValidName(name)) {
+      node->materialName = name;
+    } else {
+      LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+          "material() name must start and end with an ASCII letter or digit and contain only "
+          "letters, digits, '.', '-' or '_'");
+    }
+  }
 
   return children.instantiate(node);
 }
 
+static std::shared_ptr<AbstractNode> builtin_color(const ModuleInstantiation *inst, Arguments arguments,
+                                                   const Children& children)
+{
+  return builtin_color_impl(inst, std::move(arguments), children, false);
+}
+
+static std::shared_ptr<AbstractNode> builtin_material(const ModuleInstantiation *inst,
+                                                      Arguments arguments, const Children& children)
+{
+  return builtin_color_impl(inst, std::move(arguments), children, true);
+}
+
 std::string ColorNode::toString() const
 {
+  if (isMaterial) {
+    return STR("material([", this->color.r(), ", ", this->color.g(), ", ", this->color.b(), ", ",
+               this->color.a(), "], name = \"", materialName, "\")");
+  }
   return STR("color([", this->color.r(), ", ", this->color.g(), ", ", this->color.b(), ", ",
              this->color.a(), "])");
 }
 
 std::string ColorNode::name() const
 {
-  return "color";
+  return isMaterial ? "material" : "color";
 }
 
 void register_builtin_color()
@@ -106,5 +138,12 @@ void register_builtin_color()
                    "color(c = [r, g, b], alpha = 1.0)",
                    "color(\"#hexvalue\")",
                    "color(\"colorname\", 1.0)",
+                 });
+  Builtins::init("material", new BuiltinModule(builtin_material, &Feature::ExperimentalMultiMaterial),
+                 {
+                   "material(\"name\")",
+                   "material(\"name\", c = [r, g, b, a])",
+                   "material(\"name\", c = [r, g, b], alpha = 1.0)",
+                   "material(\"name\", \"colorname\", 1.0)",
                  });
 }

@@ -315,6 +315,21 @@ bool exportFileStdOut(const std::shared_ptr<const class Geometry>& root_geom,
                       const ExportInfo& exportInfo);
 
 void export_stl(const std::shared_ptr<const Geometry>& geom, std::ostream& output, bool binary = true);
+bool export_stl_files(const std::shared_ptr<const Geometry>& geom, const std::string& filename,
+                      const ExportInfo& exportInfo, bool overwrite);
+// True when a model has more than one body, i.e. when splitting it across one
+// STL per body is a meaningful choice to offer.
+bool multi_stl_available(const std::shared_ptr<const Geometry>& geom);
+
+std::vector<std::string> multi_stl_filenames(const std::shared_ptr<const Geometry>& geom,
+                                             const std::string& filename);
+// The bodies a geometry exports as, in source order, and the label each of them
+// carries (see Material::bodyLabels).
+Geometry::Geometries export_bodies(const std::shared_ptr<const Geometry>& geom);
+// The name each body carries inside a container format that can name its
+// objects: its material label, or the traditional "OpenSCAD Model" name
+// (numbered when there is more than one) for bodies with no material name.
+std::vector<std::string> export_body_names(const Geometry::Geometries& bodies);
 void export_3mf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_obj(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
