@@ -114,6 +114,26 @@ void TestMainWindow::checkIsolatedRenderProducesGeometry()
   QCOMPARE(polyset->vertices.size(), size_t{8});
 }
 
+void TestMainWindow::checkInProcessPreviewProducesProducts()
+{
+  // The control for the isolated preview test: same window, same trigger, isolation off. If this
+  // hangs too, the problem is previewing in a window the test never showed -- not the worker.
+  Feature::enable_feature("process-isolation", false);
+  auto *window = new MainWindow{QStringList{}};
+  window->activeEditor->setPlainText(QStringLiteral("cube([10, 10, 10]);"));
+  bool compiled = false;
+  QObject::connect(window, &MainWindow::compilationDone, window,
+                   [&compiled](SourceFile *) { compiled = true; });
+  window->designActionPreview->trigger();
+  QElapsedTimer timer;
+  timer.start();
+  while (!compiled && timer.elapsed() < 20000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  QVERIFY2(compiled, "the in-process preview never finished either");
+  QVERIFY2(window->previewProductsForTest() != nullptr, "no product list in-process");
+}
+
 void TestMainWindow::checkAWindowWhoseWorkerCannotStartStillRenders()
 {
   // The fallback matters more than it looks: a user whose worker cannot start -- a broken install,

@@ -1968,8 +1968,8 @@ void MainWindow::finishPreview()
 
 void MainWindow::csgRender()
 {
-  // NOT routed through the compute worker yet: an isolated preview never completes, so previews
-  // stay in-process even when isolation is on. See startIsolatedPreview().
+  // NOT routed through the compute worker: an isolated preview does not complete. See
+  // startIsolatedPreview() for how far the diagnosis got.
   if (this->rootNode) compileCSG();
   finishPreview();
 }
