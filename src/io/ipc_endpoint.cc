@@ -9,6 +9,10 @@
 
 #include "io/ipc_channel.h"
 
+#ifndef _WIN32
+#include <fcntl.h>
+#endif
+
 #ifdef _WIN32
 #include <boost/asio/windows/stream_handle.hpp>
 #include <windows.h>
@@ -165,6 +169,16 @@ IpcChannelPair::IpcChannelPair() : d(std::make_unique<Private>())
   tuneBuffers(ends[1]);
   const RawEnd server = ends[0];
   const RawEnd client = ends[1];
+  // The child must not inherit this process's end. It inherits every open descriptor across the
+  // spawn, so without this it ends up holding *both* ends of its own channel -- and then read()
+  // can never reach end-of-stream, because the worker is itself holding the write end open. The
+  // worker therefore never learns that its window has gone, and never exits: 122 orphaned workers
+  // were found on one machine this way, the oldest seven hours old.
+  //
+  // Only this end. The child's end is handed over by descriptor number through the environment
+  // and must survive the exec; the parent drops its own copy of it in releaseChildEnd() once the
+  // spawn is done.
+  ::fcntl(server, F_SETFD, ::fcntl(server, F_GETFD) | FD_CLOEXEC);
 #endif
 
   auto parentEnd = std::make_unique<Channel>();
