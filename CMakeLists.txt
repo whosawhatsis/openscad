@@ -1604,12 +1604,15 @@ elseif(WIN32)
 endif()
 
 file(GLOB_RECURSE TEST_SOURCES
+  "src/*_test.cc"
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
   "src/geometry/*_test.cc"
   "src/io/*_test.cc"
   # Not GUI_TEST_SOURCES: the parts of glview that these cover are in CORE_SOURCES and build
   # headless, so their tests should run in a headless build too.
+  "src/glview/*_test.cc"
+  "src/io/*_test.cc"
   "src/glview/*_test.cc"
   "src/io/*_test.cc"
   "src/glview/*_test.cc"

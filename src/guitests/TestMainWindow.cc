@@ -4,6 +4,8 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QScopeGuard>
+#include <QAction>
+#include <QMenu>
 #include <QString>
 #include <QStringList>
 #include <QFile>
@@ -755,4 +757,12 @@ void TestMainWindow::checkAWindowWhoseWorkerCannotStartStillRenders()
 
   QVERIFY2(window != nullptr, "an in-process render never finished");
   QVERIFY(std::dynamic_pointer_cast<const PolySet>(window->rootGeom) != nullptr);
+}
+
+void TestMainWindow::checkAdvancedExportActionAvailable()
+{
+  auto *action = window->findChild<QAction *>("fileActionAdvancedExport");
+  QVERIFY(action);
+  QVERIFY(window->menuExport->actions().contains(action));
+  QCOMPARE(action->text(), "Advanced Export...");
 }

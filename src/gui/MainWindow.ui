@@ -241,6 +241,8 @@
      <addaction name="fileActionExportPDF"/>
      <addaction name="separator"/>
      <addaction name="fileActionExportImage"/>
+     <addaction name="separator"/>
+     <addaction name="fileActionAdvancedExport"/>
     </widget>
     <widget class="QMenu" name="menuPython">
      <property name="title">
@@ -1561,6 +1563,11 @@
    </property>
    <property name="text">
     <string>Export as &amp;Image...</string>
+   </property>
+  </action>
+  <action name="fileActionAdvancedExport">
+   <property name="text">
+    <string>Advanced Export...</string>
    </property>
   </action>
   <action name="fileActionExportCSG">

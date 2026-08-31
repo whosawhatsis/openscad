@@ -34,4 +34,5 @@ private slots:
   void checkEditorEnhancementsFlagNotLeaked();
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();
+  void checkAdvancedExportActionAvailable();
 };

@@ -42,6 +42,7 @@
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QInputDialog>
 #include <QKeySequence>
 #include <QLabel>
 #include <QList>
@@ -94,6 +95,7 @@
 #include <vector>
 
 #include "openscad_gui.h"
+#include "command_line.h"
 #include "core/AST.h"
 #include "core/BuiltinContext.h"
 #include "core/Builtins.h"
@@ -2885,6 +2887,26 @@ void MainWindow::actionExportFileFormat(int fmt)
     actionExport(2, exportInfo);
   } break;
   default: actionExport(fileformat::is3D(format) ? 3 : fileformat::is2D(format) ? 2 : 0, exportInfo);
+  }
+}
+
+void MainWindow::on_fileActionAdvancedExport_triggered()
+{
+  if (GuiLocker::isLocked()) return;
+
+  bool accepted = false;
+  const QString commands = QInputDialog::getMultiLineText(
+    this, _("Advanced Export"),
+    _("Enter command-line options, one command per line. You may also enter a command-file path:"), {},
+    &accepted);
+  if (!accepted || commands.trimmed().isEmpty()) return;
+
+  const GuiLocker lock;
+  std::string error;
+  if (run_command_lines({commands.toStdString()}, error) != 0) {
+    QMessageBox::critical(this, _("Advanced Export Failed"), QString::fromStdString(error));
+  } else {
+    statusBar()->showMessage(_("Advanced export completed."), 5000);
   }
 }
 
