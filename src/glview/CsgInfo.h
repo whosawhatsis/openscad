@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <ostream>
+#include <string>
 #include <vector>
 
 #include "core/CSGNode.h"
@@ -10,6 +12,18 @@
 #include "glview/preview/CSGTreeNormalizer.h"
 #include "glview/RenderSettings.h"
 #include "utils/printutils.h"
+
+class CsgInfo;
+
+/*!
+   Serializes a compiled product list, emitting each distinct leaf mesh as its own payload and
+   referring to it by name. Inside a compute worker the payloads go to the channel; elsewhere they
+   go to files under the same naming scheme, so the references need no special case at either end.
+
+   Returns the document rather than writing it, because emitting a leaf closes whatever payload is
+   open: the caller must finish sending the leaves before it opens the one this text goes into.
+ */
+std::string export_csg_products(const CsgInfo& csgInfo, const std::string& filename);
 
 /*
    Small helper class for compiling and normalizing node trees into CSG products

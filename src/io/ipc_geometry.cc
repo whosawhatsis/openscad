@@ -257,6 +257,15 @@ void export_ipc_geometry(const std::shared_ptr<const Geometry>& geom, std::ostre
   output.write(buffer.data(), buffer.size());
 }
 
+void export_ipc_geometry(const PolySet& polyset, std::ostream& output)
+{
+  std::vector<char> buffer;
+  append(buffer, ListHeader{kMagic, kVersion, 1, 0});
+  append(buffer, kKindPolySet);
+  appendPolySet(buffer, polyset);
+  output.write(buffer.data(), buffer.size());
+}
+
 std::shared_ptr<const Geometry> import_ipc_geometry_buffer(const char *data, const std::size_t size,
                                                            const std::string& name)
 {
