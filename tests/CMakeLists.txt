@@ -142,6 +142,7 @@ set(STLEXPORTSANITYTEST_PY   "${CCSD}/stlexportsanitytest.py")
 set(EXPORT_IMPORT_PNGTEST_PY "${CCSD}/export_import_pngtest.py")
 set(EXPORT_PNGTEST_PY        "${CCSD}/export_pngtest.py")
 set(SHOULDFAIL_PY            "${CCSD}/shouldfail.py")
+set(TEARINGTEST_PY           "${CCSD}/transparencytearingtest.py")
 set(TEST_CMDLINE_TOOL_PY     "${CCSD}/test_cmdline_tool.py")
 
 ######################
@@ -1294,6 +1295,7 @@ if (ENABLE_MANIFOLD_TESTS)
   add_cmdline_test(render-manifold-discretization-by-error EXPERIMENTAL OPENSCAD FILES ${EXPERIMENTAL_DISCRETIZATION_FILES} EXPECTEDDIR render-discretization-by-error SUFFIX png ARGS --render --backend=manifold --enable=discretization-by-error)
 endif()
 add_cmdline_test(dump-discretization-by-error EXPERIMENTAL OPENSCAD FILES ${EXPERIMENTAL_DISCRETIZATION_FILES} EXPECTEDDIR dump-discretization-by-error SUFFIX csg ARGS --enable=discretization-by-error)
+add_cmdline_test(transparent-tearing    SCRIPT ${TEARINGTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/transparent-tearing.scad ARGS ${OPENSCAD_EXE_ARG} --camera=0,0,0,60,0,30,140 --imgsize=400,400)
 
 
 ############################
