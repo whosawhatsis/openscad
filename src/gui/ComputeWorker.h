@@ -61,7 +61,8 @@ public:
      computation only to freeze the window it was meant to protect would be worse than not
      isolating it at all. This mirrors what CGALWorker does for the in-process path.
    */
-  void startRender(const QString& scadPath, const QString& parameterFile, const QString& setName);
+  void startRender(const QString& scadPath, const QString& parameterFile, const QString& setName,
+                   const QString& sourcePath = {});
 
 signals:
   //! The geometry a render produced. Never null: a failure comes through renderFailed instead.
