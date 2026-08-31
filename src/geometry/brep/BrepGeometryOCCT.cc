@@ -43,6 +43,8 @@
 #include <HLRAlgo_Projector.hxx>
 #include <optional>
 #include <BRepTools.hxx>
+#include <BRepTools_WireExplorer.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
@@ -809,8 +811,46 @@ std::shared_ptr<void> brepCutProjection(const std::shared_ptr<void>& shape, doub
   }
 }
 
+namespace {
+
+TopoDS_Wire squareOffsetJoins(const TopoDS_Wire& wire, const TopTools_IndexedMapOfShape& joins)
+{
+  BRepBuilderAPI_MakeWire result;
+  for (BRepTools_WireExplorer edges(wire); edges.More(); edges.Next()) {
+    const auto edge = edges.Current();
+    const BRepAdaptor_Curve curve(edge);
+    if (!joins.Contains(edge) || curve.GetType() != GeomAbs_Circle) {
+      result.Add(edge);
+      continue;
+    }
+    gp_Pnt start, end;
+    gp_Vec firstTangent, lastTangent;
+    curve.D1(curve.FirstParameter(), start, firstTangent);
+    curve.D1(curve.LastParameter(), end, lastTangent);
+    const auto middle = curve.Value((curve.FirstParameter() + curve.LastParameter()) / 2);
+    const gp_Vec normal(curve.Circle().Location(), middle);
+    // Square joins meet the tangent at the middle of the round join, not its chord.
+    const auto intersect = [&](const gp_Pnt& p, const gp_Vec& tangent) {
+      const double denominator = normal.Dot(tangent);
+      if (std::abs(denominator) <= Precision::Confusion() * tangent.Magnitude())
+        throw std::runtime_error("B-Rep chamfer tangents are degenerate");
+      return p.Translated(tangent * (normal.Dot(gp_Vec(p, middle)) / denominator));
+    };
+    std::array<gp_Pnt, 4> points{start, intersect(start, firstTangent), intersect(end, lastTangent),
+                                 end};
+    if (edge.Orientation() == TopAbs_REVERSED) std::reverse(points.begin(), points.end());
+    for (size_t i = 1; i < points.size(); ++i)
+      if (points[i - 1].Distance(points[i]) > Precision::Confusion())
+        result.Add(BRepBuilderAPI_MakeEdge(points[i - 1], points[i]).Edge());
+  }
+  if (!result.IsDone()) throw std::runtime_error("B-Rep chamfer wire construction failed");
+  return result.Wire();
+}
+
+}  // namespace
+
 std::shared_ptr<void> brepOffset2d(const std::shared_ptr<void>& shape, double delta, bool round,
-                                   double height)
+                                   double height, bool chamfer)
 {
   if (brepIsEmpty(shape) || delta == 0) return shape;
   if (!std::isfinite(delta)) throw std::invalid_argument("B-Rep offset must be finite");
@@ -824,12 +864,20 @@ std::shared_ptr<void> brepOffset2d(const std::shared_ptr<void>& shape, double de
           std::abs(surface.Plane().Location().Z()) > Precision::Confusion())
         continue;
       face.Orientation(TopAbs_FORWARD);
-      BRepOffsetAPI_MakeOffset offset(face, round ? GeomAbs_Arc : GeomAbs_Intersection);
+      BRepOffsetAPI_MakeOffset offset(face, (round || chamfer) ? GeomAbs_Arc : GeomAbs_Intersection);
       offset.Perform(delta);
       if (!offset.IsDone()) throw std::runtime_error("B-Rep offset construction failed");
+      TopTools_IndexedMapOfShape joins;
+      if (chamfer) {
+        for (TopExp_Explorer vertices(face, TopAbs_VERTEX); vertices.More(); vertices.Next())
+          for (const auto& generated : offset.Generated(vertices.Current()))
+            for (TopExp_Explorer edges(generated, TopAbs_EDGE); edges.More(); edges.Next())
+              joins.Add(edges.Current());
+      }
       std::shared_ptr<void> region;
       for (TopExp_Explorer wires(offset.Shape(), TopAbs_WIRE); wires.More(); wires.Next()) {
-        BRepBuilderAPI_MakeFace cap(TopoDS::Wire(wires.Current()), true);
+        const auto wire = TopoDS::Wire(wires.Current());
+        BRepBuilderAPI_MakeFace cap(chamfer ? squareOffsetJoins(wire, joins) : wire, true);
         if (!cap.IsDone()) throw std::runtime_error("B-Rep offset cap construction failed");
         auto solid = TopoDS::Solid(BRepPrimAPI_MakePrism(cap.Face(), gp_Vec(0, 0, height)).Shape());
         if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())

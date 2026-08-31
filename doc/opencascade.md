@@ -18,7 +18,7 @@ is not implemented yet.
   extrusion. Twist uses tolerance-controlled smooth splines.
 - Text extrusion from the font's original quadratic/cubic Bezier curves, retaining
   shaping, spacing, alignment, holes, and nonzero-winding contour overlaps.
-- Round and miter offsets of supported profiles, and both cut and shadow
+- Round, miter, and chamfer offsets of supported profiles, and both cut and shadow
   projections used as extrusion profiles. Shadow projection uses OCCT silhouettes
   and native region classification, not a rendered image or triangle mesh.
 - Polyhedral hulls; smooth hulls of two spheres or two parallel vertical cylinders
@@ -36,7 +36,7 @@ is not implemented yet.
 ## Current limitations
 
 This is not yet a replacement for every CGAL/Manifold operation. General curved
-hulls, general nonconvex Minkowski sums, chamfer offsets, native smooth SVG/DXF
+hulls, general nonconvex Minkowski sums, native smooth SVG/DXF
 profiles, and negative extrusion scales remain unsupported. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail

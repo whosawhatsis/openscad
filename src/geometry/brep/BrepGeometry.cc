@@ -65,9 +65,9 @@ BrepGeometry BrepGeometry::prism(const std::vector<std::array<double, 2>>& outli
   return BrepGeometry(brepMakePrism(outline, height));
 }
 
-BrepGeometry BrepGeometry::offset2d(double delta, bool round, double height) const
+BrepGeometry BrepGeometry::offset2d(double delta, bool round, double height, bool chamfer) const
 {
-  return BrepGeometry(brepOffset2d(shape_, delta, round, height));
+  return BrepGeometry(brepOffset2d(shape_, delta, round, height, chamfer));
 }
 
 BrepGeometry BrepGeometry::bezierPrism(

@@ -87,7 +87,6 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
     const auto *offset = dynamic_cast<const OffsetNode *>(&node);
     const auto *projection = dynamic_cast<const ProjectionNode *>(&node);
     if (offset || projection) {
-      if (offset && offset->chamfer) return {};
       std::vector<BrepGeometry> operands;
       for (const auto& child : node.children) {
         if (child->modinst->isBackground()) continue;
@@ -101,7 +100,7 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
         projection ? (projection->cut_mode ? result.cutProjection(extrusionHeight)
                                            : result.shadowProjection(extrusionHeight))
                    : result.offset2d(offset->delta, offset->join_type == Clipper2Lib::JoinType::Round,
-                                     extrusionHeight));
+                                     extrusionHeight, offset->chamfer));
     }
   }
   if (const auto *revolution = dynamic_cast<const RotateExtrudeNode *>(&node)) {

@@ -581,6 +581,81 @@ TEST_CASE("B-Rep offset preserves circular profiles and holes", "[brep]")
           .isEmpty() == hole);
 }
 
+TEST_CASE("B-Rep chamfer offsets use square joins without faceting existing circles", "[brep]")
+{
+  ModuleInstantiation inst("offset");
+  const CurveDiscretizer smooth([](const char *) -> std::optional<double> { return std::nullopt; });
+  auto offset = std::make_shared<OffsetNode>(&inst, smooth);
+  offset->delta = 1;
+  offset->chamfer = true;
+  offset->join_type = Clipper2Lib::JoinType::Square;
+  auto square = std::make_shared<SquareNode>(&inst);
+  square->x = square->y = 4;
+  offset->children = {square};
+  bool circle = false, hole = false, polygon = false;
+  SECTION("convex square corners")
+  {
+  }
+  SECTION("existing circle")
+  {
+    auto profile = std::make_shared<CircleNode>(&inst, smooth);
+    profile->r = 4;
+    offset->children = {profile};
+    circle = true;
+  }
+  SECTION("explicit polygonal circle")
+  {
+    auto profile = std::make_shared<CircleNode>(&inst, CurveDiscretizer(6.0));
+    profile->r = 4;
+    offset->children = {profile};
+    polygon = true;
+  }
+  SECTION("expanding square hole")
+  {
+    square->x = square->y = 10;
+    auto inner = std::make_shared<SquareNode>(&inst);
+    inner->x = inner->y = 4;
+    auto translate = std::make_shared<TransformNode>(&inst, "translate");
+    translate->matrix.translate(Vector3d(3, 3, 0));
+    translate->children = {inner};
+    auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+    difference->children = {square, translate};
+    offset->children = {difference};
+    offset->delta = -1;
+    hole = true;
+  }
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, smooth);
+  extrusion->height = Vector3d(0, 0, 3);
+  extrusion->children = {offset};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == (circle ? 1 : 0));
+  const auto occupied = [&](double x, double y) {
+    auto probe = BrepGeometry::cube(0.005, 0.005, 0.005);
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(Vector3d(x, y, 1));
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    return !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty();
+  };
+  if (circle || polygon) CHECK(brep->getBoundingBox().max().x() == Catch::Approx(5).margin(1e-5));
+  else if (hole) {
+    CHECK_FALSE(occupied(2.05, 2.57));
+    CHECK(occupied(2.1, 2.1));
+  } else {
+    CHECK(occupied(4.95, -0.43));
+    CHECK_FALSE(occupied(4.9, -0.9));
+  }
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
 TEST_CASE("B-Rep cut projection retains curved sections", "[brep]")
 {
   ModuleInstantiation inst("projection");

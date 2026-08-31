@@ -38,7 +38,8 @@ public:
   static BrepGeometry prism(const std::vector<std::array<double, 2>>& outline, double height);
   static BrepGeometry bezierPrism(
     const std::vector<std::vector<std::vector<std::array<double, 2>>>>& contours, double height);
-  [[nodiscard]] BrepGeometry offset2d(double delta, bool round, double height) const;
+  [[nodiscard]] BrepGeometry offset2d(double delta, bool round, double height,
+                                      bool chamfer = false) const;
   [[nodiscard]] BrepGeometry cutProjection(double height) const;
   [[nodiscard]] BrepGeometry shadowProjection(double height) const;
   static BrepGeometry hull(const std::vector<BrepGeometry>& operands);
