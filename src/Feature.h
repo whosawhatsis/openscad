@@ -29,6 +29,7 @@ public:
   static const Feature ExperimentalMultiMaterial;
   static const Feature ExperimentalTransparentCompositing;
   static const Feature ExperimentalTransparencyOrdering;
+  static const Feature ExperimentalScreenSpaceReflections;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif

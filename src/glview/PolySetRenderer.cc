@@ -122,6 +122,50 @@ void PolySetRenderer::setColorScheme(const ColorScheme& cs)
   colormap_[ColorMode::CGAL_EDGE_2D_COLOR] = ColorMap::getColor(cs, RenderColor::CGAL_EDGE_2D_COLOR);
 }
 
+namespace {
+
+// Faces whose color is transparent, or its complement. Returns nullptr when the
+// subset would be empty, so the common case - a model with no transparency at
+// all - allocates nothing and takes exactly the path it did before.
+//
+// The vertex array is copied wholesale rather than compacted: the split exists
+// to separate *draws*, and renumbering indices to drop unreferenced vertices
+// would cost more than the vertices save.
+std::shared_ptr<PolySet> facesByTransparency(const PolySet& ps, const Color4f& default_color,
+                                             bool wantTransparent)
+{
+  const auto isTransparent = [&](size_t i) {
+    const int32_t ci = i < ps.color_indices.size() ? ps.color_indices[i] : -1;
+    if (ci >= 0 && static_cast<size_t>(ci) < ps.colors.size() && ps.colors[ci].isValid()) {
+      return ps.colors[ci].a() < 1.0f;
+    }
+    return default_color.a() < 1.0f;
+  };
+
+  auto subset = std::make_shared<PolySet>(ps.getDimension(), ps.convexValue());
+  subset->setConvexity(ps.getConvexity());
+  subset->setTriangular(ps.isTriangular());
+  subset->vertices = ps.vertices;
+  subset->colors = ps.colors;
+  // dogfooding carries two more per-surface channels than the branch this split
+  // was written on. finishes is indexed by color_indices, which the subset keeps
+  // verbatim, so it copies across unchanged; body attributes carry the material
+  // name the renderer looks its default color up by.
+  subset->finishes = ps.finishes;
+  subset->copyBodyAttributes(ps);
+  for (size_t i = 0, n = ps.indices.size(); i < n; i++) {
+    if (isTransparent(i) != wantTransparent) continue;
+    subset->indices.push_back(ps.indices[i]);
+    if (!ps.color_indices.empty()) {
+      subset->color_indices.push_back(i < ps.color_indices.size() ? ps.color_indices[i] : -1);
+    }
+  }
+  if (subset->indices.empty()) return nullptr;
+  return subset;
+}
+
+}  // namespace
+
 void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderinfo)
 {
   VertexStateContainer& vertex_state_container = polyset_vertex_state_containers_.emplace_back();
@@ -137,27 +181,56 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
   }
   vbo_builder.allocateBuffers(num_vertices);
 
+  // Transparent faces go into their own container, drawn afterwards with depth
+  // writes off. Sharing one container is what tore: a transparent triangle that
+  // writes depth occludes every triangle behind it, including the rest of its
+  // own surface, so the interior of a transparent solid fills with stripes.
+  VertexStateContainer& transparent_container = polyset_transparent_containers_.emplace_back();
+  VBOBuilder transparent_builder(std::make_unique<VertexStateFactory>(), transparent_container);
+  transparent_builder.addSurfaceData();
+  transparent_builder.addShaderData();
+  transparent_builder.allocateBuffers(num_vertices);
+  bool any_transparent = false;
+
   for (const auto& polyset : this->polysets_) {
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
     getShaderColor(ColorMode::MATERIAL, color, polyset->materialName(), color);
-    // Fallback only: a PolySet that went through a material() carries its finish
-    // per face, and create_surface prefers that. This covers the single-material
-    // geometry whose attributes still ride on the object itself.
-    vbo_builder.setFinish({polyset->shaderRoughness(), polyset->metallic()});
-    add_shader_pointers(vbo_builder, shaderinfo);
 
     // Smooth shading is a property of the Shaded mode's lighting, so it is applied
     // only when that shader is bound. Smoothing the default view would move every
     // render regression image in the suite.
     const double smooth_angle = smoothShading() ? polyset->smoothAngle() : 0.0;
 
-    vbo_builder.writeSurface();
-    vbo_builder.create_surface(*polyset, Transform3d::Identity(), color, enable_barycentric, false,
-                               smooth_angle);
+    const auto opaque = facesByTransparency(*polyset, color, false);
+    const auto transparent = facesByTransparency(*polyset, color, true);
+
+    if (opaque) {
+      // Fallback only: a PolySet that went through a material() carries its finish
+      // per face, and create_surface prefers that. This covers the single-material
+      // geometry whose attributes still ride on the object itself.
+      vbo_builder.setFinish({polyset->shaderRoughness(), polyset->metallic()});
+      add_shader_pointers(vbo_builder, shaderinfo);
+      vbo_builder.writeSurface();
+      vbo_builder.create_surface(*opaque, Transform3d::Identity(), color, enable_barycentric, false,
+                                 smooth_angle);
+    }
+    if (transparent) {
+      any_transparent = true;
+      transparent_builder.setFinish({polyset->shaderRoughness(), polyset->metallic()});
+      add_shader_pointers(transparent_builder, shaderinfo);
+      transparent_builder.writeSurface();
+      transparent_builder.create_surface(*transparent, Transform3d::Identity(), color,
+                                         enable_barycentric, false, smooth_angle);
+    }
   }
 
   vbo_builder.createInterleavedVBOs();
+  if (any_transparent) {
+    transparent_builder.createInterleavedVBOs();
+  } else {
+    polyset_transparent_containers_.pop_back();
+  }
 }
 
 void PolySetRenderer::createPolygonStates()
@@ -274,13 +347,28 @@ void PolySetRenderer::drawPolySets(bool showedges, const ShaderUtils::ShaderInfo
     VBOUtils::shader_attribs_enable(*shaderinfo);
   }
 
-  for (const auto& container : polyset_vertex_state_containers_) {
-    for (const auto& vertex_state : container.states()) {
-      const auto shader_vs = std::dynamic_pointer_cast<VBOShaderVertexState>(vertex_state);
-      if (!shader_vs || (shader_vs && showedges)) {
-        vertex_state->draw();
+  const auto draw_containers = [&](const std::vector<VertexStateContainer>& containers) {
+    for (const auto& container : containers) {
+      for (const auto& vertex_state : container.states()) {
+        const auto shader_vs = std::dynamic_pointer_cast<VBOShaderVertexState>(vertex_state);
+        if (!shader_vs || (shader_vs && showedges)) {
+          vertex_state->draw();
+        }
       }
     }
+  };
+
+  draw_containers(polyset_vertex_state_containers_);
+
+  // Depth writes off, not sorted: this removes the self-occlusion that tore the
+  // surface, and leaves blending between separate transparent surfaces in
+  // arbitrary order. That is the honest half of the fix - correct ordering needs
+  // per-triangle sorting or OIT, which is candidate 2 on this row and a larger
+  // change. Depth *testing* stays on, so opaque geometry still occludes.
+  if (!polyset_transparent_containers_.empty()) {
+    GL_CHECKD(glDepthMask(GL_FALSE));
+    draw_containers(polyset_transparent_containers_);
+    GL_CHECKD(glDepthMask(GL_TRUE));
   }
 
   if (enable_shader) {

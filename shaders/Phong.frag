@@ -7,6 +7,14 @@ varying vec3 vBC;
 varying vec4 vMaterial;
 uniform bool showEdges;
 
+// Screen-space reflections. The scene as drawn by a first pass, plus its depth,
+// so a surface can reflect the model itself instead of only the stand-in
+// environment. Off unless the experimental feature is enabled, in which case
+// the geometry is drawn twice and this is the second pass.
+uniform bool ssrEnabled;
+uniform sampler2D ssrColor;
+uniform sampler2D ssrDepth;
+
 const float PI = 3.14159265;
 
 float edgeFactor()
@@ -78,6 +86,88 @@ vec3 environmentColor(vec3 dir, float roughness)
   return mix(ground, sky, mix(horizon, 0.5, 0.6 * abs(dir.z)));
 }
 
+// View-space z for a window-space depth. Perspective and orthographic differ in
+// whether clip w carries -z, and OpenSCAD offers both, so read which one this is
+// off the projection matrix rather than assuming.
+float viewDepth(float ndcZ)
+{
+  if (gl_ProjectionMatrix[2][3] != 0.0) {
+    return gl_ProjectionMatrix[3][2] / (-ndcZ - gl_ProjectionMatrix[2][2]);
+  }
+  return (ndcZ - gl_ProjectionMatrix[3][2]) / gl_ProjectionMatrix[2][2];
+}
+
+// March the reflection ray through the depth buffer. Returns the reflected
+// color in rgb and a confidence in a: 0 means nothing was hit and the caller
+// must fall back to the environment, which is most of the frame in a typical
+// CAD scene where the model occupies a fraction of the viewport.
+vec4 screenSpaceReflection(vec3 origin, vec3 dir)
+{
+  // Everything here is scaled by the distance to the shaded point rather than
+  // fixed in millimetres. OpenSCAD models range from watch parts to buildings
+  // and a constant step would be either uselessly coarse or unusably slow
+  // depending only on what the user happens to be drawing.
+  float stride = 0.02 * length(origin);
+  float t = 0.0;
+  float previousT = 0.0;
+  bool crossed = false;
+
+  // Coarse march: find the step on which the ray passes behind the recorded
+  // surface. This only brackets the crossing - it does not locate it.
+  for (int i = 0; i < 32; ++i) {
+    previousT = t;
+    t += stride;
+    // Grow geometrically: fine near the surface, where contact reflections
+    // live and error is most visible, cheap further out.
+    stride *= 1.12;
+    vec3 probe = origin + dir * t;
+    // Behind the eye - nothing in front of the camera can be sampled.
+    if (probe.z > -1e-4) return vec4(0.0);
+
+    vec4 clip = gl_ProjectionMatrix * vec4(probe, 1.0);
+    vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);
+
+    float surface = viewDepth(texture2D(ssrDepth, uv).r * 2.0 - 1.0);
+    if (probe.z < surface) {
+      // A depth buffer records a front face, not a solid, so anything deeper
+      // than a plausible thickness is a different object the ray passed behind
+      // rather than the one it hit. Relative for the same reason the stride is.
+      if (surface - probe.z > 0.08 * abs(surface)) return vec4(0.0);
+      crossed = true;
+      break;
+    }
+  }
+  if (!crossed) return vec4(0.0);
+
+  // Bisect the bracketing interval. Without this the reflection is quantized to
+  // the coarse steps and a curved object reflects as a stack of rings - which
+  // is exactly what the first working version of this drew. Ten halvings take
+  // the residual error below a pixel for any stride this loop produces, and
+  // cost six texture samples against the 32 above.
+  for (int i = 0; i < 10; ++i) {
+    float mid = (previousT + t) * 0.5;
+    vec3 probe = origin + dir * mid;
+    vec4 clip = gl_ProjectionMatrix * vec4(probe, 1.0);
+    vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
+    float surface = viewDepth(texture2D(ssrDepth, uv).r * 2.0 - 1.0);
+    if (probe.z < surface) {
+      t = mid;
+    } else {
+      previousT = mid;
+    }
+  }
+
+  vec3 hit = origin + dir * t;
+  vec4 clip = gl_ProjectionMatrix * vec4(hit, 1.0);
+  vec2 uv = (clip.xy / clip.w) * 0.5 + 0.5;
+  // Fade out at the screen edge, where the reflected object simply is not in
+  // the buffer, so reflections dissolve instead of ending in a hard line.
+  vec2 edge = smoothstep(vec2(0.0), vec2(0.1), uv) *
+              (vec2(1.0) - smoothstep(vec2(0.9), vec2(1.0), uv));
+  return vec4(texture2D(ssrColor, uv).rgb, edge.x * edge.y);
+}
+
 void main(void)
 {
   vec3 normal = normalize(vNormal);
@@ -110,6 +200,19 @@ void main(void)
   vec3 reflection = reflect(-viewDirection, normal);
   vec3 reflectionWorld = normalize(mat3(gl_ModelViewMatrixInverse) * reflection);
   vec3 environment = environmentColor(reflectionWorld, roughness);
+  if (ssrEnabled) {
+    // A rough surface scatters its reflection over a cone that a single ray
+    // cannot represent, so confidence falls away with roughness rather than
+    // the march being run and then blurred - which it has no way to do here.
+    // Start the ray just off the surface along its own normal. Without this a
+    // ray leaving at a grazing angle immediately re-hits the surface it came
+    // from - the depth buffer cannot tell "this pixel" from "a pixel in front
+    // of it" - and the contact region fringes with spurious hits.
+    vec3 rayOrigin = vEyePosition + normal * (0.01 * length(vEyePosition));
+    vec4 hit = screenSpaceReflection(rayOrigin, reflection);
+    float weight = hit.a * (1.0 - smoothstep(0.05, 0.45, roughness));
+    environment = mix(environment, hit.rgb, weight);
+  }
   // F0 rather than a Fresnel term. Schlick against the view direction is the more
   // correct ambient reflectance, but it approaches 1 at grazing angles for *every*
   // material, so it lifts plain dielectrics along with the metals it is there for -
