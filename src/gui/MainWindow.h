@@ -411,12 +411,24 @@ public slots:
   void viewModeRender();
 #ifdef ENABLE_OPENCSG
   void viewModePreview();
+  void setAnalysisMode(AnalysisMode mode);
   void on_viewActionPreview_triggered();
 #endif
   void viewModeThrownTogether();
+  void on_viewActionAnalysisViewDefault_triggered();
+  void on_viewActionAnalysisViewShaded_triggered();
+  void on_viewActionAnalysisViewNormal_triggered();
+  void on_viewActionAnalysisViewCoordinate_triggered();
+  void on_viewActionAnalysisViewFlat_triggered();
+  void on_viewActionAnalysisViewCanny_triggered();
+  void on_viewActionAnalysisViewWireframe_triggered();
+  void on_viewActionAnalysisViewChromatic_triggered();
   void on_viewActionThrownTogether_triggered();
   void updateViewModeAfterGLInit();
   void on_viewActionShowEdges_toggled(bool checked);
+  void on_viewActionAnalysisViewDepth_triggered();
+  void on_viewActionAnalysisViewDepthMetric_triggered();
+  void on_viewActionAnalysisViewDepthMetricFine_triggered();
   void on_viewActionShowAxes_toggled(bool checked);
   void on_viewActionShowScaleProportional_toggled(bool checked);
   void on_viewActionShowCrosshairs_toggled(bool checked);
@@ -518,6 +530,7 @@ private:
 
   QActionGroup *viewActionProjectionGroup;
   QActionGroup *previewModeGroup;
+  QActionGroup *analysisViewGroup;
 
 signals:
   void highlightError(int);

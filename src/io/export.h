@@ -1,5 +1,7 @@
 #pragma once
 
+#include "io/depthmap.h"
+
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm.hpp>
 #include <filesystem>
@@ -17,6 +19,7 @@
 #include "geometry/Geometry.h"
 #include "geometry/linalg.h"
 #include "glview/Camera.h"
+#include "glview/GLView.h"
 #include "glview/ColorMap.h"
 #include "io/export_enums.h"
 
@@ -41,6 +44,13 @@ enum class FileFormat {
   TERM,
   ECHO,
   PNG,
+  DEPTHMAP,
+  PFM,
+  NORMALMAP_PNG,
+  CANNYMAP_PNG,
+  COORDINATEMAP_PNG,
+  FLATMAP_PNG,
+  CHROMATIC_PNG,
   PDF,
   POV,
   PARAM,
@@ -354,6 +364,8 @@ struct ViewOption {
 };
 
 struct ViewOptions {
+  double edgeWidth = 1.0;
+  bool canny = false;
   Previewer previewer{Previewer::OPENCSG};
   RenderType renderer{RenderType::OPENCSG};
 
@@ -362,6 +374,17 @@ struct ViewOptions {
     {"scales", false},
     {"edges", false},
     {"crosshairs", false},
+    {"shaded", false},
+    // Shade the model by distance rather than by lighting. A render toggle, not
+    // an output encoding, which is why it belongs here and the depthmap profile
+    // does not.
+    {"depth", false},
+    // The two absolute-scale previews. Separate flags rather than a value on
+    // "depth" because --view takes a list of names, and because they render
+    // differently enough (near dark, background at the maximum) to be their own
+    // thing rather than a variant of it.
+    {"depth-metric", false},
+    {"depth-metric10um", false},
   };
 
   const std::vector<std::string> names()
@@ -380,10 +403,35 @@ class OffscreenView;
 
 std::string get_current_iso8601_date_time_utc();
 
-std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera);
+/*!
+   Build and paint an offscreen preview.
+
+   Every setting here must be supplied to this call rather than set on the view it
+   returns: this function paints, and export_png(const OffscreenView&) only saves
+   the framebuffer that paint left behind. Anything applied afterwards never
+   reaches a paint, and the export silently writes an ordinary shaded image.
+ */
+std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& options, Camera& camera,
+                                               const DepthmapOptions& depthOptions = {},
+                                               AnalysisMode agentMode = AnalysisMode::Default,
+                                               bool chromaticGauge = true);
 bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
                 Camera& camera, std::ostream& output);
+//! As above, but carrying the depth options so --view=depth shades with the same
+//! range a depthmap export would encode with.
+bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
+                Camera& camera, const DepthmapOptions& depthOptions, std::ostream& output);
 bool export_png(const OffscreenView& glview, std::ostream& output);
+bool export_depthmap(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
+                     Camera& camera, DepthProfile profile, std::ostream& output);
+bool export_depthmap(const OffscreenView& glview, DepthProfile profile, std::ostream& output);
+bool export_depthmap(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
+                     Camera& camera, const DepthmapOptions& depthOptions, std::ostream& output);
+bool export_depthmap(const OffscreenView& glview, const DepthmapOptions& depthOptions,
+                     std::ostream& output);
+bool export_pfm(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
+                Camera& camera, std::ostream& output);
+bool export_pfm(const OffscreenView& glview, std::ostream& output);
 bool export_param(SourceFile *root, const fs::path& path, std::ostream& output);
 
 std::unique_ptr<PolySet> createSortedPolySet(const PolySet& ps);

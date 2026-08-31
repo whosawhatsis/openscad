@@ -514,6 +514,9 @@ void MainWindow::loadViewSettings()
   if (settings.value("view/showEdges").toBool()) {
     viewActionShowEdges->setChecked(true);
   }
+  if (settings.value("view/showDepth").toBool()) {
+    viewActionAnalysisViewDepth->trigger();
+  }
   if (settings.value("view/showAxes", true).toBool()) {
     viewActionShowAxes->setChecked(true);
   }
@@ -1089,9 +1092,9 @@ void MainWindow::compileCSG()
       renderStatistic.printCacheStatistic();
       this->processEvents();
     } catch (const ProgressCancelException&) {
-      LOG("CSG generation cancelled.");
+      LOG("CSG generation canceled.");
     } catch (const HardWarningException&) {
-      LOG("CSG generation cancelled due to hardwarning being enabled.");
+      LOG("CSG generation canceled due to hardwarning being enabled.");
     }
     progress_report_fin();
     updateStatusBar(nullptr);
@@ -2166,19 +2169,8 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
     LOG("Rendering finished.");
 
     this->rootGeom = root_geom;
-#if defined(USE_POLYSET_FOR_CGAL)
+    // All shading views share the mesh renderer, including feature-edge capture.
     this->geomRenderer = std::make_shared<PolySetRenderer>(this->rootGeom);
-#else
-    // Choose PolySetRenderer for PolySet and Polygon2d, and for Manifold since we
-    // know that all geometries are convertible to PolySet.
-    if (RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
-        std::dynamic_pointer_cast<const PolySet>(this->rootGeom) ||
-        std::dynamic_pointer_cast<const Polygon2d>(this->rootGeom)) {
-      this->geomRenderer = std::make_shared<PolySetRenderer>(this->rootGeom);
-    } else {
-      this->geomRenderer = std::make_shared<CGALRenderer>(this->rootGeom);
-    }
-#endif
 
     // Go to CGAL view mode
     viewModeRender();
@@ -2902,6 +2894,66 @@ void MainWindow::viewModePreview()
 
 #endif /* ENABLE_OPENCSG */
 
+void MainWindow::setAnalysisMode(AnalysisMode mode)
+{
+  if (mode != AnalysisMode::Depth) {
+    // Otherwise the persisted preference outlives the choice that replaced it
+    // and the next launch reopens in Depth.
+    QSettingsCached().setValue("view/showDepth", false);
+  }
+  this->qglview->setAnalysisMode(mode);
+  if ((mode == AnalysisMode::Canny || mode == AnalysisMode::Wireframe) && rootGeom &&
+      qglview->getRenderer() == geomRenderer.get()) {
+    geomRenderer = std::make_shared<PolySetRenderer>(rootGeom);
+    qglview->setRenderer(geomRenderer);
+    qglview->updateColorScheme();
+  }
+  // The viewport paints on its own schedule, so unlike the CLI export path the
+  // mode only has to be set before the next paint rather than before a
+  // particular one - but it still has to force that paint.
+  this->qglview->update();
+}
+
+void MainWindow::on_viewActionAnalysisViewDefault_triggered()
+{
+  setAnalysisMode(AnalysisMode::Default);
+}
+
+void MainWindow::on_viewActionAnalysisViewShaded_triggered()
+{
+  setAnalysisMode(AnalysisMode::Shaded);
+}
+
+void MainWindow::on_viewActionAnalysisViewNormal_triggered()
+{
+  setAnalysisMode(AnalysisMode::Normal);
+}
+
+void MainWindow::on_viewActionAnalysisViewCoordinate_triggered()
+{
+  setAnalysisMode(AnalysisMode::Coordinate);
+}
+
+void MainWindow::on_viewActionAnalysisViewFlat_triggered()
+{
+  setAnalysisMode(AnalysisMode::Flat);
+}
+
+void MainWindow::on_viewActionAnalysisViewCanny_triggered()
+{
+  setAnalysisMode(AnalysisMode::Canny);
+}
+
+void MainWindow::on_viewActionAnalysisViewWireframe_triggered()
+{
+  setAnalysisMode(AnalysisMode::Wireframe);
+}
+
+void MainWindow::on_viewActionAnalysisViewChromatic_triggered()
+{
+  setAnalysisMode(AnalysisMode::Chromatic);
+}
+
 void MainWindow::updateViewModeAfterGLInit()
 {
 #ifdef ENABLE_OPENCSG
@@ -2932,6 +2984,23 @@ void MainWindow::on_viewActionShowEdges_toggled(bool checked)
   settings.setValue("view/showEdges", checked);
   this->qglview->setShowEdges(checked);
   this->qglview->update();
+}
+
+void MainWindow::on_viewActionAnalysisViewDepth_triggered()
+{
+  QSettingsCached settings;
+  settings.setValue("view/showDepth", true);
+  setAnalysisMode(AnalysisMode::Depth);
+}
+
+void MainWindow::on_viewActionAnalysisViewDepthMetric_triggered()
+{
+  setAnalysisMode(AnalysisMode::DepthMetric);
+}
+
+void MainWindow::on_viewActionAnalysisViewDepthMetricFine_triggered()
+{
+  setAnalysisMode(AnalysisMode::DepthMetricFine);
 }
 
 void MainWindow::on_viewActionShowAxes_toggled(bool checked)
@@ -4114,6 +4183,23 @@ void MainWindow::setupMenusAndActions()
   previewModeGroup->setExclusive(true);
   previewModeGroup->addAction(this->viewActionPreview);
   previewModeGroup->addAction(this->viewActionThrownTogether);
+
+  // Exclusive: the modes are alternative ways of drawing the same view, not
+  // toggles that compose.
+  analysisViewGroup = new QActionGroup(this);
+  analysisViewGroup->setExclusive(true);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDefault);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewShaded);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepth);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetric);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewDepthMetricFine);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewNormal);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewCoordinate);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewFlat);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewCanny);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewWireframe);
+  analysisViewGroup->addAction(this->viewActionAnalysisViewChromatic);
+  this->viewActionAnalysisViewDefault->setChecked(true);
   if (this->qglview->hasOpenCSGSupport()) {
     this->viewActionPreview->setChecked(true);
   } else {

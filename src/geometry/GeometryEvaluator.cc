@@ -496,6 +496,30 @@ void GeometryEvaluator::addToParent(const State& state, const AbstractNode& node
     copy->copyBodyAttributes(*children->second.front().second);
     attributedGeom = std::move(copy);
   }
+  std::shared_ptr<const Geometry> attributedGeom = geom;
+  const auto children = this->visitedchildren.find(node.index());
+  // Carry the smoothing tolerance across whatever this node did to its children. A
+  // boolean produces a new PolySet, so without this the result falls back to the
+  // default and a model built from parts with a coarse $fa loses its smoothing the
+  // moment it is subtracted from anything.
+  //
+  // The maximum, not the minimum: the tolerance says how coarsely a part was allowed
+  // to be tessellated, and the coarsest part is the one that needs the most tolerance
+  // to still read as curved. The minimum would leave it faceted. The risk this takes
+  // is the reverse - a genuine edge shallower than the coarsest part's tolerance gets
+  // smoothed - which needs $fa above about 22 before it can reach a 45 degree chamfer.
+  // A per-face tolerance would avoid the trade entirely and is the real fix.
+  if (geom && children != this->visitedchildren.end() && !children->second.empty()) {
+    double inherited = 0.0;
+    for (const auto& child : children->second) {
+      if (child.second) inherited = std::max(inherited, child.second->smoothAngle());
+    }
+    if (inherited > 0.0 && inherited != geom->smoothAngle()) {
+      auto copy = geom->copy();
+      copy->setSmoothAngle(inherited);
+      attributedGeom = std::move(copy);
+    }
+  }
   this->visitedchildren.erase(node.index());
   if (state.parent()) {
     this->visitedchildren[state.parent()->index()].push_back(
