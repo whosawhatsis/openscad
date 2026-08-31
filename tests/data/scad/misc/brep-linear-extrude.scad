@@ -25,3 +25,9 @@ translate([110, 0, 0]) linear_extrude(height=8, scale=0) circle(r=4);
 translate([120, 0, 0]) linear_extrude(height=8, scale=0) circle(r=4, $fn=6);
 translate([130, 0, 0]) linear_extrude(height=8, scale=0)
   difference() { circle(r=4); circle(r=2); }
+translate([145, 0, 0]) linear_extrude(height=8, scale=[0,1]) circle(r=4);
+translate([155, 0, 0]) linear_extrude(height=8, scale=[1,0], twist=90) circle(r=4, $fn=6);
+translate([170, 0, 0]) linear_extrude(height=20, twist=360, scale=[0.5,1.5])
+  translate([3,0]) circle(r=0.4);
+translate([180, 0, 0]) linear_extrude(height=20, twist=-360, scale=0)
+  translate([3,0]) circle(r=0.4);

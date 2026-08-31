@@ -891,18 +891,167 @@ TEST_CASE("B-Rep zero-scale extrusion closes at an apex", "[brep]")
   CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
 }
 
-TEST_CASE("Unsupported B-Rep extrusion variants do not silently become meshes", "[brep]")
+TEST_CASE("B-Rep twisted extrusion follows the profile throughout its height", "[brep]")
+{
+  ModuleInstantiation inst("linear_extrude");
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 20);
+  extrusion->twist = 360;
+  auto circle = std::make_shared<CircleNode>(
+    &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  circle->r = 0.4;
+  auto translate = std::make_shared<TransformNode>(&inst, "translate");
+  translate->matrix.translate(Vector3d(3, 0, 0));
+  translate->children = {circle};
+  extrusion->children = {translate};
+  bool hollow = false;
+  SECTION("full turn")
+  {
+  }
+  SECTION("hollow twisted profile")
+  {
+    auto inner = std::make_shared<CircleNode>(&inst, circle->discretizer);
+    inner->r = 0.2;
+    auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+    difference->children = {circle, inner};
+    translate->children = {difference};
+    hollow = true;
+  }
+  SECTION("negative multiple turns")
+  {
+    extrusion->twist = -720;
+  }
+  SECTION("twist combined with one-axis collapse")
+  {
+    extrusion->scale_x = 0;
+  }
+  SECTION("nonuniform taper")
+  {
+    extrusion->scale_x = 0.5;
+    extrusion->scale_y = 1.5;
+  }
+  SECTION("apex")
+  {
+    extrusion->scale_x = extrusion->scale_y = 0;
+  }
+  SECTION("faceted profile")
+  {
+    circle->discretizer = CurveDiscretizer(6.0);
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->numFacets() == 0);
+  for (double t : {0.137, 0.371, 0.613, 0.887}) {
+    const double angle = -extrusion->twist * t * M_PI / 180;
+    const double sx = 1 + (extrusion->scale_x - 1) * t;
+    const double sy = 1 + (extrusion->scale_y - 1) * t;
+    auto probe = BrepGeometry::cube(0.02, 0.02, 0.02);
+    Transform3d transform = Transform3d::Identity();
+    const double radius = hollow ? 3.3 : 3.0;
+    transform.translate(Vector3d(radius * sx * std::cos(angle), radius * sy * std::sin(angle), 20 * t));
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    CHECK_FALSE(
+      BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
+  }
+  const auto display = brep->toDisplayMesh(0.05, 0.2);
+  CHECK_FALSE(display.triangles.empty());
+  if (!circle->discretizer.isFnSpecified()) {
+    double maxError = 0;
+    size_t samples = 0;
+    for (const auto& p : display.vertices) {
+      const double t = p[2] / 20;
+      if (t <= 0.01 || t >= 0.99) continue;
+      ++samples;
+      const double angle = extrusion->twist * t * M_PI / 180;
+      const double x = p[0] / (1 + (extrusion->scale_x - 1) * t);
+      const double y = p[1] / (1 + (extrusion->scale_y - 1) * t);
+      const double radius = std::hypot(x * std::cos(angle) - y * std::sin(angle) - 3,
+                                       x * std::sin(angle) + y * std::cos(angle));
+      const double error =
+        hollow ? std::min(std::abs(radius - 0.4), std::abs(radius - 0.2)) : std::abs(radius - 0.4);
+      maxError = std::max(maxError, error);
+    }
+    REQUIRE(samples > 0);
+    CHECK(maxError < 0.00001);
+  }
+}
+
+TEST_CASE("B-Rep one-axis collapse retains a closed solid", "[brep]")
+{
+  ModuleInstantiation inst("linear_extrude");
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 8);
+  extrusion->scale_x = 0;
+  auto circle = std::make_shared<CircleNode>(
+    &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  circle->r = 4;
+  extrusion->children = {circle};
+  SECTION("circle collapsed along X")
+  {
+  }
+  SECTION("circle collapsed along Y")
+  {
+    extrusion->scale_x = 1;
+    extrusion->scale_y = 0;
+  }
+  SECTION("polygon")
+  {
+    circle->discretizer = CurveDiscretizer(6.0);
+  }
+  SECTION("twisted collapse")
+  {
+    extrusion->twist = 90;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->numFacets() == 0);
+  const auto occupied = [&](double x, double y) {
+    auto probe = BrepGeometry::cube(0.05, 0.05, 0.05);
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(Vector3d(x, y, 7));
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    return !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty();
+  };
+  CHECK(occupied(0, 0));
+  CHECK_FALSE(occupied(extrusion->scale_x == 0 ? 1 : 0, extrusion->scale_y == 0 ? 1 : 0));
+  CHECK(occupied(extrusion->scale_x == 0 ? 0 : 2, extrusion->scale_y == 0 ? 0 : 2));
+  CHECK_FALSE(brep->toDisplayMesh(0.05, 0.2).triangles.empty());
+}
+
+TEST_CASE("Invalid B-Rep extrusion parameters do not silently become meshes", "[brep]")
 {
   ModuleInstantiation inst("linear_extrude");
   auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(0.0));
   extrusion->children = {std::make_shared<SquareNode>(&inst)};
-  SECTION("twist")
+  SECTION("negative X scale")
   {
-    extrusion->twist = 45.0;
+    extrusion->scale_x = -1;
   }
-  SECTION("collapsed scale")
+  SECTION("negative Y scale")
   {
-    extrusion->scale_x = 0.0;
+    extrusion->scale_y = -1;
+  }
+  SECTION("excessive explicit slices")
+  {
+    extrusion->twist = 90;
+    extrusion->has_slices = true;
+    extrusion->slices = 4097;
   }
   const auto previousBackend = RenderSettings::inst()->backend3D;
   RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;

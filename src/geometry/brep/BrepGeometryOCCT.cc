@@ -43,6 +43,15 @@
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <gp_GTrsf.hxx>
 #include <gp_Pln.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <Geom_TrimmedCurve.hxx>
+#include <Geom_Line.hxx>
+#include <GeomConvert.hxx>
+#include <GeomAPI_ExtremaCurveCurve.hxx>
+#include <TColgp_Array2OfPnt.hxx>
+#include <TColStd_Array2OfReal.hxx>
+#include <algorithm>
 
 namespace {
 
@@ -196,14 +205,116 @@ std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double a
   }
 }
 
+namespace {
+
+// Map exact rational profile curves into a tensor-product surface. Cubic Hermite spans
+// approximate rotation in height; zero twist is exactly linear, including singular end scales.
+std::shared_ptr<void> deformedProfile(const TopoDS_Face& face, double height, double sx, double sy,
+                                      double twist, unsigned int minimumSpans)
+{
+  const auto position = [&](const gp_Pnt& p, double t) {
+    const double c = std::cos(twist * t), s = std::sin(twist * t);
+    return gp_Pnt((1 + (sx - 1) * t) * (c * p.X() - s * p.Y()),
+                  (1 + (sy - 1) * t) * (s * p.X() + c * p.Y()), height * t);
+  };
+  const auto tangent = [&](const gp_Pnt& p, double t) {
+    const double c = std::cos(twist * t), s = std::sin(twist * t);
+    const double x = c * p.X() - s * p.Y(), y = s * p.X() + c * p.Y();
+    return gp_Vec((sx - 1) * x - (1 + (sx - 1) * t) * twist * y,
+                  (sy - 1) * y + (1 + (sy - 1) * t) * twist * x, height);
+  };
+  // Hermite error <= max|f''''| / (384*n^4); tolerance is 1e-7 of the profile control-point radius.
+  const double w = std::abs(twist);
+  const double bound = std::pow(w, 4) * std::max({1.0, sx, sy}) +
+                       4 * std::pow(w, 3) * std::max(std::abs(sx - 1), std::abs(sy - 1));
+  const double required =
+    std::max({1.0, static_cast<double>(minimumSpans), std::ceil(std::pow(bound / (384e-7), 0.25))});
+  if (required > 4096) throw std::runtime_error("B-Rep twist exceeds the surface complexity limit");
+  const int spans = static_cast<int>(required);
+  TColStd_Array1OfReal vKnots(1, spans + 1);
+  TColStd_Array1OfInteger vMults(1, spans + 1);
+  for (int i = 0; i <= spans; ++i) {
+    vKnots(i + 1) = static_cast<double>(i) / spans;
+    vMults(i + 1) = i == 0 || i == spans ? 4 : 3;
+  }
+  BRepBuilderAPI_Sewing sewing(Precision::Confusion());
+  sewing.Add(face);
+  if (sx > 0 && sy > 0) {
+    gp_GTrsf top;
+    top.SetValue(1, 1, sx * std::cos(twist));
+    top.SetValue(1, 2, -sx * std::sin(twist));
+    top.SetValue(2, 1, sy * std::sin(twist));
+    top.SetValue(2, 2, sy * std::cos(twist));
+    top.SetValue(3, 4, height);
+    sewing.Add(BRepBuilderAPI_GTransform(face.Reversed(), top, true).Shape());
+  }
+  for (TopExp_Explorer edges(face, TopAbs_EDGE); edges.More(); edges.Next()) {
+    double first, last;
+    auto curve = BRep_Tool::Curve(TopoDS::Edge(edges.Current()), first, last);
+    std::vector<double> cuts{first, last};
+    if (((sx == 0) != (sy == 0)) &&
+        BRepAdaptor_Curve(TopoDS::Edge(edges.Current())).GetType() != GeomAbs_Line) {
+      // Split at extrema of the surviving coordinate so collapsed top edges cannot retrace.
+      const gp_Dir axis = sx == 0 ? gp_Dir(std::cos(twist), -std::sin(twist), 0)
+                                  : gp_Dir(std::sin(twist), std::cos(twist), 0);
+      Handle(Geom_Curve) trimmed = new Geom_TrimmedCurve(curve, first, last);
+      GeomAPI_ExtremaCurveCurve extrema(trimmed, new Geom_Line(gp_Ax1(gp_Pnt(0, 0, 0), axis)));
+      for (int i = 1; !extrema.IsParallel() && i <= extrema.NbExtrema(); ++i) {
+        double u, unused;
+        extrema.Parameters(i, u, unused);
+        if (u > first + Precision::PConfusion() && u < last - Precision::PConfusion()) cuts.push_back(u);
+      }
+    }
+    std::sort(cuts.begin(), cuts.end());
+    cuts.erase(
+      std::unique(cuts.begin(), cuts.end(),
+                  [](double a, double b) { return std::abs(a - b) <= Precision::PConfusion(); }),
+      cuts.end());
+    for (size_t part = 1; part < cuts.size(); ++part) {
+      const auto section =
+        GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(curve, cuts[part - 1], cuts[part]));
+      TColgp_Array2OfPnt poles(1, section->NbPoles(), 1, 3 * spans + 1);
+      TColStd_Array2OfReal weights(1, section->NbPoles(), 1, 3 * spans + 1);
+      for (int u = 1; u <= section->NbPoles(); ++u) {
+        const auto p = section->Pole(u);
+        for (int v = 0; v < spans; ++v) {
+          const double t0 = static_cast<double>(v) / spans, t1 = static_cast<double>(v + 1) / spans;
+          poles(u, 3 * v + 1) = position(p, t0);
+          poles(u, 3 * v + 2) = position(p, t0).Translated(tangent(p, t0) / (3 * spans));
+          poles(u, 3 * v + 3) = position(p, t1).Translated(-tangent(p, t1) / (3 * spans));
+          poles(u, 3 * v + 4) = position(p, t1);
+        }
+        for (int v = 1; v <= 3 * spans + 1; ++v) weights(u, v) = section->Weight(u);
+      }
+      Handle(Geom_BSplineSurface) surface =
+        new Geom_BSplineSurface(poles, weights, section->Knots(), vKnots, section->Multiplicities(),
+                                vMults, section->Degree(), 3);
+      BRepBuilderAPI_MakeFace side(surface, Precision::Confusion());
+      if (!side.IsDone()) throw std::runtime_error("B-Rep deformation face construction failed");
+      sewing.Add(side.Face());
+    }
+  }
+  sewing.Perform();
+  if (sewing.NbFreeEdges() || sewing.NbMultipleEdges() ||
+      sewing.SewedShape().ShapeType() != TopAbs_SHELL)
+    throw std::runtime_error("B-Rep deformed extrusion is not a closed shell");
+  auto solid = BRepBuilderAPI_MakeSolid(TopoDS::Shell(sewing.SewedShape())).Solid();
+  if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+    throw std::runtime_error("B-Rep deformed extrusion does not form a valid solid");
+  return std::make_shared<TopoDS_Shape>(solid);
+}
+
+}  // namespace
+
 std::shared_ptr<void> brepTaper(const std::shared_ptr<void>& profile, double height, double scaleX,
-                                double scaleY)
+                                double scaleY, double twist, unsigned int minimumSpans)
 {
   if (brepIsEmpty(profile)) return {};
   const bool apex = scaleX == 0.0 && scaleY == 0.0;
-  if (!std::isfinite(height) || !std::isfinite(scaleX) || !std::isfinite(scaleY) || height <= 0 ||
-      (!apex && (scaleX <= 0 || scaleY <= 0)))
-    throw std::invalid_argument("B-Rep taper requires finite positive scales or a zero-scale apex");
+  if (!std::isfinite(height) || !std::isfinite(scaleX) || !std::isfinite(scaleY) ||
+      !std::isfinite(twist) || height <= 0 || scaleX < 0 || scaleY < 0)
+    throw std::invalid_argument(
+      "B-Rep extrusion requires finite twist, positive height and nonnegative scales");
   try {
     std::vector<std::shared_ptr<void>> solids;
     for (TopExp_Explorer faces(shapeFrom(profile), TopAbs_FACE); faces.More(); faces.Next()) {
@@ -215,6 +326,10 @@ std::shared_ptr<void> brepTaper(const std::shared_ptr<void>& profile, double hei
           std::abs(plane.Location().Z()) > Precision::Confusion())
         continue;
       TopoDS_Face top;
+      if (twist != 0 || ((scaleX == 0) != (scaleY == 0))) {
+        solids.push_back(deformedProfile(face, height, scaleX, scaleY, twist, minimumSpans));
+        continue;
+      }
       if (apex) {
         const auto outer = BRepTools::OuterWire(face);
         const auto loft = [&](const TopoDS_Wire& wire) -> std::shared_ptr<void> {
