@@ -126,6 +126,12 @@ public:
   int compileWarnings = 0;
 
   MainWindow(const QStringList& filenames);
+#ifdef ENABLE_GUI_TESTS
+  //! Test-only view of the preview state. A preview is composited from these, so a test that only
+  //! checked the geometry would not notice an empty view.
+  const std::shared_ptr<CSGProducts>& previewProductsForTest() const { return this->rootProduct; }
+  bool hasPreviewRendererForTest() const { return this->thrownTogetherRenderer != nullptr; }
+#endif
   ~MainWindow() override;
 
 private:
@@ -473,8 +479,17 @@ private:
   const bool processIsolation;
   //! Holds the editor's text for as long as the worker is reading it.
   std::unique_ptr<class QTemporaryDir> workerSourceDirectory;
+  //! Writes the editor's text where the worker can read it. Empty on failure, already reported.
+  QString writeSourceForWorker();
   void startIsolatedRender();
   void isolatedRenderFailed(const QString& reason);
+  void startIsolatedPreview();
+  void isolatedPreviewDone(const std::shared_ptr<class CsgInfo>& products);
+  void isolatedPreviewFailed(const QString& reason);
+  //! Builds the renderers a preview draws from, whichever process produced the products.
+  void createPreviewRenderers();
+  //! What a preview does once its products exist, whichever process produced them.
+  void finishPreview();
   QMutex consolemutex;
   EditorInterface *renderedEditor;  // stores pointer to editor which has been most recently rendered
   time_t includesMTime{0};          // latest include mod time
@@ -503,6 +518,7 @@ signals:
   void unhighlightLastError();
 
 #ifdef ENABLE_GUI_TESTS
+
 public:
   std::shared_ptr<AbstractNode> instantiateRootFromSource(SourceFile *file);
 signals:

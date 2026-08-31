@@ -10,6 +10,7 @@
 
 #include "Feature.h"
 #include "geometry/Geometry.h"
+#include "core/CSGNode.h"
 #include "geometry/PolySet.h"
 #include "gui/Editor.h"
 

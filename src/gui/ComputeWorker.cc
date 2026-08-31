@@ -6,10 +6,12 @@
 #include <QThread>
 #include <QProcessEnvironment>
 #include <exception>
+#include <functional>
 #include <map>
 #include <utility>
 
 #include "geometry/Geometry.h"
+#include "glview/CsgInfo.h"
 #include "io/ipc_channel.h"
 #include "io/ipc_geometry.h"
 #include "json/json.hpp"
@@ -21,6 +23,8 @@ namespace {
 //! Names the payload the worker returns geometry under. The request asks for this name and the
 //! reply carries it back, so the two only have to agree here.
 constexpr auto kRenderOutputName = "render.osig";
+//! And the product list a preview returns; its leaves are named after it.
+constexpr auto kPreviewOutputName = "preview.json";
 
 }  // namespace
 
@@ -129,6 +133,54 @@ bool ComputeWorker::exitedCleanly() const
   return d->process.exitStatus() == QProcess::NormalExit && d->process.exitCode() == 0;
 }
 
+void ComputeWorker::startRequest(
+  const std::string& request,
+  std::function<void(std::map<std::string, std::string>&&, const QString&)> deliver)
+{
+  d->renderThread = QThread::create([this, request, deliver = std::move(deliver)] {
+    const QByteArray payload(request.data(), static_cast<int>(request.size()));
+    if (!send("request", payload)) {
+      QMetaObject::invokeMethod(this, [this, deliver] { deliver({}, tr("The worker went away.")); });
+      return;
+    }
+
+    // Payloads arrive before the answer that ends the request, so they are collected as they come.
+    std::map<std::string, std::string> payloads;
+    IpcMessage message;
+    while (receive(message)) {
+      if (message.name != "done") {
+        payloads.emplace(std::move(message.name), std::move(message.payload));
+        continue;
+      }
+      QString error;
+      try {
+        const auto answer = nlohmann::json::parse(message.payload);
+        if (!answer.value("ok", false)) {
+          error = QString::fromStdString(answer.value("error", std::string{"The request failed."}));
+        }
+      } catch (const std::exception& e) {
+        error = QString::fromLatin1(e.what());
+      }
+      QMetaObject::invokeMethod(this, [this, deliver, payloads = std::move(payloads), error]() mutable {
+        deliver(std::move(payloads), error);
+      });
+      return;
+    }
+    // The channel ended without an answer, which is what a crashed worker looks like from here.
+    QMetaObject::invokeMethod(this, [this, deliver] { deliver({}, tr("The compute worker stopped.")); });
+  });
+  connect(d->renderThread, &QThread::finished, d->renderThread, &QObject::deleteLater);
+  d->renderThread->start();
+}
+
+void ComputeWorker::requestFinished()
+{
+  if (!d->renderThread) return;
+  d->renderThread->quit();
+  d->renderThread->wait();
+  d->renderThread = nullptr;
+}
+
 void ComputeWorker::startRender(const QString& scadPath, const QString& parameterFile,
                                 const QString& setName, const QString& sourcePath)
 {
@@ -147,61 +199,68 @@ void ComputeWorker::startRender(const QString& scadPath, const QString& paramete
   request["output"] = kRenderOutputName;
   if (!parameterFile.isEmpty()) request["parameterFile"] = parameterFile.toStdString();
   if (!setName.isEmpty()) request["setName"] = setName.toStdString();
-  // Where the document really lives, when scadPath is a copy of unsaved editor contents. The
-  // worker resolves relative includes against it.
   if (!sourcePath.isEmpty()) request["sourcePath"] = sourcePath.toStdString();
 
-  d->renderThread = QThread::create([this, text = request.dump()] {
-    const QByteArray payload(text.data(), static_cast<int>(text.size()));
-    if (!send("request", payload)) {
-      QMetaObject::invokeMethod(this, [this] { finishRender({}, tr("The worker went away.")); });
-      return;
-    }
-
-    // Payloads arrive before the answer that ends the request, so they are collected as they come.
-    std::map<std::string, std::string> payloads;
-    IpcMessage message;
-    while (receive(message)) {
-      if (message.name != "done") {
-        payloads.emplace(std::move(message.name), std::move(message.payload));
-        continue;
+  startRequest(
+    request.dump(), [this](std::map<std::string, std::string>&& payloads, const QString& error) {
+      requestFinished();
+      if (!error.isEmpty()) {
+        emit renderFailed(error);
+        return;
       }
-      std::shared_ptr<const Geometry> geometry;
-      QString error;
-      try {
-        const auto answer = nlohmann::json::parse(message.payload);
-        if (!answer.value("ok", false)) {
-          error = QString::fromStdString(answer.value("error", std::string{"The render failed."}));
-        } else {
-          const auto found = payloads.find(kRenderOutputName);
-          if (found == payloads.end()) error = tr("The worker returned no geometry.");
-          else {
-            geometry =
-              import_ipc_geometry_buffer(found->second.data(), found->second.size(), kRenderOutputName);
-            if (!geometry) error = tr("The worker returned geometry that could not be read.");
-          }
-        }
-      } catch (const std::exception& e) {
-        error = QString::fromLatin1(e.what());
+      const auto found = payloads.find(kRenderOutputName);
+      if (found == payloads.end()) {
+        emit renderFailed(tr("The worker returned no geometry."));
+        return;
       }
-      QMetaObject::invokeMethod(this, [this, geometry, error] { finishRender(geometry, error); });
-      return;
-    }
-    // The channel ended without an answer, which is what a crashed worker looks like from here.
-    QMetaObject::invokeMethod(this, [this] { finishRender({}, tr("The compute worker stopped.")); });
-  });
-  connect(d->renderThread, &QThread::finished, d->renderThread, &QObject::deleteLater);
-  d->renderThread->start();
+      const auto geometry =
+        import_ipc_geometry_buffer(found->second.data(), found->second.size(), kRenderOutputName);
+      if (!geometry) emit renderFailed(tr("The worker returned geometry that could not be read."));
+      else emit renderDone(geometry);
+    });
 }
 
-void ComputeWorker::finishRender(const std::shared_ptr<const Geometry>& geometry, const QString& error)
+void ComputeWorker::startPreview(const QString& scadPath, const QString& parameterFile,
+                                 const QString& setName, const QString& sourcePath,
+                                 const std::size_t normalizationLimit)
 {
-  // The thread is finishing; let it go before anything else is asked of this worker.
-  if (d->renderThread) {
-    d->renderThread->quit();
-    d->renderThread->wait();
-    d->renderThread = nullptr;
+  if (!d->channel) {
+    emit previewFailed(tr("The compute worker is not running."));
+    return;
   }
-  if (geometry) emit renderDone(geometry);
-  else emit renderFailed(error);
+  if (d->renderThread) {
+    emit previewFailed(tr("The compute worker is already busy."));
+    return;
+  }
+
+  nlohmann::json request;
+  request["command"] = "preview";
+  request["input"] = scadPath.toStdString();
+  request["output"] = kPreviewOutputName;
+  request["normalizationLimit"] = normalizationLimit;
+  if (!parameterFile.isEmpty()) request["parameterFile"] = parameterFile.toStdString();
+  if (!setName.isEmpty()) request["setName"] = setName.toStdString();
+  if (!sourcePath.isEmpty()) request["sourcePath"] = sourcePath.toStdString();
+
+  startRequest(request.dump(),
+               [this](std::map<std::string, std::string>&& payloads, const QString& error) {
+                 requestFinished();
+                 if (!error.isEmpty()) {
+                   emit previewFailed(error);
+                   return;
+                 }
+                 const auto found = payloads.find(kPreviewOutputName);
+                 if (found == payloads.end()) {
+                   emit previewFailed(tr("The worker returned no product list."));
+                   return;
+                 }
+                 auto products = std::make_shared<CsgInfo>();
+                 // Every leaf the list names has to have arrived, or the preview would be missing
+                 // geometry without saying so.
+                 if (!import_csg_products(*products, found->second, payloads)) {
+                   emit previewFailed(tr("The worker returned a preview that could not be read."));
+                   return;
+                 }
+                 emit previewDone(products);
+               });
 }
