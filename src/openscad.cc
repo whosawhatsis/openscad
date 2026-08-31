@@ -108,6 +108,7 @@
 #include "io/export.h"
 #include "json/json.hpp"
 
+#include "glview/CsgInfo.h"
 #include "io/ipc_channel.h"
 #include "io/ipc_endpoint.h"
 #include "openscad_gui.h"
@@ -286,6 +287,13 @@ bool with_output(const bool is_stdout, const std::string& filename, const F& f,
     f(std::cout);
     return true;
   }
+  // A compute worker returns its outputs over the channel instead of writing them, named for the
+  // file they would have been. This covers the product list and the sidecars; the geometry itself
+  // goes through exportFileByName, which has the same check.
+  if (ipc_payload_sink::collecting()) {
+    f(ipc_payload_sink::open(filename));
+    return true;
+  }
   std::ofstream fstream(std::filesystem::u8path(filename), mode);
   if (!fstream.is_open()) {
     LOG("Can't open file \"%1$s\" for export", filename);
@@ -455,6 +463,17 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       stream << tree.getString(*root_node, "\t") << "\n";
     });
     fs::current_path(cmd.original_path);
+  } else if (export_format == FileFormat::IPC_PRODUCTS) {
+    // A preview is a product list plus one payload per distinct leaf, not a single mesh: the
+    // parent composites it and needs the structure, not a merged result.
+    CsgInfo csgInfo;
+    csgInfo.compile_products(tree);
+    // The leaves are sent first and the list afterwards: emitting a payload closes the previous
+    // one, so the list cannot be held open while the leaves it names are still being written.
+    const std::string products = export_csg_products(csgInfo, filename_str);
+    with_output(
+      cmd.is_stdout, filename_str, [&products](std::ostream& stream) { stream << products; },
+      std::ios::out | std::ios::binary);
   } else if (export_format == FileFormat::AST) {
     fs::current_path(fparent);  // Force exported filenames to be relative to document path
     with_output(cmd.is_stdout, filename_str,
@@ -838,12 +857,10 @@ int compute_worker_main()
       // Echoed back so a parent that has several requests in flight can match them up.
       if (request.contains("requestId")) answer["requestId"] = request["requestId"];
       const auto command = request.at("command").get<std::string>();
-      if (command == "preview") {
-        // A preview returns a CSG product list rather than a mesh, and that is not built yet.
-        // Answering it with a render would be quietly wrong.
-        throw std::runtime_error("preview is not implemented yet");
+      const auto preview = command == "preview";
+      if (!preview && command != "render") {
+        throw std::runtime_error("unknown command '" + command + "'");
       }
-      if (command != "render") throw std::runtime_error("unknown command '" + command + "'");
       const auto input = request.at("input").get<std::string>();
       const auto output = request.at("output").get<std::string>();
 
@@ -871,20 +888,21 @@ int compute_worker_main()
       const fs::path originalPath = fs::path(input).parent_path();
       const std::string noParameterFile;
       const std::string noSetName;
-      const int result = cmdline(CommandLine{false,
-                                             input,
-                                             false,
-                                             output,
-                                             originalPath,
-                                             noParameterFile,
-                                             noSetName,
-                                             viewOptions,
-                                             camera,
-                                             FileFormat::IPC_GEOMETRY,
-                                             exportOptions,
-                                             {},
-                                             {},
-                                             ""});
+      const int result =
+        cmdline(CommandLine{false,
+                            input,
+                            false,
+                            output,
+                            originalPath,
+                            noParameterFile,
+                            noSetName,
+                            viewOptions,
+                            camera,
+                            preview ? FileFormat::IPC_PRODUCTS : FileFormat::IPC_GEOMETRY,
+                            exportOptions,
+                            {},
+                            {},
+                            ""});
       ipc_payload_sink::end();
 
       if (result != 0) throw std::runtime_error("evaluation of '" + input + "' failed");

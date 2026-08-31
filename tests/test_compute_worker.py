@@ -177,14 +177,6 @@ class ComputeWorkerRequests(WorkerFixture, unittest.TestCase):
         self.assertFalse(body.get("ok"))
         self.assertIsNone(process.poll())
 
-    def test_preview_is_reported_as_not_implemented_yet(self):
-        """Preview returns a CSG product list rather than a mesh, and that is not built. Saying so
-        is better than quietly serving a render and letting the caller believe otherwise."""
-        _, _, (name, body) = self.exchange(command="preview", requestId=3)
-        self.assertEqual(name, "done")
-        self.assertFalse(body.get("ok"))
-        self.assertIn("error", body)
-
     def test_worker_ignores_a_message_it_does_not_know(self):
         """Forward compatibility: a name from a newer parent must not wedge an older worker."""
         process, parent = self.start_worker()
@@ -270,6 +262,82 @@ class ComputeWorkerGeometry(WorkerFixture, unittest.TestCase):
         self.assertTrue(done.get("ok"), f"the second render failed: {done}")
         self.assertEqual(done.get("requestId"), 2)
         self.assertIn("good.osig", payloads)
+
+
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerPreview(WorkerFixture, unittest.TestCase):
+    """A preview returns a CSG product list, not a single mesh.
+
+    The parent composites the preview itself, so what it needs is the structure -- which leaves,
+    where, in what colour, unioned or subtracted -- plus the mesh for each leaf. The product list
+    refers to its leaves by the name their payload arrived under, so the parent resolves them from
+    what it already has rather than from the filesystem.
+    """
+
+    def preview(self, source, output="preview.json"):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, command="preview", requestId=1,
+                input=self.write_scad(source), output=output)
+        payloads, done = self.read_until_done(parent)
+        return process, payloads, done
+
+    def test_preview_returns_a_product_list_and_its_leaves(self):
+        process, payloads, done = self.preview("cube([10, 10, 10]);")
+        self.assertTrue(done.get("ok"), f"preview failed: {done}")
+        self.assertIn("preview.json", payloads, f"no product list; got {sorted(payloads)}")
+
+        products = json.loads(payloads["preview.json"])
+        self.assertIn("products", products)
+        self.assertTrue(products["products"], "the product list is empty for a cube")
+
+        leaves = [item for product in products["products"]
+                  for item in product.get("intersections", [])]
+        self.assertTrue(leaves, "the product has no intersections")
+        for leaf in leaves:
+            self.assertIn(leaf["geometry"], payloads,
+                          f"product references {leaf['geometry']}, which never arrived")
+            self.assertTrue(payloads[leaf["geometry"]].startswith(b"OSIG"))
+            self.assertEqual(len(leaf["matrix"]), 16)
+            self.assertEqual(len(leaf["color"]), 4)
+            self.assertIn("convexity", leaf)
+
+    def test_preview_carries_the_colour_a_model_asks_for(self):
+        """color() is the reason leaf colour travels separately from the mesh -- losing it would
+        make every preview monochrome."""
+        _, payloads, done = self.preview("color([1, 0, 0]) cube(5);")
+        self.assertTrue(done.get("ok"), f"preview failed: {done}")
+        products = json.loads(payloads["preview.json"])
+        colours = [item["color"] for product in products["products"]
+                   for item in product.get("intersections", [])]
+        self.assertTrue(any(c[0] == 1.0 and c[1] == 0.0 and c[2] == 0.0 for c in colours),
+                        f"the requested colour is not in the product list: {colours}")
+
+    def test_preview_keeps_subtractions_separate_from_intersections(self):
+        """A difference() that arrived as a union would render as solid, which is the whole point
+        of keeping the two chains apart."""
+        _, payloads, done = self.preview("difference() { cube(10); sphere(6); }")
+        self.assertTrue(done.get("ok"), f"preview failed: {done}")
+        products = json.loads(payloads["preview.json"])
+        subtractions = [item for product in products["products"]
+                        for item in product.get("subtractions", [])]
+        self.assertTrue(subtractions, "the subtracted sphere is missing from the product list")
+
+    def test_preview_sends_each_distinct_leaf_once(self):
+        """Two copies of one object share a mesh; sending it twice would double the bytes on the
+        channel for no gain."""
+        _, payloads, done = self.preview(
+            "for (x = [0, 20, 40]) translate([x, 0, 0]) cube(5);")
+        self.assertTrue(done.get("ok"), f"preview failed: {done}")
+        products = json.loads(payloads["preview.json"])
+        leaves = [item for product in products["products"]
+                  for item in product.get("intersections", [])]
+        self.assertGreaterEqual(len(leaves), 3, "expected one leaf per copy")
+        geometry_payloads = [name for name in payloads if name != "preview.json"]
+        self.assertEqual(len(set(geometry_payloads)), len(geometry_payloads))
+        self.assertLess(len(geometry_payloads), len(leaves),
+                        "identical cubes were sent as separate meshes")
 
 
 if __name__ == "__main__":

@@ -24,9 +24,16 @@ class PolySet;
 // per-face color and convexity in particular, which cost a few lines each and are what make a
 // preview look right.
 
+// Suffix for the per-leaf payloads a preview sends. The writer and anything cleaning up after a
+// worker must agree on it.
+inline constexpr auto kIpcGeometrySuffix = ".osig";
+
 // Writer side matches the other exporters (geometry in, ostream out, nothing returned) so it can be
 // reached through the ordinary FileFormat dispatch.
 void export_ipc_geometry(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
+//! A preview leaf is always a single PolySet, and taking it directly avoids wrapping it only to
+//! unwrap it again.
+void export_ipc_geometry(const PolySet& polyset, std::ostream& output);
 
 /*!
    Decodes a payload from bytes already in memory. `name` only says which payload failed.
