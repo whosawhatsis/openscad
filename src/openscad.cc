@@ -668,10 +668,6 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     }
 
     const AnalysisMode agent_mode = analysis_mode_for(export_format);
-    if (agent_mode == AnalysisMode::Canny && !Feature::ExperimentalCannyMap.is_enabled()) {
-      LOG(message_group::Error, "Canny export requires --enable=canny-map");
-      return 1;
-    }
     if (export_format == FileFormat::PNG || agent_mode != AnalysisMode::Default) {
       if (agent_mode != AnalysisMode::Default) {
         if (!glview && agent_mode != AnalysisMode::Canny) {

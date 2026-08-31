@@ -1,14 +1,15 @@
 # Canny edge maps (experimental)
 
-Enable **canny-map** in Preferences → Features, then choose **View → Shading → Canny Edge Map**.
+Choose **View → Shading → Canny Edge Map**. No separate feature flag is required,
+matching the other shading views.
 The image contains white feature edges on black, independent of lighting. **Feature Wireframe**
 shows geometric edges only; Canny also includes boundaries between raw colors, including alpha.
-With this feature enabled, Show Edges uses the same geometric edge detector.
+Show Edges uses the same geometric edge detector.
 
 Export an 8-bit grayscale PNG from the command line:
 
 ```sh
-openscad --enable=canny-map --export-format=cannymap --edge-width=1 -o edges.png model.scad
+openscad --export-format=cannymap --edge-width=1 -o edges.png model.scad
 ```
 
 The default uses OpenCSG preview, including meshes produced by `render()` and `minkowski()`.

@@ -2033,20 +2033,8 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
     LOG("Rendering finished.");
 
     this->rootGeom = root_geom;
-#if defined(USE_POLYSET_FOR_CGAL)
+    // All shading views share the mesh renderer, including feature-edge capture.
     this->geomRenderer = std::make_shared<PolySetRenderer>(this->rootGeom);
-#else
-    // Choose PolySetRenderer for PolySet and Polygon2d, and for Manifold since we
-    // know that all geometries are convertible to PolySet.
-    if (Feature::ExperimentalCannyMap.is_enabled() ||
-        RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
-        std::dynamic_pointer_cast<const PolySet>(this->rootGeom) ||
-        std::dynamic_pointer_cast<const Polygon2d>(this->rootGeom)) {
-      this->geomRenderer = std::make_shared<PolySetRenderer>(this->rootGeom);
-    } else {
-      this->geomRenderer = std::make_shared<CGALRenderer>(this->rootGeom);
-    }
-#endif
 
     // Go to CGAL view mode
     viewModeRender();
@@ -3092,20 +3080,6 @@ void MainWindow::onAIDockVisibilityChanged(bool isVisible)
 
 void MainWindow::onExperimentalChanged()
 {
-  if (Feature::ExperimentalCannyMap.is_enabled() && rootGeom &&
-      qglview->getRenderer() == geomRenderer.get()) {
-    geomRenderer = std::make_shared<PolySetRenderer>(rootGeom);
-    qglview->setRenderer(geomRenderer);
-    qglview->updateColorScheme();
-    qglview->update();
-  }
-  viewActionAnalysisViewCanny->setVisible(Feature::ExperimentalCannyMap.is_enabled());
-  viewActionAnalysisViewWireframe->setVisible(Feature::ExperimentalCannyMap.is_enabled());
-  if (!Feature::ExperimentalCannyMap.is_enabled() &&
-      (qglview->analysisMode() == AnalysisMode::Canny ||
-       qglview->analysisMode() == AnalysisMode::Wireframe)) {
-    viewActionAnalysisViewDefault->trigger();
-  }
   bool aiEnabled = Feature::ExperimentalAiFeatures.is_enabled();
   if (this->aiDock) {
     this->aiDock->toggleViewAction()->setVisible(aiEnabled);

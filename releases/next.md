@@ -1,6 +1,6 @@
 **Highlights**
 
-* Experimental Canny edge-map export (`--enable=canny-map --export-format=cannymap`), feature wireframe, and shared feature-edge widths (`--edge-width`).
+* Canny edge-map export (`--export-format=cannymap`), feature wireframe, and shared feature-edge widths (`--edge-width`), available with the other shading views without a separate feature flag.
 
 * New geometry engine: Manifold - rendering (F6) is now orders of magnitude faster
 * Color support in F6 rendering, and color import/export for OFF and 3MF

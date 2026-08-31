@@ -59,6 +59,8 @@ void TestAnalysisView::checkMenuActionsSetTheMode()
   restoreWindowInitialState();
 
   QCOMPARE(QString(window->menuAnalysisView->title()).remove('&'), QString("Shading"));
+  QVERIFY(window->viewActionAnalysisViewCanny->isVisible());
+  QVERIFY(window->viewActionAnalysisViewWireframe->isVisible());
 
   // Triggering the action, rather than calling the handler directly: the failure
   // this guards against is a name mismatch that leaves Qt's auto-connection

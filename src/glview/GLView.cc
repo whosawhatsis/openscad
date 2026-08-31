@@ -528,7 +528,6 @@ void GLView::paintGL()
     // highlight, so its RGB must not be multiplied by alpha a second time.
     if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     const bool featureEdges =
-      Feature::ExperimentalCannyMap.is_enabled() &&
       (showedges || analysis_mode == AnalysisMode::Canny || analysis_mode == AnalysisMode::Wireframe);
     if (!featureEdges) feature_edge_error.clear();
     if (analysis_mode != AnalysisMode::Canny && analysis_mode != AnalysisMode::Wireframe) {
