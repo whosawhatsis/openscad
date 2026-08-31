@@ -933,10 +933,18 @@ TEST_CASE("B-Rep DXF extrusion retains curves and placement", "[brep]")
     minY = 4 - 2 * std::sqrt(3.0);
     maxY = 4 + 2 * std::sqrt(3.0);
   }
-  SECTION("unsupported polyline bulge is not silently flattened")
+  SECTION("polyline bulge retains its circular arc")
   {
     imported->layer = "bulge";
-    unsupported = true;
+    curvedFaces = 2;
+    minY = -2;
+  }
+  SECTION("explicit polyline bulge facets")
+  {
+    imported->layer = "bulge";
+    imported->discretizer = CurveDiscretizer(6.0);
+    curvedFaces = 0;
+    minY = -2;
   }
   auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
   extrusion->height = Vector3d(0, 0, 5);

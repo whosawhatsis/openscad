@@ -119,10 +119,10 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
   double coords[7][2];  // Used by DIMENSION entities
   std::vector<double> xverts;
   std::vector<double> yverts;
+  std::vector<double> bulges;
   double radius = 0;
   double arc_start_angle = 0, arc_stop_angle = 0;
   double ellipse_start_angle = 0, ellipse_stop_angle = 0;
-  bool hasPolylineBulge = false;
   const auto addNativeCurve = [&](RationalCurve2d curve) {
     if (!retainCurves) return;
     if (curve.size() == 2 && std::hypot(curve[0][0] - curve[1][0], curve[0][1] - curve[1][1]) < 1e-12)
@@ -191,9 +191,6 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
 
       switch (id) {
       case 0:
-        if (retainCurves && mode == "LWPOLYLINE" && hasPolylineBulge &&
-            (in_blocks_section || layername.empty() || layername == layer))
-          throw std::runtime_error("Native DXF polyline bulges are not supported yet");
         if (mode == "SECTION") {
           in_entities_section = iddata == "ENTITIES";
           in_blocks_section = iddata == "BLOCKS";
@@ -203,13 +200,40 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
           // assert(xverts.size() == yverts.size());
           // Get maximum to enforce managed exception if xverts.size() != yverts.size()
           const int numverts = std::max(xverts.size(), yverts.size());
-          for (int i = 1; i < numverts; ++i) {
-            ADD_LINE(xverts.at(i - 1), yverts.at(i - 1), xverts.at(i % numverts),
-                     yverts.at(i % numverts));
-          }
+          const auto addSegment = [&](int first, int second) {
+            const Vector2d p(xverts.at(first), yverts.at(first)),
+              q(xverts.at(second), yverts.at(second));
+            const double bulge = retainCurves ? bulges.at(first) : 0;
+            if (!retainCurves || bulge == 0) {
+              ADD_LINE(p.x(), p.y(), q.x(), q.y());
+              return;
+            }
+            const double dx = q.x() - p.x(), dy = q.y() - p.y();
+            const double chord = std::hypot(dx, dy);
+            if (chord == 0) return;
+            const double offset = (1 - bulge * bulge) / (4 * bulge);
+            const Vector2d center((p.x() + q.x()) / 2 - dy * offset, (p.y() + q.y()) / 2 + dx * offset);
+            const double radius = chord * (1 + bulge * bulge) / (4 * std::abs(bulge));
+            const double start = std::atan2(p.y() - center.y(), p.x() - center.x());
+            const double sweep = 4 * std::atan(bulge);
+            if (!discretizer.isFnSpecified()) {
+              retainEllipse(center, {radius, 0}, {0, radius}, start, sweep);
+              ADD_LINE(p.x(), p.y(), q.x(), q.y());  // retained path suppresses this chord
+              samplingCurve = false;
+            } else {
+              const int count =
+                discretizer.getCircularSegmentCount(radius, std::abs(sweep) * 180 / M_PI).value_or(1);
+              for (int i = 0; i < count; ++i) {
+                const double a = start + sweep * i / count, b = start + sweep * (i + 1) / count;
+                ADD_LINE(center.x() + radius * std::cos(a), center.y() + radius * std::sin(a),
+                         center.x() + radius * std::cos(b), center.y() + radius * std::sin(b));
+              }
+            }
+          };
+          for (int i = 1; i < numverts; ++i) addSegment(i - 1, i);
           // polyline flag is stored in 'dimtype'
           if (dimtype & 0x01) {  // closed polyline
-            ADD_LINE(xverts.at(numverts - 1), yverts.at(numverts - 1), xverts.at(0), yverts.at(0));
+            addSegment(numverts - 1, 0);
           }
         } else if (mode == "CIRCLE") {
           const int n = discretizer.getCircularSegmentCount(radius).value_or(3);
@@ -355,7 +379,6 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
           unsupported_entities_list[mode]++;
         }
         samplingCurve = false;
-        hasPolylineBulge = false;
         mode = data;
         layer.erase();
         name.erase();
@@ -368,6 +391,7 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
         }
         xverts.clear();
         yverts.clear();
+        bulges.clear();
         radius = arc_start_angle = arc_stop_angle = 0;
         ellipse_start_angle = ellipse_stop_angle = 0;
         if (mode == "INSERT") {
@@ -384,6 +408,7 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
         } else {
           xverts.push_back((boost::lexical_cast<double>(data) - xorigin) * scale);
         }
+        if (retainCurves && mode == "LWPOLYLINE" && id == 10) bulges.push_back(0);
         break;
       case 20: [[fallthrough]];
       case 21:
@@ -415,7 +440,10 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
         // ELLIPSE: stop_angle
         // INSERT: Y scale
         ellipse_stop_angle = boost::lexical_cast<double>(data);
-        if (mode == "LWPOLYLINE" && ellipse_stop_angle != 0) hasPolylineBulge = true;
+        if (retainCurves && mode == "LWPOLYLINE") {
+          if (bulges.empty()) throw std::runtime_error("DXF bulge precedes its vertex");
+          bulges.back() = ellipse_stop_angle;
+        }
         break;
       case 51:  // ARC
         arc_stop_angle = boost::lexical_cast<double>(data);
