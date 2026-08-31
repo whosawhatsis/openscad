@@ -24,6 +24,7 @@
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Poly_Triangulation.hxx>
@@ -36,6 +37,7 @@
 #include <TopoDS.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <gp_GTrsf.hxx>
+#include <gp_Pln.hxx>
 
 namespace {
 
@@ -85,6 +87,46 @@ std::shared_ptr<void> brepMakePrism(const std::vector<std::array<double, 2>>& ou
   if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
     throw std::runtime_error("B-Rep extrusion does not form a valid solid");
   return std::make_shared<TopoDS_Shape>(solid);
+}
+
+std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double angle, double start)
+{
+  if (brepIsEmpty(profile) || angle == 0.0) return {};
+  if (!std::isfinite(angle) || !std::isfinite(start) || std::abs(angle) > 2 * M_PI)
+    throw std::invalid_argument("B-Rep revolution angle is invalid");
+  try {
+    Bnd_Box bounds;
+    BRepBndLib::AddOptimal(shapeFrom(profile), bounds, false, false);
+    if (bounds.CornerMin().X() < -Precision::Confusion() &&
+        bounds.CornerMax().X() > Precision::Confusion())
+      throw std::invalid_argument("rotate_extrude profile crosses the Y axis");
+
+    gp_Trsf toXZ, rotation;
+    toXZ.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0)), M_PI / 2);
+    rotation.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), start);
+    const gp_Ax1 axis(gp_Pnt(0, 0, 0), gp_Dir(0, 0, angle > 0 ? 1 : -1));
+    std::vector<std::shared_ptr<void>> solids;
+    for (TopExp_Explorer faces(shapeFrom(profile), TopAbs_FACE); faces.More(); faces.Next()) {
+      const auto face = TopoDS::Face(faces.Current());
+      const BRepAdaptor_Surface surface(face);
+      if (surface.GetType() != GeomAbs_Plane) continue;
+      const auto plane = surface.Plane();
+      if (std::abs(plane.Axis().Direction().Z()) < 1.0 - Precision::Angular() ||
+          std::abs(plane.Location().Z()) > Precision::Confusion())
+        continue;
+      const auto base = BRepBuilderAPI_Transform(face, rotation * toXZ, true).Shape();
+      BRepPrimAPI_MakeRevol revolution(base, axis, std::abs(angle), true);
+      if (!revolution.IsDone()) throw std::runtime_error("B-Rep revolution construction failed");
+      auto solid = TopoDS::Solid(revolution.Shape());
+      if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
+        throw std::runtime_error("B-Rep revolution does not form a valid solid");
+      solids.push_back(std::make_shared<TopoDS_Shape>(solid));
+    }
+    if (solids.empty()) throw std::runtime_error("B-Rep revolution has no planar profile faces");
+    return brepBoolean(solids, BrepOperation::Union, 0.0).shape;
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
 }
 
 std::shared_ptr<void> brepFromMesh(const BrepMeshData& mesh)

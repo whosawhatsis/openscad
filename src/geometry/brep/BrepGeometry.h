@@ -36,6 +36,8 @@ public:
   static BrepGeometry cone(double radius1, double radius2, double height);
   static BrepGeometry fromPolySet(const PolySet& mesh);
   static BrepGeometry prism(const std::vector<std::array<double, 2>>& outline, double height);
+  // Map the z=0 profile faces to XZ, then revolve about Z; angles are in radians.
+  [[nodiscard]] BrepGeometry revolve(double angle, double start) const;
 
   [[nodiscard]] size_t memsize() const override;
   [[nodiscard]] BoundingBox getBoundingBox() const override;

@@ -65,6 +65,11 @@ BrepGeometry BrepGeometry::prism(const std::vector<std::array<double, 2>>& outli
   return BrepGeometry(brepMakePrism(outline, height));
 }
 
+BrepGeometry BrepGeometry::revolve(double angle, double start) const
+{
+  return BrepGeometry(brepRevolve(shape_, angle, start));
+}
+
 size_t BrepGeometry::memsize() const
 {
   return sizeof(*this);

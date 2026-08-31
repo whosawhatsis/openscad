@@ -16,6 +16,7 @@ std::shared_ptr<void> brepMakeSphere(double radius);
 std::shared_ptr<void> brepMakeCone(double radius1, double radius2, double height);
 std::shared_ptr<void> brepFromMesh(const BrepMeshData& mesh);
 std::shared_ptr<void> brepMakePrism(const std::vector<std::array<double, 2>>& outline, double height);
+std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double angle, double start);
 size_t brepSurfaceCount(const std::shared_ptr<void>& shape, BrepSurfaceType type);
 std::array<double, 6> brepBounds(const std::shared_ptr<void>& shape);
 std::shared_ptr<void> brepTransform(const std::shared_ptr<void>& shape,

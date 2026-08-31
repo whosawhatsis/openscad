@@ -73,6 +73,31 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
                                                  BrepFilletDiagnostics *diagnostics = nullptr,
                                                  double extrusionHeight = 0.0)
 {
+  if (const auto *revolution = dynamic_cast<const RotateExtrudeNode *>(&node)) {
+    if (extrusionHeight > 0.0) return {};
+    if (revolution->angle == 0.0) return std::make_unique<BrepGeometry>(nullptr);
+    if (revolution->discretizer.isFnSpecified()) {
+      LOG(message_group::Error, "OpenCASCADE rotate_extrude does not yet support explicit $fn sweeps");
+      return std::make_unique<BrepGeometry>(nullptr);
+    }
+    try {
+      std::vector<BrepGeometry> profiles;
+      for (const auto& child : node.children) {
+        if (child->modinst->isBackground()) continue;
+        // Reuse exact profile evaluation, then revolve its planar base faces, not the solid.
+        auto profile = createBrepGeometry(*child, nullptr, 1.0);
+        if (!profile) throw std::runtime_error("rotate_extrude profile is not yet supported");
+        profiles.push_back(std::move(*profile));
+      }
+      BrepFilletDiagnostics diagnostics;
+      auto profile = BrepGeometry::boolean(profiles, BrepOperation::Union, 0.0, diagnostics);
+      return std::make_unique<BrepGeometry>(
+        profile.revolve(revolution->angle * M_DEG2RAD, revolution->start * M_DEG2RAD));
+    } catch (const std::exception& error) {
+      LOG(message_group::Error, "OpenCASCADE rotate_extrude failed: %1$s", error.what());
+      return std::make_unique<BrepGeometry>(nullptr);
+    }
+  }
   if (const auto *extrusion = dynamic_cast<const LinearExtrudeNode *>(&node)) {
     if (extrusionHeight > 0.0) return {};
     if (extrusion->twist != 0.0 || extrusion->scale_x != 1.0 || extrusion->scale_y != 1.0) {
@@ -247,6 +272,9 @@ std::pair<double, double> brepFacetSettings(const AbstractNode& node, const Brep
   } else if (const auto *extrusion = dynamic_cast<const LinearExtrudeNode *>(&node)) {
     fa = extrusion->discretizer.getFa();
     fs = extrusion->discretizer.getFs();
+  } else if (const auto *revolution = dynamic_cast<const RotateExtrudeNode *>(&node)) {
+    fa = revolution->discretizer.getFa();
+    fs = revolution->discretizer.getFs();
   } else if (const auto *transform = dynamic_cast<const TransformNode *>(&node);
              transform && transform->children.size() == 1) {
     return brepFacetSettings(*transform->children.front(), geometry);

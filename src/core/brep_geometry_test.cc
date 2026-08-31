@@ -16,6 +16,7 @@
 #include "core/CurveDiscretizer.h"
 #include "core/ModuleInstantiation.h"
 #include "core/LinearExtrudeNode.h"
+#include "core/RotateExtrudeNode.h"
 #include "core/TransformNode.h"
 #include "core/Tree.h"
 #include "core/primitives.h"
@@ -555,6 +556,124 @@ TEST_CASE("B-Rep extrusion preserves polygon contour nesting", "[brep]")
   CHECK(occupied(12.5, 0.5) == disconnected);
   CHECK_FALSE(occupied(10.5, 0.5));
   CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
+TEST_CASE("B-Rep rotational extrusion retains smooth surfaces", "[brep]")
+{
+  ModuleInstantiation inst("rotate_extrude");
+  const auto smooth = [] {
+    return CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; });
+  };
+  auto revolution = std::make_shared<RotateExtrudeNode>(&inst, smooth());
+  auto profile = std::make_shared<TransformNode>(&inst, "translate");
+  profile->matrix.translate(Vector3d(5, 0, 0));
+  auto circle = std::make_shared<CircleNode>(&inst, smooth());
+  circle->r = 1.0;
+  profile->children = {circle};
+  revolution->children = {profile};
+  size_t tori = 1, cylinders = 0;
+  bool positiveY = true, negativeY = true;
+  SECTION("full torus")
+  {
+  }
+  SECTION("partial torus")
+  {
+    revolution->angle = 180;
+    negativeY = false;
+  }
+  SECTION("negative angle")
+  {
+    revolution->angle = -180;
+    positiveY = false;
+  }
+  SECTION("start angle")
+  {
+    revolution->angle = 180;
+    revolution->start = 180;
+    positiveY = false;
+  }
+  SECTION("negative-side profile")
+  {
+    profile->matrix.translation().x() = -5;
+    revolution->angle = 180;
+    positiveY = false;
+  }
+  SECTION("polygonal profile remains a smooth revolution")
+  {
+    auto square = std::make_shared<SquareNode>(&inst);
+    square->x = square->y = 2;
+    square->center = true;
+    profile->children = {square};
+    tori = 0;
+    cylinders = 2;
+  }
+  SECTION("explicitly faceted circle profile")
+  {
+    circle->discretizer = CurveDiscretizer(6.0);
+    tori = 0;
+  }
+  SECTION("hollow torus")
+  {
+    auto inner = std::make_shared<CircleNode>(&inst, smooth());
+    inner->r = 0.5;
+    auto difference = std::make_shared<CsgOpNode>(&inst, OpenSCADOperator::DIFFERENCE);
+    difference->children = {circle, inner};
+    profile->children = {difference};
+    tori = 2;
+    positiveY = negativeY = false;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(revolution);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*revolution, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Torus) == tori);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == cylinders);
+  CHECK(brep->numFacets() == 0);
+  for (const auto y : {-5.0, 5.0}) {
+    auto probe = BrepGeometry::cube(0.1, 0.1, 0.1);
+    Transform3d transform = Transform3d::Identity();
+    transform.translate(Vector3d(0, y, 0));
+    probe.transform(transform);
+    BrepFilletDiagnostics diagnostics;
+    const auto intersection =
+      BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics);
+    CHECK(!intersection.isEmpty() == (y > 0 ? positiveY : negativeY));
+  }
+  CHECK_FALSE(brep->toDisplayMesh(0.1, 0.2).triangles.empty());
+}
+
+TEST_CASE("B-Rep rotational extrusion rejects unsupported or invalid sweeps", "[brep]")
+{
+  ModuleInstantiation inst("rotate_extrude");
+  auto revolution = std::make_shared<RotateExtrudeNode>(&inst, CurveDiscretizer(0.0));
+  auto square = std::make_shared<SquareNode>(&inst);
+  square->x = square->y = 2;
+  revolution->children = {square};
+  SECTION("axis crossing")
+  {
+    square->center = true;
+  }
+  SECTION("explicit sweep facets")
+  {
+    revolution->discretizer = CurveDiscretizer(6.0);
+  }
+  SECTION("zero angle")
+  {
+    revolution->angle = 0;
+  }
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(revolution);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*revolution, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(result));
+  REQUIRE(result->isEmpty());
 }
 
 TEST_CASE("Unsupported B-Rep extrusion variants do not silently become meshes", "[brep]")
