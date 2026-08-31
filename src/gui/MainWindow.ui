@@ -350,6 +350,8 @@
      <addaction name="viewActionAnalysisViewNormal"/>
      <addaction name="viewActionAnalysisViewCoordinate"/>
      <addaction name="viewActionAnalysisViewFlat"/>
+     <addaction name="viewActionAnalysisViewCanny"/>
+     <addaction name="viewActionAnalysisViewWireframe"/>
      <addaction name="viewActionAnalysisViewChromatic"/>
     </widget>
     <addaction name="viewActionPreview"/>
@@ -1221,6 +1223,14 @@
    <property name="text">
     <string>&amp;Flat / Unshaded</string>
    </property>
+  </action>
+  <action name="viewActionAnalysisViewCanny">
+   <property name="checkable"><bool>true</bool></property>
+   <property name="text"><string>Canny Edge Map</string></property>
+  </action>
+  <action name="viewActionAnalysisViewWireframe">
+   <property name="checkable"><bool>true</bool></property>
+   <property name="text"><string>Feature Wireframe</string></property>
   </action>
   <action name="viewActionAnalysisViewChromatic">
    <property name="checkable">

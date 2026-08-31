@@ -26,6 +26,7 @@ Feature::list_t Feature::feature_list;  // Double-listed values. --^
  * const Features listed below.
  */
 const Feature Feature::ExperimentalRoof("roof", "Enable <code>roof</code>");
+const Feature Feature::ExperimentalCannyMap("canny-map", "Canny map and shared feature edges");
 const Feature Feature::ExperimentalInputDriverDBus("input-driver-dbus",
                                                    "Enable DBus input drivers (requires restart)");
 const Feature Feature::ExperimentalLazyUnion("lazy-union", "Enable lazy unions.");

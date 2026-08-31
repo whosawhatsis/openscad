@@ -59,7 +59,7 @@ std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const
 #else
   // Choose PolySetRenderer for PolySet and Polygon2d, and for Manifold since we
   // know that all geometries are convertible to PolySet.
-  if (RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
+  if (options.canny || RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
       std::dynamic_pointer_cast<const PolySet>(root_geom) ||
       std::dynamic_pointer_cast<const Polygon2d>(root_geom)) {
     geomRenderer = std::make_shared<PolySetRenderer>(root_geom);
@@ -78,6 +78,8 @@ std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
   if (options["depth"]) glview->setAnalysisMode(AnalysisMode::Depth);
+  if (options.canny) glview->setAnalysisMode(AnalysisMode::Canny);
+  glview->edge_width = options.edgeWidth;
   glview->setDepthOptions(depthOptions);
   glview->paintGL();
   return glview;
@@ -97,8 +99,7 @@ bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOpti
   PRINTD("export_png geom");
   const auto glview = prepare_geometry_view(root_geom, options, camera, depthOptions);
   if (!glview) return false;
-  glview->save(output);
-  return true;
+  return glview->save(output);
 }
 
 bool export_depthmap(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,
@@ -169,6 +170,7 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
     else if (options["depth"]) mode = AnalysisMode::Depth;
   }
   glview->setAnalysisMode(mode);
+  glview->edge_width = options.edgeWidth;
   glview->setChromaticGauge(chromaticGauge);
   glview->paintGL();
   return glview;
@@ -177,8 +179,7 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
 bool export_png(const OffscreenView& glview, std::ostream& output)
 {
   PRINTD("export_png_preview_common");
-  glview.save(output);
-  return true;
+  return glview.save(output);
 }
 
 bool export_depthmap(const std::shared_ptr<const Geometry>& root_geom, const ViewOptions& options,

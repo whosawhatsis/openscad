@@ -23,6 +23,7 @@ public:
   static const Feature ExperimentalVectorSwizzle;
   static const Feature ExperimentalDiscretizationByError;
   static const Feature ExperimentalAiFeatures;
+  static const Feature ExperimentalCannyMap;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif

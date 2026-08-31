@@ -901,6 +901,11 @@ add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELO
 # ordinary preview and stay stable. These go through the preview path by design -
 # the modes are shader/lighting overrides on it, and --render is refused.
 set(AGENT_LIGHTING_FILES ${TEST_SCAD_DIR}/misc/agent-lighting.scad)
+foreach(canny_backend cgal manifold)
+  add_test(NAME canny-map-${canny_backend}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/canny-map-test.py
+      ${OPENSCAD_BINPATH} ${canny_backend})
+endforeach()
 add_cmdline_test(export-normalmap     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=normalmap)
 add_cmdline_test(export-coordinatemap OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=coordinatemap)
 add_cmdline_test(export-flatmap       OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=flatmap)

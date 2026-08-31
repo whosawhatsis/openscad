@@ -82,7 +82,9 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
     this->polygons_.emplace_back(poly, std::shared_ptr<const PolySet>(poly->tessellate()));
 #ifdef ENABLE_MANIFOLD
   } else if (const auto mani = std::dynamic_pointer_cast<const ManifoldGeometry>(geom)) {
-    this->polysets_.push_back(mani->toPolySet());
+    auto mesh = mani->toPolySet();
+    mesh->setSmoothAngle(mani->smoothAngle());
+    this->polysets_.push_back(std::move(mesh));
 #endif
 #ifdef ENABLE_CGAL
   } else if (const auto N = std::dynamic_pointer_cast<const CGALNefGeometry>(geom)) {
@@ -92,6 +94,7 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
     if (!N->isEmpty()) {
       if (auto ps = CGALUtils::createPolySetFromNefPolyhedron3(*N->p3)) {
         ps->setConvexity(N->getConvexity());
+        ps->setSmoothAngle(N->smoothAngle());
         this->polysets_.push_back(std::shared_ptr<PolySet>(std::move(ps)));
       }
     }
@@ -229,6 +232,13 @@ void PolySetRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
 
 void PolySetRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shaderinfo) const
 {
+  if (shaderinfo && shaderinfo->captureSurface && !polygon_vertex_state_containers_.empty()) {
+    glUseProgram(shaderinfo->resource.shader_program);
+    // Pure 2D: rasterize its filled contours, without the ordinary display outlines.
+    for (const auto& state : polygon_vertex_state_containers_.front().states()) state->draw();
+    glUseProgram(0);
+    return;
+  }
   drawPolySets(showedges, shaderinfo);
   drawPolygons();
 }
