@@ -854,6 +854,93 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
   CHECK(brep->getBoundingBox().max().x() == Catch::Approx(imported->center ? 4 : 11).margin(1e-5));
 }
 
+TEST_CASE("B-Rep DXF extrusion retains curves and placement", "[brep]")
+{
+  ModuleInstantiation inst("import");
+  auto imported = std::make_shared<ImportNode>(
+    &inst, ImportType::DXF,
+    CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  imported->filename =
+    Filename((std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+              "tests/data/dxf/brep-curves.dxf")
+               .string());
+  imported->layer = "circle";
+  bool unsupported = false;
+  imported->origin_x = 1;
+  imported->origin_y = 2;
+  imported->scale = 2;
+  imported->center = false;
+  size_t curvedFaces = 4;
+  double minY = 0, maxY = 8;
+  SECTION("circle")
+  {
+  }
+  SECTION("arc with closing line")
+  {
+    imported->layer = "arc";
+    curvedFaces = 2;
+    minY = 4;
+  }
+  SECTION("ellipse vector and ratio are not translated or scaled twice")
+  {
+    imported->layer = "ellipse";
+    minY = 2;
+    maxY = 6;
+  }
+  SECTION("scaled rotated block")
+  {
+    imported->layer = "block";
+    minY = -4;
+    maxY = 12;
+  }
+  SECTION("even-odd circular hole")
+  {
+    imported->layer = "ring";
+    curvedFaces = 8;
+  }
+  SECTION("explicit circle facets")
+  {
+    imported->discretizer = CurveDiscretizer(6.0);
+    curvedFaces = 0;
+    minY = 4 - 2 * std::sqrt(3.0);
+    maxY = 4 + 2 * std::sqrt(3.0);
+  }
+  SECTION("unsupported polyline bulge is not silently flattened")
+  {
+    imported->layer = "bulge";
+    unsupported = true;
+  }
+  auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
+  extrusion->height = Vector3d(0, 0, 5);
+  extrusion->children = {imported};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(extrusion);
+  GeometryEvaluator evaluator(tree);
+  const auto geometry = evaluator.evaluateGeometry(*extrusion, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(geometry);
+  REQUIRE(brep);
+  if (unsupported) {
+    CHECK(brep->isEmpty());
+    return;
+  }
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Other) == curvedFaces);
+  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(0).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(8).margin(1e-5));
+  CHECK(brep->getBoundingBox().min().y() == Catch::Approx(minY).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().y() == Catch::Approx(maxY).margin(1e-5));
+  if (imported->layer.get() == "ring") {
+    auto probe = BrepGeometry::cube(0.01, 0.01, 0.01);
+    Transform3d placement = Transform3d::Identity();
+    placement.translate(Vector3d(4, 4, 1));
+    probe.transform(placement);
+    BrepFilletDiagnostics diagnostics;
+    CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
+  }
+}
+
 TEST_CASE("B-Rep text extrusion retains font Bezier curves", "[brep]")
 {
   PlatformUtils::registerApplicationPath(

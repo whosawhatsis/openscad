@@ -6,6 +6,7 @@
 
 #include "core/CurveDiscretizer.h"
 #include "geometry/linalg.h"
+#include "utils/rational_curve.h"
 
 class DxfData
 {
@@ -38,10 +39,12 @@ public:
   VectorOfVector2d points;
   std::vector<Path> paths;
   std::vector<Dim> dims;
+  RationalContour2d curves;
 
   DxfData() = default;
   DxfData(CurveDiscretizer discretizer, const std::string& filename, const std::string& layername = "",
-          double xorigin = 0.0, double yorigin = 0.0, double scale = 1.0);
+          double xorigin = 0.0, double yorigin = 0.0, double scale = 1.0, bool retainCurves = false);
+  [[nodiscard]] std::vector<RationalContour2d> curveContours() const;
 
   int addPoint(double x, double y);
 

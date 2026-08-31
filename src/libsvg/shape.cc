@@ -23,6 +23,7 @@
  * THE SOFTWARE.
  */
 #include "libsvg/shape.h"
+#include "utils/rational_curve.h"
 #include <stdexcept>
 
 #include <clipper2/clipper.offset.h>
@@ -347,16 +348,12 @@ path_list_t shape::ellipse_curves(double x, double y, double rx, double ry, doub
                                   double start, double sweep)
 {
   path_list_t curves;
-  const int count = std::max(1, static_cast<int>(std::ceil(std::abs(sweep) / 90)));
-  const double step = sweep / count;
-  const auto pole = [&](double angle, double weight) {
-    const double px = rx * cos_degrees(angle) / weight, py = ry * sin_degrees(angle) / weight;
-    return Eigen::Vector3d(x + cos_degrees(rotation) * px - sin_degrees(rotation) * py,
-                           y + sin_degrees(rotation) * px + cos_degrees(rotation) * py, weight);
-  };
-  for (int i = 0; i < count; ++i) {
-    const double a = start + i * step;
-    curves.push_back({pole(a, 1), pole(a + step / 2, cos_degrees(step / 2)), pole(a + step, 1)});
+  for (const auto& curve :
+       rationalEllipseArcs({x, y}, {rx * cos_degrees(rotation), rx * sin_degrees(rotation)},
+                           {-ry * sin_degrees(rotation), ry * cos_degrees(rotation)}, start * M_PI / 180,
+                           sweep * M_PI / 180)) {
+    curves.emplace_back();
+    for (const auto& p : curve) curves.back().emplace_back(p[0], p[1], p[2]);
   }
   return curves;
 }

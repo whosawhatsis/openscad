@@ -26,6 +26,7 @@
 #include "core/State.h"
 #include "core/TextNode.h"
 #include "io/import.h"
+#include "io/DxfData.h"
 #include "core/TransformNode.h"
 #include "core/Tree.h"
 #include "core/enums.h"
@@ -77,6 +78,29 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
                                                  double extrusionHeight = 0.0)
 {
   if (extrusionHeight > 0) {
+    if (const auto *imported = dynamic_cast<const ImportNode *>(&node);
+        imported && imported->type == ImportType::DXF) {
+      const DxfData data(imported->discretizer, imported->filename, imported->layer.value_or(""),
+                         imported->origin_x, imported->origin_y, imported->scale, true);
+      BrepGeometry result(nullptr);
+      BrepFilletDiagnostics unused;
+      for (const auto& contour : data.curveContours()) {
+        const auto region = BrepGeometry::rationalPrism({contour}, extrusionHeight);
+        // DXF polygon sanitization uses even-odd fill, independent of contour direction.
+        const auto outside =
+          BrepGeometry::boolean({result, region}, BrepOperation::Difference, 0, unused);
+        const auto inside =
+          BrepGeometry::boolean({region, result}, BrepOperation::Difference, 0, unused);
+        result = BrepGeometry::boolean({outside, inside}, BrepOperation::Union, 0, unused);
+      }
+      if (imported->center && !result.isEmpty()) {
+        const Vector3d center = result.getBoundingBox().center();
+        auto placement = Transform3d::Identity();
+        placement.translate(Vector3d(-center.x(), -center.y(), 0));
+        result.transform(placement);
+      }
+      return std::make_unique<BrepGeometry>(std::move(result));
+    }
     if (const auto *imported = dynamic_cast<const ImportNode *>(&node);
         imported && imported->type == ImportType::SVG) {
       std::vector<SvgBezierContours> curves;

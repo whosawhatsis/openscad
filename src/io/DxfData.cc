@@ -78,8 +78,10 @@ struct Line {
    Reads a layer from the given file, or all layers if layername.empty()
  */
 DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, const std::string& layername,
-                 double xorigin, double yorigin, double scale)
+                 double xorigin, double yorigin, double scale, bool retainCurves)
 {
+  if (retainCurves && (!std::isfinite(scale) || scale <= 0))
+    throw std::invalid_argument("Native DXF import requires positive finite scale");
   std::ifstream stream(std::filesystem::u8path(filename));
   if (!stream.good()) {
     LOG(message_group::Warning, "Can't open DXF file '%1$s'.", filename);
@@ -93,12 +95,16 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
   auto in_entities_section = false;
   auto in_blocks_section = false;
   std::string current_block;
+  std::unordered_map<std::string, RationalContour2d> blockCurves;
+  std::unordered_map<std::string, Vector2d> blockOrigins;
+  bool samplingCurve = false;
 
 #define ADD_LINE(_x1, _y1, _x2, _y2)                                                         \
   do {                                                                                       \
     double _p1x = (_x1), _p1y = (_y1), _p2x = (_x2), _p2y = (_y2);                           \
     if (!in_entities_section && !in_blocks_section) break;                                   \
     if (in_entities_section && !(layername.empty() || layername == layer)) break;            \
+    if (retainCurves && !samplingCurve) addNativeCurve({{_p1x, _p1y, 1}, {_p2x, _p2y, 1}});  \
     grid.align(_p1x, _p1y);                                                                  \
     grid.align(_p2x, _p2y);                                                                  \
     grid.data(_p1x, _p1y).push_back(lines.size());                                           \
@@ -116,6 +122,23 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
   double radius = 0;
   double arc_start_angle = 0, arc_stop_angle = 0;
   double ellipse_start_angle = 0, ellipse_stop_angle = 0;
+  bool hasPolylineBulge = false;
+  const auto addNativeCurve = [&](RationalCurve2d curve) {
+    if (!retainCurves) return;
+    if (curve.size() == 2 && std::hypot(curve[0][0] - curve[1][0], curve[0][1] - curve[1][1]) < 1e-12)
+      return;
+    if (in_entities_section && (layername.empty() || layername == layer))
+      curves.push_back(std::move(curve));
+    else if (in_blocks_section && !current_block.empty())
+      blockCurves[current_block].push_back(std::move(curve));
+  };
+  const auto retainEllipse = [&](Vector2d center, Vector2d u, Vector2d v, double start, double sweep) {
+    if (!retainCurves || discretizer.isFnSpecified()) return;
+    for (auto curve :
+         rationalEllipseArcs({center.x(), center.y()}, {u.x(), u.y()}, {v.x(), v.y()}, start, sweep))
+      addNativeCurve(std::move(curve));
+    samplingCurve = true;
+  };
 
   for (auto& coord : coords) {
     for (double& j : coord) {
@@ -168,6 +191,9 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
 
       switch (id) {
       case 0:
+        if (retainCurves && mode == "LWPOLYLINE" && hasPolylineBulge &&
+            (in_blocks_section || layername.empty() || layername == layer))
+          throw std::runtime_error("Native DXF polyline bulges are not supported yet");
         if (mode == "SECTION") {
           in_entities_section = iddata == "ENTITIES";
           in_blocks_section = iddata == "BLOCKS";
@@ -188,6 +214,7 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
         } else if (mode == "CIRCLE") {
           const int n = discretizer.getCircularSegmentCount(radius).value_or(3);
           Vector2d center(xverts.at(0), yverts.at(0));
+          retainEllipse(center, {radius, 0}, {0, radius}, 0, 2 * M_PI);
           for (int i = 0; i < n; ++i) {
             const double a1 = (360.0 * i) / n;
             const double a2 = (360.0 * (i + 1)) / n;
@@ -200,6 +227,8 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
             arc_stop_angle += 360.0;
           }
           const double arc_angle = arc_stop_angle - arc_start_angle;
+          retainEllipse(center, {radius, 0}, {0, radius}, arc_start_angle * M_PI / 180,
+                        arc_angle * M_PI / 180);
           const int n = discretizer.getCircularSegmentCount(radius, arc_angle).value_or(1);
           for (int i = 0; i < n; ++i) {
             const double a1 = arc_start_angle + arc_angle * i / n;
@@ -214,6 +243,13 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
           Vector2d center(xverts.at(0), yverts.at(0));
           //				Vector2d ce(xverts[1], yverts[1]);
           Vector2d ce(xverts.at(1), yverts.at(1));
+          if (retainCurves) {
+            // Group 11/21 is a vector, and group 40 a dimensionless ratio.
+            if (!in_blocks_section) ce += Vector2d(xorigin * scale, yorigin * scale);
+            const double ratio = in_blocks_section ? radius : radius / scale;
+            retainEllipse(center, ce, Vector2d(-ce.y(), ce.x()) * ratio, ellipse_start_angle,
+                          ellipse_stop_angle - ellipse_start_angle);
+          }
           //				double r_major = ce.length();
           const double r_major = sqrt(ce[0] * ce[0] + ce[1] * ce[1]);
           //				double rot_angle = ce.angle();
@@ -229,7 +265,8 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
           }
 
           // the ratio stored in 'radius; due to the parser code not checking entity type
-          const double r_minor = r_major * radius;
+          const double r_minor =
+            r_major * (retainCurves && !in_blocks_section ? radius / scale : radius);
           const double sweep_angle = ellipse_stop_angle - ellipse_start_angle;
           const int n =
             discretizer.getCircularSegmentCount(r_major, sweep_angle / (2 * M_PI) * 360.0).value_or(1);
@@ -254,6 +291,29 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
             p1[1] = p2_rot[1];
           }
         } else if (mode == "INSERT") {
+          if (retainCurves) {
+            const auto found = blockCurves.find(iddata);
+            if (found == blockCurves.end())
+              throw std::runtime_error("Native DXF INSERT references an unavailable block");
+            if (in_blocks_section && iddata == current_block)
+              throw std::runtime_error("Native DXF INSERT cannot reference its own block");
+            const auto origin = blockOrigins.at(iddata);
+            const double placementScale = in_blocks_section ? 1 : scale;
+            for (auto curve : found->second) {
+              for (auto& pole : curve) {
+                const double x = (pole[0] - origin.x()) * ellipse_start_angle,
+                             y = (pole[1] - origin.y()) * ellipse_stop_angle;
+                pole[0] = (cos_degrees(arc_start_angle) * x - sin_degrees(arc_start_angle) * y) *
+                            placementScale +
+                          xverts.at(0);
+                pole[1] = (sin_degrees(arc_start_angle) * x + cos_degrees(arc_start_angle) * y) *
+                            placementScale +
+                          yverts.at(0);
+              }
+              addNativeCurve(std::move(curve));
+            }
+            samplingCurve = true;
+          }
           // scale is stored in ellipse_start|stop_angle, rotation in arc_start_angle;
           // due to the parser code not checking entity type
           const int n = blockdata[iddata].size();
@@ -282,6 +342,11 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
           this->dims.back().name = name;
         } else if (mode == "BLOCK") {
           current_block = iddata;
+          if (retainCurves) {
+            blockCurves[current_block];
+            blockOrigins[current_block] =
+              Vector2d(xverts.empty() ? 0 : xverts[0], yverts.empty() ? 0 : yverts[0]);
+          }
         } else if (mode == "ENDBLK") {
           current_block.erase();
         } else if (mode == "ENDSEC") {
@@ -289,6 +354,8 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
                    (in_entities_section && (layername.empty() || layername == layer))) {
           unsupported_entities_list[mode]++;
         }
+        samplingCurve = false;
+        hasPolylineBulge = false;
         mode = data;
         layer.erase();
         name.erase();
@@ -348,6 +415,7 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
         // ELLIPSE: stop_angle
         // INSERT: Y scale
         ellipse_stop_angle = boost::lexical_cast<double>(data);
+        if (mode == "LWPOLYLINE" && ellipse_stop_angle != 0) hasPolylineBulge = true;
         break;
       case 51:  // ARC
         arc_stop_angle = boost::lexical_cast<double>(data);
@@ -356,11 +424,19 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
         // LWPOLYLINE: polyline flag
         // DIMENSION: dimension type
         dimtype = boost::lexical_cast<int>(data);
+        if (retainCurves && mode == "INSERT" && dimtype > 1)
+          throw std::runtime_error("Native DXF INSERT arrays are not supported yet");
+        break;
+      case 71:
+        if (retainCurves && mode == "INSERT" && boost::lexical_cast<int>(data) > 1)
+          throw std::runtime_error("Native DXF INSERT arrays are not supported yet");
         break;
       }
     } catch (boost::bad_lexical_cast& blc) {
+      if (retainCurves) throw std::runtime_error("Invalid numeric value in native DXF import");
       LOG(message_group::Warning, "Illegal value '%1$s'in `%2$s'", data, filename);
     } catch (const std::out_of_range& oor) {
+      if (retainCurves) throw std::runtime_error("Incomplete entity in native DXF import");
       LOG(message_group::Warning, "Not enough input values for %1$s. in '%2$s'", data, filename);
     }
   }
@@ -373,6 +449,12 @@ DxfData::DxfData(CurveDiscretizer discretizer, const std::string& filename, cons
       LOG(message_group::Warning, "Unsupported DXF Entity '%1$s' (%2$x) in layer '%3$s' of %4$s",
           i.first, i.second, layername, fs_uncomplete(filename, fs::current_path()).generic_string());
     }
+  }
+
+  if (retainCurves) {
+    if (!unsupported_entities_list.empty())
+      throw std::runtime_error("Native DXF import encountered unsupported entities");
+    return;
   }
 
   // Extract paths from parsed data
@@ -585,4 +667,35 @@ std::unique_ptr<Polygon2d> DxfData::toPolygon2d() const
     poly->addOutline(outline);
   }
   return poly;
+}
+
+std::vector<RationalContour2d> DxfData::curveContours() const
+{
+  auto remaining = curves;
+  std::vector<RationalContour2d> contours;
+  const auto same = [](const auto& a, const auto& b) {
+    return std::hypot(a[0] - b[0], a[1] - b[1]) <= 1e-7;
+  };
+  // ponytail: endpoint stitching is quadratic; spatial indexing can replace the
+  // scan if large DXF profiles make this measurable.
+  while (!remaining.empty()) {
+    contours.push_back({std::move(remaining.back())});
+    remaining.pop_back();
+    auto& contour = contours.back();
+    while (!same(contour.front().front(), contour.back().back())) {
+      const auto end = contour.back().back();
+      auto next = std::find_if(remaining.begin(), remaining.end(), [&](const auto& curve) {
+        return same(end, curve.front()) || same(end, curve.back());
+      });
+      if (next == remaining.end()) {
+        // The existing DXF importer closes open paths with a straight segment.
+        contour.push_back({end, contour.front().front()});
+        break;
+      }
+      if (!same(end, next->front())) std::reverse(next->begin(), next->end());
+      contour.push_back(std::move(*next));
+      remaining.erase(next);
+    }
+  }
+  return contours;
 }

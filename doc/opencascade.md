@@ -24,6 +24,11 @@ is not implemented yet.
   scaling, and centering are retained. Explicit `$fn` makes imported circles
   polygonal. Native import currently requires closed, nonzero-winding filled
   profiles without strokes.
+- DXF profiles retain circles, circular arcs, ellipses, straight LINE/LWPOLYLINE
+  edges, and resolved block INSERT transforms (including base points, rotation,
+  and nonuniform scale). Layers, import origin/scale, centering, explicit `$fn`,
+  and even-odd holes are supported. Endpoints join within 1e-7 model units; open
+  paths close with a straight segment, as in the existing DXF importer.
 - Round, miter, and chamfer offsets of supported profiles, and both cut and shadow
   projections used as extrusion profiles. Shadow projection uses OCCT silhouettes
   and native region classification, not a rendered image or triangle mesh.
@@ -46,7 +51,8 @@ is not implemented yet.
 ## Current limitations
 
 This is not yet a replacement for every CGAL/Manifold operation. General curved
-hulls, general curved-operand Minkowski sums, native DXF profiles,
+hulls, general curved-operand Minkowski sums, DXF spline/bulged-polyline entities
+and INSERT arrays/forward block references,
 SVG open/stroked paths and even-odd fills, and negative extrusion scales
 remain unsupported. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
