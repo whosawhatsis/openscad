@@ -53,6 +53,7 @@
 #include "core/Settings.h"
 #include "core/parsersettings.h"
 #include "geometry/Geometry.h"
+#include "glview/CsgInfo.h"
 #include "gui/AppleEvents.h"
 #include "gui/input/InputDriverManager.h"
 #include "version.h"
@@ -227,6 +228,10 @@ int gui(std::vector<std::string>& inputFiles, const std::filesystem::path& origi
   // Other global settings
   qRegisterMetaType<Message>();
   qRegisterMetaType<std::shared_ptr<const Geometry>>();
+  // A preview crosses the same boundary as a rendered mesh: the compute worker's reply carries the
+  // product list back to the window, and Qt cannot pass a type through a signal it has never been
+  // told about.
+  qRegisterMetaType<std::shared_ptr<CsgInfo>>();
 
   FontCache::registerProgressHandler(dialogInitHandler);
 

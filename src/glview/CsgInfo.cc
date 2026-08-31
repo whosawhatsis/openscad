@@ -196,9 +196,17 @@ bool import_csg_products(CsgInfo& csgInfo, const std::string& document,
   // Shared across the three lists, so a leaf appearing in more than one is decoded once, exactly as
   // it was sent once.
   std::map<std::string, std::shared_ptr<const PolySet>> decoded;
-  return readProducts(parsed["products"], csgInfo.root_products, payloads, decoded) &&
-         readProducts(parsed.value("highlights", json::array()), csgInfo.highlights_products, payloads,
-                      decoded) &&
-         readProducts(parsed.value("background", json::array()), csgInfo.background_products, payloads,
-                      decoded);
+  try {
+    return readProducts(parsed["products"], csgInfo.root_products, payloads, decoded) &&
+           readProducts(parsed.value("highlights", json::array()), csgInfo.highlights_products, payloads,
+                        decoded) &&
+           readProducts(parsed.value("background", json::array()), csgInfo.background_products, payloads,
+                        decoded);
+  } catch (const std::exception& e) {
+    // A malformed product list has to be reported, not thrown. This runs on the GUI thread from a
+    // queued reply, where an escaping exception kills the request silently and leaves the window
+    // waiting for an answer that will never come.
+    LOG(message_group::Error, "Preview could not be read: %1$s", e.what());
+    return false;
+  }
 }

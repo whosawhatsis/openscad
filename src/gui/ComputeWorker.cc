@@ -5,6 +5,7 @@
 #include <QProcess>
 #include <QThread>
 #include <QProcessEnvironment>
+#include <cstdio>
 #include <exception>
 #include <functional>
 #include <map>

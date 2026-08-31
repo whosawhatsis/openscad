@@ -11,6 +11,7 @@ private slots:
   void checkIsolatedRenderProducesGeometry();
   //! And a window whose worker cannot start must fall back rather than be left unable to render.
   void checkAWindowWhoseWorkerCannotStartStillRenders();
+  void checkInProcessPreviewProducesProducts();
   void checkOpenTabPropagateToWindow();
   void checkSaveToShouldUpdateWindowTitle();
 };
