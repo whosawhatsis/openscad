@@ -8,6 +8,7 @@
 
 #include "core/enums.h"
 #include "geometry/linalg.h"
+#include "geometry/SurfaceFinish.h"
 
 class PolySet;
 
@@ -89,7 +90,7 @@ class CSGLeaf : public CSGNode
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   CSGLeaf(const std::shared_ptr<const PolySet>& ps, Transform3d matrix, Color4f color,
-          std::string materialName, float roughness, float metallic, std::string label, const int index);
+          std::string materialName, const SurfaceFinish& finish, std::string label, const int index);
   void initBoundingBox() override;
   [[nodiscard]] bool isEmptySet() const override;
   [[nodiscard]] std::string dump() const override;
@@ -99,8 +100,7 @@ public:
   Color4f color;
   // Carried for the renderers only - see State::materialName().
   std::string materialName;
-  float roughness{-1.0f};
-  float metallic{0.0f};
+  SurfaceFinish finish;
 
   const int index;
 

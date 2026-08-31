@@ -4,7 +4,7 @@ varying vec3 vNormal;
 varying vec3 vEyePosition;
 varying vec4 vColor;
 varying vec3 vBC;
-varying vec2 vMaterial;
+varying vec4 vMaterial;
 uniform bool showEdges;
 
 const float PI = 3.14159265;
@@ -92,11 +92,16 @@ void main(void)
   // is the shiniest value that stays numerically stable.
   float roughness = clamp(vMaterial.x >= 0.0 ? vMaterial.x : 0.417, 0.02, 1.0);
   float metallic = clamp(vMaterial.y, 0.0, 1.0);
+  // Normal-incidence reflectance of the dielectric half, folded from ior and
+  // specular on the CPU because both do the same single job here. 0.04 is
+  // ior 1.5, the conventional default for everything that is not a metal.
+  float reflectance = clamp(vMaterial.z, 0.0, 1.0);
+  float emission = max(vMaterial.w, 0.0);
   float a = roughness * roughness;
   // A metal has no diffuse response and reflects its own color; a dielectric
   // keeps full diffuse over a dim, uncolored 4% reflection.
   vec3 albedo = vColor.rgb * (1.0 - metallic);
-  vec3 F0 = mix(vec3(0.04), vColor.rgb, metallic);
+  vec3 F0 = mix(vec3(reflectance), vColor.rgb, metallic);
   float NdotV = max(dot(normal, viewDirection), 1e-4);
 
   // A metal has no diffuse response, so the environment is the only thing it
@@ -134,9 +139,15 @@ void main(void)
     }
   }
 
+  // Emitted light is not reflected light: it takes no Fresnel, no shadowing and
+  // no environment, and it is the one term that survives a surface facing away
+  // from every light. Scaled by the surface color so an emissive red part glows
+  // red rather than white.
+  vec3 emitted = vColor.rgb * emission;
+
   // Premultiply only the material contribution. The highlight represents
   // reflected light and remains visible as the material becomes transparent.
-  vec4 surface = vec4(clamp(vColor.a * diffuse + specular, 0.0, 1.0), vColor.a);
+  vec4 surface = vec4(clamp(vColor.a * diffuse + specular + emitted, 0.0, 1.0), vColor.a);
   vec4 edge = vec4((vColor.rgb + vec3(1.0)) * 0.5, 1.0);
   gl_FragColor = showEdges ? mix(edge, surface, edgeFactor()) : surface;
 }

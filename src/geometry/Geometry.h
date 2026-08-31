@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "geometry/linalg.h"
+#include "geometry/SurfaceFinish.h"
 
 class AbstractNode;
 class CGALNefGeometry;
@@ -46,6 +47,9 @@ public:
   [[nodiscard]] unsigned int getConvexity() const { return convexity; }
   void setConvexity(int c) { this->convexity = c; }
   virtual void setColor(const Color4f& c) {}
+  //! Paint every face with one finish. The per-face channel is what the
+  //! viewport reads; the scalar members below stay for the exporters.
+  virtual void setFinish(const SurfaceFinish& f) {}
   void setMaterialName(std::string name) { materialName_ = std::move(name); }
   // Roughness reaches the shader as the user wrote it: the microfacet BRDF is
   // parameterized on roughness directly, so there is nothing to convert and

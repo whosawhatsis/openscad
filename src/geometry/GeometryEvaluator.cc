@@ -535,6 +535,11 @@ Response GeometryEvaluator::visit(State& state, const ColorNode& node)
               mutableGeom->setRoughness(static_cast<float>(node.pbrRoughness));
             }
             if (node.hasMetallic) mutableGeom->setMetallic(static_cast<float>(node.metallic));
+            // The per-face channel, which is what the viewport reads. The
+            // scalars above stay because the exporters read those. Skipped when
+            // the node declares nothing, so a plain color() adds no channel.
+            const auto finish = node.finish();
+            if (!finish.isDefault()) mutableGeom->setFinish(finish);
             if (!node.finishParams.empty()) mutableGeom->setFinishParams(node.finishParams);
             if (node.isMaterial) {
               // material("PLA") with no color is the natural minimal form now

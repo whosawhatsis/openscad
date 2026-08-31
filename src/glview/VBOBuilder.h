@@ -15,6 +15,7 @@
 #include "glview/system-gl.h"
 #include "utils/printutils.h"
 #include "geometry/linalg.h"
+#include "geometry/SurfaceFinish.h"
 #include "Feature.h"
 #include "glview/VertexState.h"
 
@@ -369,18 +370,13 @@ public:
   inline ElementsMap& elementsMap() { return elements_map_; }
 
   size_t shader_attributes_index_{0};
-  // Negative means "not set"; see Geometry::shaderRoughness().
-  float material_roughness_{-1.0f};
-  float material_metallic_{0.0f};
+  SurfaceFinish material_finish_;
   void addShaderData();
   // Shading attributes for the vertices written from here on. They ride in the
   // same per-vertex array as barycentric coordinates, so a batch may hold many
-  // bodies with different materials without splitting the draw.
-  void setMaterialParams(float roughness, float metallic)
-  {
-    material_roughness_ = roughness;
-    material_metallic_ = metallic;
-  }
+  // bodies with different materials without splitting the draw. create_surface
+  // overrides this per face where the PolySet carries its own finish channel.
+  void setFinish(const SurfaceFinish& finish) { material_finish_ = finish; }
 
   void add_barycentric_attribute(size_t active_point_index, size_t primitive_index, size_t shape_size,
                                  bool outlines);

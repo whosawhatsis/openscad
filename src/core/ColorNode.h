@@ -8,6 +8,7 @@
 #include "core/BaseVisitable.h"
 #include "core/ModuleInstantiation.h"
 #include "core/node.h"
+#include "geometry/SurfaceFinish.h"
 #include "geometry/linalg.h"
 
 class ColorNode : public AbstractNode
@@ -39,4 +40,21 @@ public:
   // POV exporter consumes them yet - see ColorNode.cc for the accepted names.
   std::map<std::string, double> finishParams;
   bool hasMetallic{false};
+
+  //! The shading half of what this node declares, in the form both evaluators
+  //! and the viewport want it. specular and ior collapse into one dielectric
+  //! reflectance here; the exporters read them unfolded out of finishParams.
+  [[nodiscard]] SurfaceFinish finish() const
+  {
+    const auto param = [&](const char *name, double fallback) {
+      const auto it = finishParams.find(name);
+      return it == finishParams.end() ? fallback : it->second;
+    };
+    SurfaceFinish f;
+    if (hasPbrRoughness) f.roughness = static_cast<float>(pbrRoughness);
+    if (hasMetallic) f.metallic = static_cast<float>(metallic);
+    f.reflectance = SurfaceFinish::reflectanceFor(param("ior", 1.5), param("specular", 1.0));
+    f.emission = static_cast<float>(param("emission", 0.0));
+    return f;
+  }
 };

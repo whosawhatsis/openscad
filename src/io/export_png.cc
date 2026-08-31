@@ -39,11 +39,28 @@ void setupCamera(Camera& cam, const BoundingBox& bbox)
 
 namespace {
 
+// One decision, not two writes to the same field: an analysis export format
+// names the mode outright, and the --view flags only apply when the format did
+// not. Shared by the preview and the rendered-geometry paths, because they had
+// drifted: the geometry path honored only --view=depth, so --render
+// --view=shaded silently produced an ordinary fixed-function render and no
+// material attribute reached the shader at all.
+AnalysisMode analysisModeFor(const ViewOptions& options, AnalysisMode agentMode)
+{
+  if (agentMode != AnalysisMode::Default) return agentMode;
+  if (options["shaded"]) return AnalysisMode::Shaded;
+  if (options["depth-metric"]) return AnalysisMode::DepthMetric;
+  if (options["depth-metric10um"]) return AnalysisMode::DepthMetricFine;
+  if (options["depth"]) return AnalysisMode::Depth;
+  return AnalysisMode::Default;
+}
+
 // Shared by the color and depth exporters: same scene, same camera, only the
 // readback differs.
 std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const Geometry>& root_geom,
                                                      const ViewOptions& options, Camera& camera,
-                                                     const DepthmapOptions& depthOptions = {})
+                                                     const DepthmapOptions& depthOptions = {},
+                                                     AnalysisMode agentMode = AnalysisMode::Default)
 {
   assert(root_geom != nullptr);
   std::unique_ptr<OffscreenView> glview;
@@ -77,7 +94,7 @@ std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const
   glview->setShowAxes(options["axes"]);
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
-  if (options["depth"]) glview->setAnalysisMode(AnalysisMode::Depth);
+  glview->setAnalysisMode(analysisModeFor(options, agentMode));
   glview->setDepthOptions(depthOptions);
   glview->paintGL();
   return glview;
@@ -157,18 +174,7 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
   glview->setShowScaleProportional(options["scales"]);
   glview->setShowEdges(options["edges"]);
   glview->setDepthOptions(depthOptions);
-  // One decision, not two writes to the same field: an analysis export format
-  // names the mode outright, and --view=depth only applies when the format did
-  // not. Setting both in sequence silently let the second win, which made
-  // --view=depth a no-op for an ordinary PNG.
-  AnalysisMode mode = agentMode;
-  if (mode == AnalysisMode::Default) {
-    if (options["shaded"]) mode = AnalysisMode::Shaded;
-    else if (options["depth-metric"]) mode = AnalysisMode::DepthMetric;
-    else if (options["depth-metric10um"]) mode = AnalysisMode::DepthMetricFine;
-    else if (options["depth"]) mode = AnalysisMode::Depth;
-  }
-  glview->setAnalysisMode(mode);
+  glview->setAnalysisMode(analysisModeFor(options, agentMode));
   glview->setChromaticGauge(chromaticGauge);
   glview->paintGL();
   return glview;

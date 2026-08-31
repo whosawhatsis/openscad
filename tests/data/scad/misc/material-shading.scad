@@ -22,3 +22,6 @@ else if (mode == 2) material("m", c = "red", roughness = 0.05) body();  // tight
 else if (mode == 3) material("m", c = "red", roughness = 0.9) body();   // broad highlight
 else if (mode == 4) material("m", c = "red", metallic = 1) body();      // metal
 else if (mode == 5) material("m", c = "red", roughness = 0) body();     // mirror, not "unset"
+else if (mode == 6) material("m", c = "red", emission = 0.5) body();    // glows
+else if (mode == 7) material("m", c = "red", ior = 2.5) body();         // higher F0
+else if (mode == 8) material("m", c = "red", specular = 0) body();      // no reflection at all

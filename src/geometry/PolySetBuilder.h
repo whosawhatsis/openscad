@@ -9,6 +9,7 @@
 #include "geometry/Polygon2d.h"
 #include "geometry/Reindexer.h"
 #include "geometry/linalg.h"
+#include "geometry/SurfaceFinish.h"
 #include "utils/boost-utils.h"
 
 class PolySet;
@@ -43,10 +44,17 @@ public:
   std::unique_ptr<PolySet> build();
 
 private:
+  SurfaceFinish finishOf(size_t colorIndex) const;
+  void addSurface(const Color4f& color, const SurfaceFinish& finish);
+
+public:
+private:
   Reindexer<Vector3d> vertices_;
   PolygonIndices indices_;
   std::vector<int32_t> color_indices_;
   std::vector<Color4f> colors_;
+  // Parallel to colors_, or empty. See PolySet::finishes.
+  std::vector<SurfaceFinish> finishes_;
   int convexity_{1};
   int dim_;
   boost::tribool convex_;

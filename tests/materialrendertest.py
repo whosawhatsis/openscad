@@ -41,10 +41,13 @@ if not os.path.exists(args.openscad):
     failquit("cant find openscad executable named: " + args.openscad)
 
 
-def min_channels(png):
-    """Per-pixel smallest color channel, in scanline order: how close each pixel
-    gets to white. Decoded with zlib rather than PIL, which this suite cannot
-    assume is installed."""
+def channels(png, pick=min):
+    """Per-pixel reduction over the color channels, in scanline order. `min` is
+    how close each pixel gets to white, which is what a saturating highlight
+    does; `max` is how bright it gets in any one channel, which is what a
+    colored emission does - an emissive red part glows red, so it never moves
+    the min. Decoded with zlib rather than PIL, which this suite cannot assume
+    is installed."""
     import struct
     import zlib
 
@@ -81,16 +84,16 @@ def min_channels(png):
                 pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
                 line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xFF
         for i in range(0, stride, bpp):
-            out.append(min(line[i], line[i + 1], line[i + 2]))
+            out.append(pick(line[i], line[i + 1], line[i + 2]))
         prev = line
     return out
 
 
-def whitening(a, b):
-    """How much whiter than b the whitest-gaining pixel of a gets. The two
-    renders share a camera and a background, so the background cancels and only
-    the material's own response is measured."""
-    return max(x - y for x, y in zip(min_channels(a), min_channels(b)))
+def gain(a, b, pick=min):
+    """How much more than b the most-gaining pixel of a gets, under `pick`. The
+    two renders share a camera and a background, so the background cancels and
+    only the material's own response is measured."""
+    return max(x - y for x, y in zip(channels(a, pick), channels(b, pick)))
 
 
 def render(mode):
@@ -112,6 +115,9 @@ smooth = render(2)         # roughness 0.05
 rough = render(3)          # roughness 0.9
 metal = render(4)          # metallic 1
 mirror = render(5)         # roughness 0
+emissive = render(6)       # emission 0.5
+dense = render(7)          # ior 2.5
+matte = render(8)          # specular 0
 
 report = [
     "material() with no attributes matches plain color(): %s" % ("yes" if bare == plain else "NO"),
@@ -123,12 +129,21 @@ report = [
     # 0.35 highlight weight cannot exceed 89/255 whatever the exponent. Pins the
     # BRDF, not merely that roughness changes something.
     "a smooth surface has a white highlight core: %s"
-    % ("yes" if whitening(smooth, rough) > 150 else "NO"),
+    % ("yes" if gain(smooth, rough) > 150 else "NO"),
     # Zero is a meaningful roughness - a mirror - so it must not be read as "the model
     # set nothing". It was, because zero doubled as the not-set sentinel all the way
     # from the node to the shader, and a mirror silently rendered as the default finish.
     "roughness = 0 is a mirror rather than the default: %s"
     % ("yes" if mirror != bare else "NO"),
+    # specular, ior and emission were parsed, advertised in the call tips and
+    # handed to the USD and POV exporters, but the viewport shader read only
+    # roughness and metallic - so all three were accepted and silently ignored
+    # on screen. Emission is checked for direction as well as difference: it is
+    # light the surface adds, so it can only brighten.
+    "emission brightens the render: %s"
+    % ("yes" if emissive != bare and gain(emissive, bare, max) > 20 else "NO"),
+    "ior changes the render: %s" % ("yes" if dense != bare else "NO"),
+    "specular changes the render: %s" % ("yes" if matte != bare else "NO"),
 ]
 
 with open(reportfile, "w") as f:

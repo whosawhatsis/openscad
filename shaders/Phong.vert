@@ -5,11 +5,12 @@ varying vec3 vEyePosition;
 varying vec4 vColor;
 attribute vec3 barycentric;
 varying vec3 vBC;
-// x = roughness, y = metalness. Zero roughness means the model set none, and
-// the fragment shader substitutes the value that reproduces the look this
-// shader had before material attributes existed.
-attribute vec2 material;
-varying vec2 vMaterial;
+// SurfaceFinish: x = roughness, y = metallic, z = dielectric reflectance (F0,
+// folded from ior and specular on the CPU), w = emission. A negative roughness
+// means the model set none, and the fragment shader substitutes the value that
+// reproduces the look this shader had before material attributes existed.
+attribute vec4 material;
+varying vec4 vMaterial;
 
 void main(void)
 {
