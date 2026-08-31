@@ -487,6 +487,8 @@ private:
   void startIsolatedRender();
   void isolatedRenderFailed(const QString& reason);
   void startIsolatedPreview();
+  QString writeParametersForWorker();
+  void connectWorkerCancel();
   int isolatedPreviews = 0;
   void isolatedPreviewDone(const std::shared_ptr<class CsgInfo>& products);
   void isolatedPreviewFailed(const QString& reason);

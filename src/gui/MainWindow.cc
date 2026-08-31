@@ -1914,13 +1914,36 @@ void MainWindow::createPreviewRenderers()
     this->rootProduct, this->highlightsProducts, this->backgroundProducts);
 }
 
+namespace {
+//! The name the window's Customizer values travel under. Private to this pair of processes; it
+//! never reaches the document's own .json.
+const char *const kWorkerParameterSet = "openscad-compute-worker";
+}  // namespace
+
+void MainWindow::connectWorkerCancel()
+{
+  // Stop means stop wherever the work is. The in-process path polls wasCanceled() from its
+  // progress callback; nothing in this process ticks while a worker is computing, so the button
+  // would otherwise do nothing at all under isolation.
+  if (!this->computeWorker) return;
+  connect(this->progresswidget, &ProgressWidget::canceled, this->computeWorker,
+          &ComputeWorker::cancelRequest);
+}
+
 void MainWindow::startIsolatedPreview()
 {
+  // A preview reports no progress -- the worker sends none -- but it still has to be stoppable.
+  this->progresswidget = new ProgressWidget(this);
+  connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
+  connectWorkerCancel();
+
   const QString sourceFile = writeSourceForWorker();
   if (sourceFile.isEmpty()) return;  // writeSourceForWorker has already reported why
   // The window owns the OpenCSG limit, so the worker is told how far to normalize.
   const auto limit = 2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
-  this->computeWorker->startPreview(sourceFile, {}, {}, this->activeEditor->filepath, limit);
+  this->computeWorker->startPreview(sourceFile, writeParametersForWorker(),
+                                    QString::fromStdString(kWorkerParameterSet),
+                                    this->activeEditor->filepath, limit);
 }
 
 void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
@@ -2060,6 +2083,7 @@ void MainWindow::cgalRender()
 
   this->progresswidget = new ProgressWidget(this);
   connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
+  connectWorkerCancel();
 
   if (!isClosing) progress_report_prep(this->rootNode, report_func, this);
   else return;
@@ -2088,13 +2112,27 @@ QString MainWindow::writeSourceForWorker()
   return sourceFile;
 }
 
+QString MainWindow::writeParametersForWorker()
+{
+  // The worker parses its own copy of the document and would otherwise see only the values written
+  // in it. Everything the Customizer holds goes over, which is exactly what applyParameters() does
+  // to the copy this process parsed -- anything less and the two would render different models.
+  const QString file = this->workerSourceDirectory->filePath(QStringLiteral("parameters.json"));
+  ParameterSets sets;
+  sets.push_back(this->activeEditor->parameterWidget->exportValues(kWorkerParameterSet));
+  sets.writeFile(file.toStdString());
+  return file;
+}
+
 void MainWindow::startIsolatedRender()
 {
   // What the user sees is the editor's contents, which may never have been saved. The worker reads
   // a copy, and is told where the document really lives so its relative includes still resolve.
   const QString sourceFile = writeSourceForWorker();
   if (sourceFile.isEmpty()) return;
-  this->computeWorker->startRender(sourceFile, {}, {}, this->activeEditor->filepath);
+  this->computeWorker->startRender(sourceFile, writeParametersForWorker(),
+                                   QString::fromStdString(kWorkerParameterSet),
+                                   this->activeEditor->filepath);
 }
 
 void MainWindow::isolatedRenderFailed(const QString& reason)

@@ -220,3 +220,39 @@ TEST_CASE("A render that fails reports rather than hanging", "[gui][ComputeWorke
   REQUIRE(waitFor([&] { return failed; }));
   CHECK_FALSE(message.isEmpty());
 }
+
+TEST_CASE("A cancelled render leaves the worker alive", "[gui][ComputeWorkerIntegration]")
+{
+  // Killing the child would also work, and does when the polite form is ignored -- but it throws
+  // away the geometry caches that are most of the reason each window has its own worker. A cancel
+  // the child notices costs nothing, so the next render is still warm.
+  auto worker = startRealWorker();
+
+  bool failed = false;
+  bool completed = false;
+  QObject::connect(worker.get(), &ComputeWorker::renderFailed, worker.get(),
+                   [&](const QString&) { failed = true; });
+  QObject::connect(worker.get(), &ComputeWorker::renderDone, worker.get(),
+                   [&](const std::shared_ptr<const Geometry>&) { completed = true; });
+
+  // Big enough that it cannot finish before the cancellation is noticed, small enough that a run
+  // which ignores the cancellation still ends rather than hanging the suite.
+  const auto model = writeModel("for (i = [0:1:120]) translate([i * 3, 0, 0]) sphere(r = 2, $fn = 64);",
+                                "openscad-worker-cancel");
+  worker->startRender(QString::fromStdString(model), {}, {});
+  worker->cancelRequest();
+
+  REQUIRE(waitFor([&] { return failed || completed; }));
+  CHECK_FALSE(completed);
+  CHECK(failed);
+  // The whole point: the process, and its caches, are still there.
+  CHECK(worker->isRunning());
+
+  // And it still answers, so nothing was left half-finished on the channel.
+  completed = false;
+  QObject::connect(worker.get(), &ComputeWorker::renderDone, worker.get(),
+                   [&](const std::shared_ptr<const Geometry>&) { completed = true; });
+  worker->startRender(
+    QString::fromStdString(writeModel("cube([10, 10, 10]);", "openscad-worker-after-cancel")), {}, {});
+  REQUIRE(waitFor([&] { return completed; }));
+}

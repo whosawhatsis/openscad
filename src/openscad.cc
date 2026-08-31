@@ -82,6 +82,7 @@
 #include "Feature.h"
 #include "LibraryInfo.h"
 #include "RenderStatistic.h"
+#include "core/progress.h"
 #include "core/AST.h"
 #include "core/BuiltinContext.h"
 #include "core/Builtins.h"
@@ -191,6 +192,14 @@ struct CommandLine {
      worker. Empty everywhere else, which leaves the filename doing both jobs as before.
    */
   const std::string sourcePath;
+  /*!
+     A file whose appearance means "abandon this". Empty everywhere but a compute worker.
+
+     A worker cannot be told to stop on the channel it is already busy on, and killing it would
+     cost the window the geometry caches that are most of the reason it has its own process. The
+     parent creates this file; evaluation notices it at the next progress tick and unwinds.
+   */
+  const std::string cancelFile;
 };
 
 namespace {
@@ -459,6 +468,23 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
         "More than one Root Modifier (!)");
   }
   Tree tree(root_node, fparent.string());
+
+  // Only progress_prepare() writes through this, and only to number the nodes for progress
+  // reporting -- the tree itself is not modified.
+  struct CancelWatch {
+    const std::string& file;
+    ~CancelWatch() { progress_report_fin(); }
+  };
+  std::unique_ptr<CancelWatch> cancelWatch;
+  if (!cmd.cancelFile.empty()) {
+    cancelWatch = std::make_unique<CancelWatch>(CancelWatch{cmd.cancelFile});
+    progress_report_prep(
+      std::const_pointer_cast<AbstractNode>(root_node),
+      [](const std::shared_ptr<const AbstractNode>&, void *userdata, int) {
+        if (fs::exists(static_cast<CancelWatch *>(userdata)->file)) throw ProgressCancelException();
+      },
+      cancelWatch.get());
+  }
 
   if (export_format == FileFormat::CSG) {
     // https://github.com/openscad/openscad/issues/128
@@ -916,6 +942,9 @@ int compute_worker_main()
       // worker renders the file's defaults -- a window that shows one thing and exports another.
       const std::string parameterFile = request.value("parameterFile", std::string{});
       const std::string setName = request.value("setName", std::string{});
+      // The parent creates this file to withdraw the request. Polling a path is crude, but the
+      // channel is not readable while this thread is inside the evaluation it would be cancelling.
+      const std::string cancelFile = request.value("cancelFile", std::string{});
       const int result =
         cmdline(CommandLine{false,
                             input,
@@ -931,12 +960,20 @@ int compute_worker_main()
                             {},
                             {},
                             "",
-                            sourcePath});
+                            sourcePath,
+                            cancelFile});
       ipc_payload_sink::end();
 
       if (result != 0) throw std::runtime_error("evaluation of '" + input + "' failed");
       answer["ok"] = true;
+    } catch (const ProgressCancelException&) {
+      // Withdrawn by the parent. Answering rather than exiting is the entire point: the process
+      // keeps the caches that make the next render cheap.
+      ipc_payload_sink::end();
+      answer["ok"] = false;
+      answer["error"] = "cancelled";
     } catch (const std::exception& e) {
+      ipc_payload_sink::end();
       // A request the worker cannot make sense of is reported and the worker stays up. Exiting
       // would cost the window its warm caches over a malformed message.
       answer["ok"] = false;

@@ -54,6 +54,17 @@ public:
   //! Kills the child. It is not asked politely: cancellation has to work while it is busy.
   void cancel();
 
+  /*!
+     Asks the child to abandon the request it is running, and kills it if it does not.
+
+     The polite form is worth trying first because the child keeps its geometry caches, which is
+     most of what a per-window worker buys; a kill throws them away. It cannot be relied on alone,
+     though -- a model can spend minutes inside one boolean without ever reaching the point where
+     the request is noticed -- so this escalates to `cancel()` rather than leaving a window unable
+     to stop what it started.
+   */
+  void cancelRequest();
+
   bool waitForFinished();
   //! False for a crash or a kill, true only for a child that exited zero of its own accord.
   [[nodiscard]] bool exitedCleanly() const;

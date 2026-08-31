@@ -27,6 +27,9 @@ private slots:
 
 signals:
   void requestShow();
+  //! Cancellation is a flag the computation polls, which only works for a computation running in
+  //! this process. Anything computing elsewhere needs telling.
+  void canceled();
 
 private:
   bool wascanceled;

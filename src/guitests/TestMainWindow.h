@@ -11,6 +11,8 @@ private slots:
   void checkIsolatedRenderProducesGeometry();
   //! And a preview under isolation must come back as a product list the window can composite.
   void checkIsolatedPreviewProducesProducts();
+  //! And what the worker renders must be what the Customizer says, not the document's defaults.
+  void checkIsolatedRenderUsesCustomizerValues();
   //! And a window whose worker cannot start must fall back rather than be left unable to render.
   void checkAWindowWhoseWorkerCannotStartStillRenders();
   void checkInProcessPreviewProducesProducts();
