@@ -14,12 +14,14 @@ covered by the ComputeWorker unit tests, which spawn a real child on every platf
 
 import json
 import os
+import shutil
+import tempfile
 import socket
 import subprocess
 import sys
 import unittest
 
-from ipc_channel import read_json_message, read_message, request, write_message
+from ipc_channel import read_message, request, write_message
 
 CHANNEL_VARIABLE = "OPENSCAD_IPC_CHANNEL"
 TIMEOUT = 30
@@ -42,6 +44,27 @@ def openscad_binary():
 class WorkerFixture:
     """Spawning helper shared by the test cases below. Deliberately not a TestCase: inheriting from
     one would re-run its tests in every subclass."""
+
+    def read_until_done(self, parent):
+        """Collects payloads until the request is answered. A reply is no longer the first thing on
+        the channel: the geometry arrives first, and it is binary."""
+        payloads = {}
+        while True:
+            message = read_message(parent)
+            if message is None:
+                raise AssertionError("the worker closed the channel before answering")
+            name, body = message
+            if name == "done":
+                return payloads, json.loads(body)
+            payloads[name] = body
+
+    def write_scad(self, text):
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        path = os.path.join(directory, "model.scad")
+        with open(path, "w") as handle:
+            handle.write(text)
+        return path
 
     def start_worker(self, channel_value=None, with_channel=True):
         """Starts a worker. Returns (process, parent_socket); parent_socket is None when the
@@ -123,13 +146,14 @@ class ComputeWorkerRequests(WorkerFixture, unittest.TestCase):
     def exchange(self, **fields):
         process, parent = self.start_worker()
         parent.settimeout(REPLY_TIMEOUT)
+        fields.setdefault("input", self.write_scad("cube(1);"))
+        fields.setdefault("output", "result.osig")
         request(parent, **fields)
-        reply = read_json_message(parent)
-        self.assertIsNotNone(reply, "the worker closed the channel instead of answering")
-        return process, parent, reply
+        _, body = self.read_until_done(parent)
+        return process, parent, ("done", body)
 
     def test_worker_answers_a_request(self):
-        _, _, (name, body) = self.exchange(command="preview", requestId=7)
+        _, _, (name, body) = self.exchange(command="render", requestId=7)
         self.assertEqual(name, "done")
         self.assertEqual(body.get("requestId"), 7)
         self.assertTrue(body.get("ok"), f"expected success, got {body}")
@@ -147,18 +171,29 @@ class ComputeWorkerRequests(WorkerFixture, unittest.TestCase):
         process, parent = self.start_worker()
         parent.settimeout(REPLY_TIMEOUT)
         write_message(parent, "request", "{ this is not json")
-        name, body = read_json_message(parent)
+        _, body = self.read_until_done(parent)
+        name = "done"
         self.assertEqual(name, "done")
         self.assertFalse(body.get("ok"))
         self.assertIsNone(process.poll())
+
+    def test_preview_is_reported_as_not_implemented_yet(self):
+        """Preview returns a CSG product list rather than a mesh, and that is not built. Saying so
+        is better than quietly serving a render and letting the caller believe otherwise."""
+        _, _, (name, body) = self.exchange(command="preview", requestId=3)
+        self.assertEqual(name, "done")
+        self.assertFalse(body.get("ok"))
+        self.assertIn("error", body)
 
     def test_worker_ignores_a_message_it_does_not_know(self):
         """Forward compatibility: a name from a newer parent must not wedge an older worker."""
         process, parent = self.start_worker()
         parent.settimeout(REPLY_TIMEOUT)
         write_message(parent, "something-from-the-future", b"\x00\x01")
-        request(parent, command="preview", requestId=2)
-        name, body = read_json_message(parent)
+        request(parent, command="render", requestId=2,
+                input=self.write_scad("cube(1);"), output="r.osig")
+        _, body = self.read_until_done(parent)
+        name = "done"
         self.assertEqual(name, "done")
         self.assertEqual(body.get("requestId"), 2)
 
@@ -168,11 +203,73 @@ class ComputeWorkerRequests(WorkerFixture, unittest.TestCase):
         process, parent = self.start_worker()
         parent.settimeout(REPLY_TIMEOUT)
         for identifier in range(4):
-            request(parent, command="preview", requestId=identifier)
-            name, body = read_json_message(parent)
+            request(parent, command="render", requestId=identifier,
+                    input=self.write_scad("cube(1);"), output=f"r{identifier}.osig")
+            _, body = self.read_until_done(parent)
+            name = "done"
             self.assertEqual(name, "done")
             self.assertEqual(body.get("requestId"), identifier)
         self.assertIsNone(process.poll())
+
+
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerGeometry(WorkerFixture, unittest.TestCase):
+    """Evaluating a request and returning geometry over the channel.
+
+    The worker returns the geometry as a payload named after the file it would otherwise have
+    written, so the parent can resolve references to it by name instead of touching the filesystem.
+    The bytes are the internal binary format from io/ipc_geometry.h, which begins with the magic
+    "OSIG"; this checks the framing and the plumbing, while the codec has its own unit tests.
+    """
+
+    def render(self, source, output="result.osig", **extra):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, command="render", requestId=1, input=self.write_scad(source),
+                output=output, **extra)
+        payloads, done = self.read_until_done(parent)
+        return process, payloads, done
+
+    def test_render_returns_geometry_over_the_channel(self):
+        process, payloads, done = self.render("cube([10, 10, 10]);")
+        self.assertTrue(done.get("ok"), f"render failed: {done}")
+        self.assertIn("result.osig", payloads,
+                      f"no geometry payload; got {sorted(payloads)}")
+        self.assertTrue(payloads["result.osig"].startswith(b"OSIG"),
+                        "payload is not the internal geometry format")
+        self.assertGreater(len(payloads["result.osig"]), 64, "payload is too small to be a cube")
+
+    def test_render_writes_no_file_for_its_geometry(self):
+        """The payload replaces the file, it does not accompany it. A preview that still wrote one
+        file per leaf would put the disk back in the path this feature exists to take it out of."""
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        output = os.path.join(directory, "result.osig")
+        process, payloads, done = self.render("cube([10, 10, 10]);", output=output)
+        self.assertTrue(done.get("ok"), f"render failed: {done}")
+        self.assertFalse(os.path.exists(output), "the worker wrote the geometry to disk as well")
+
+    def test_a_model_that_fails_to_parse_is_reported(self):
+        process, payloads, done = self.render("this is not valid openscad ((((")
+        self.assertFalse(done.get("ok"), "a broken model was reported as a successful render")
+        self.assertIn("error", done)
+        self.assertIsNone(process.poll(), "the worker exited instead of reporting the failure")
+
+    def test_the_worker_survives_a_failed_render_and_serves_the_next(self):
+        """One bad model must not cost the window its worker, or its warm caches."""
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, command="render", requestId=1,
+                input=self.write_scad("nonsense ((("), output="bad.osig")
+        _, first = self.read_until_done(parent)
+        self.assertFalse(first.get("ok"))
+        request(parent, command="render", requestId=2,
+                input=self.write_scad("sphere(5);"), output="good.osig")
+        payloads, done = self.read_until_done(parent)
+        self.assertTrue(done.get("ok"), f"the second render failed: {done}")
+        self.assertEqual(done.get("requestId"), 2)
+        self.assertIn("good.osig", payloads)
 
 
 if __name__ == "__main__":

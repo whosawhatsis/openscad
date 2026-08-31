@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <ostream>
 #include <string>
 
 struct IpcMessage;
@@ -84,3 +85,36 @@ private:
   struct Private;
   std::unique_ptr<Private> d;
 };
+
+/*!
+   Worker side: while a request is being served, the writers that would create the worker's output
+   files hand their bytes here instead, keyed by the path they would have written. Naming payloads
+   after those paths is what lets anything referring to them by path go on doing so, with no change
+   to how it is written or read.
+
+   A namespace with process state rather than an object threaded through the export machinery:
+   reaching the writers would mean changing signatures shared with many other feature branches. A
+   worker serves one request at a time in one process, so there is nothing here to collide with.
+ */
+namespace ipc_payload_sink {
+
+//! False everywhere except inside a worker serving a request, which is what keeps the ordinary CLI
+//! and GUI export paths writing real files.
+bool collecting();
+
+//! Begins a request, discarding anything a failed one left behind. Payloads go to `channel`.
+void begin(IpcChannel& channel);
+void end();
+
+/*!
+   A stream to write the named payload into. Opening one declares the previous complete and sends
+   it, so a reference returned by an earlier open() must not be written to afterwards. Every writer
+   today fills a payload within one call, which is what makes that safe.
+ */
+std::ostream& open(const std::string& name);
+
+//! Sends whatever has not gone yet -- in practice the last payload, the rest having gone as they
+//! completed. Not named flush(): this is about the request, not the stream.
+void flush_pending();
+
+}  // namespace ipc_payload_sink

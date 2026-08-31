@@ -838,10 +838,56 @@ int compute_worker_main()
       // Echoed back so a parent that has several requests in flight can match them up.
       if (request.contains("requestId")) answer["requestId"] = request["requestId"];
       const auto command = request.at("command").get<std::string>();
-      if (command != "preview" && command != "render") {
-        throw std::runtime_error("unknown command '" + command + "'");
+      if (command == "preview") {
+        // A preview returns a CSG product list rather than a mesh, and that is not built yet.
+        // Answering it with a render would be quietly wrong.
+        throw std::runtime_error("preview is not implemented yet");
       }
-      // Evaluating the request is the next step. Answering it is this one.
+      if (command != "render") throw std::runtime_error("unknown command '" + command + "'");
+      const auto input = request.at("input").get<std::string>();
+      const auto output = request.at("output").get<std::string>();
+
+      // do_export() chdir()s into the document's directory and leaves the process there. The
+      // worker is persistent, so without restoring it here it would hold a handle on whichever
+      // directory it last rendered from for the rest of its life -- on Windows that directory can
+      // then not be renamed or removed by anyone. Restored on every exit from this request,
+      // including the failing ones.
+      const auto workerPath = fs::current_path();
+      struct RestorePath {
+        const fs::path& path;
+        ~RestorePath()
+        {
+          std::error_code ignored;
+          fs::current_path(path, ignored);
+        }
+      } const restorePath{workerPath};
+
+      // Everything the export machinery writes goes to the channel instead of the filesystem for
+      // the duration of this request.
+      ipc_payload_sink::begin(*channel);
+      const ViewOptions viewOptions{};
+      const Camera camera;
+      const CmdLineExportOptions exportOptions;
+      const fs::path originalPath = fs::path(input).parent_path();
+      const std::string noParameterFile;
+      const std::string noSetName;
+      const int result = cmdline(CommandLine{false,
+                                             input,
+                                             false,
+                                             output,
+                                             originalPath,
+                                             noParameterFile,
+                                             noSetName,
+                                             viewOptions,
+                                             camera,
+                                             FileFormat::IPC_GEOMETRY,
+                                             exportOptions,
+                                             {},
+                                             {},
+                                             ""});
+      ipc_payload_sink::end();
+
+      if (result != 0) throw std::runtime_error("evaluation of '" + input + "' failed");
       answer["ok"] = true;
     } catch (const std::exception& e) {
       // A request the worker cannot make sense of is reported and the worker stays up. Exiting

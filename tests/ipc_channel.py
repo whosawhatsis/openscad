@@ -48,11 +48,3 @@ def read_message(sock):
 
 def request(sock, **fields):
     write_message(sock, "request", json.dumps(fields))
-
-
-def read_json_message(sock):
-    message = read_message(sock)
-    if message is None:
-        return None
-    name, payload = message
-    return name, json.loads(payload) if payload else {}

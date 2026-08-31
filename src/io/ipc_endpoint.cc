@@ -2,6 +2,7 @@
 
 #include <boost/asio/io_context.hpp>
 #include <cstdint>
+#include <sstream>
 #include <exception>
 #include <memory>
 #include <string>
@@ -202,3 +203,58 @@ void IpcChannelPair::releaseChildEnd()
   closeEnd(d->childEnd);
   d->childEnd = kNoEnd;
 }
+
+namespace {
+
+// One request at a time in one process; see the header for why this is process state.
+IpcChannel *sinkChannel = nullptr;
+std::string sinkName;
+std::ostringstream sinkPayload;
+
+void sendPending()
+{
+  if (!sinkChannel || sinkName.empty()) return;
+  sinkChannel->write(sinkName, sinkPayload.str());
+  sinkName.clear();
+  sinkPayload.str({});
+  sinkPayload.clear();
+}
+
+}  // namespace
+
+namespace ipc_payload_sink {
+
+bool collecting()
+{
+  return sinkChannel != nullptr;
+}
+
+void begin(IpcChannel& channel)
+{
+  sinkChannel = &channel;
+  sinkName.clear();
+  sinkPayload.str({});
+  sinkPayload.clear();
+}
+
+void end()
+{
+  sendPending();
+  sinkChannel = nullptr;
+}
+
+std::ostream& open(const std::string& name)
+{
+  // Sending the previous payload here rather than at the end of the request is what lets the
+  // receiving side start work while the worker is still going.
+  sendPending();
+  sinkName = ipc_payload_name(name);
+  return sinkPayload;
+}
+
+void flush_pending()
+{
+  sendPending();
+}
+
+}  // namespace ipc_payload_sink
