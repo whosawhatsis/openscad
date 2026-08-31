@@ -4,7 +4,9 @@ set -e
 # Script to deploy the built OpenSCAD.app to the /Applications folder.
 # It will refuse to copy if OpenSCAD is currently running.
 
-BUILD_APP_PATH="build/OpenSCAD.app"
+# Optional first argument names the build directory, so a Release build kept
+# alongside an ordinary one can be deployed without reconfiguring either.
+BUILD_APP_PATH="${1:-build}/OpenSCAD.app"
 DEST_APP_PATH="/Applications/OpenSCAD.app"
 
 cd "$(dirname "$0")/.."
