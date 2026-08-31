@@ -380,11 +380,18 @@ TEST_CASE("Animated USDZ wraps the animated stage", "[export][usd]")
   REQUIRE(usdz.find("timeCodesPerSecond = 30") != std::string::npos);
 }
 
-// The "USD formats are animatable but do not require --animate" case lives with
-// the animation work: it asserts fileformat::isAnimation/canAnimate against the
-// video containers, and neither those predicates nor GIF/APNG/AVI exist on this
-// branch, which carries only the static USD exporter. Restore it when the
-// animation half lands here.
+TEST_CASE("USD formats are animatable but do not require --animate", "[export][usd]")
+{
+  // USD differs from the video containers: it is a valid static file too. isAnimation()
+  // means "needs --animate" and must stay false, or a plain export starts erroring.
+  REQUIRE_FALSE(fileformat::isAnimation(FileFormat::USDA));
+  REQUIRE_FALSE(fileformat::isAnimation(FileFormat::USDZ));
+  REQUIRE(fileformat::canAnimate(FileFormat::USDA));
+  REQUIRE(fileformat::canAnimate(FileFormat::USDZ));
+
+  // The video containers are both.
+  REQUIRE(fileformat::canAnimate(FileFormat::GIF));
+}
 
 TEST_CASE("USDA export honors predictible-output", "[export][usd]")
 {
