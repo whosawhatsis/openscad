@@ -607,6 +607,31 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
       const auto c1 = fullCylinder(operands[0]), c2 = fullCylinder(operands[1]);
       if (c1 && c2) {
         const auto b1 = *verticalPrism(operands[0]), b2 = *verticalPrism(operands[1]);
+        const double centerDistance =
+          std::hypot(c2->Location().X() - c1->Location().X(), c2->Location().Y() - c1->Location().Y());
+        if (centerDistance <= Precision::Confusion() &&
+            (b1[5] <= b2[2] + Precision::Confusion() || b2[5] <= b1[2] + Precision::Confusion())) {
+          const bool firstIsLower = b1[5] <= b2[2] + Precision::Confusion();
+          const auto& lowerBounds = firstIsLower ? b1 : b2;
+          const auto& upperBounds = firstIsLower ? b2 : b1;
+          const auto& lowerCylinder = firstIsLower ? *c1 : *c2;
+          const auto& upperCylinder = firstIsLower ? *c2 : *c1;
+          const double bridgeHeight = upperBounds[2] - lowerBounds[5];
+          if (bridgeHeight <= Precision::Confusion())
+            return brepBoolean(operands, BrepOperation::Union, 0).shape;
+          const gp_Ax2 placement(
+            gp_Pnt(lowerCylinder.Location().X(), lowerCylinder.Location().Y(), lowerBounds[5]),
+            gp_Dir(0, 0, 1));
+          TopoDS_Shape envelope =
+            std::abs(lowerCylinder.Radius() - upperCylinder.Radius()) <= Precision::Confusion()
+              ? BRepPrimAPI_MakeCylinder(placement, lowerCylinder.Radius(), bridgeHeight).Shape()
+              : BRepPrimAPI_MakeCone(placement, lowerCylinder.Radius(), upperCylinder.Radius(),
+                                     bridgeHeight)
+                  .Shape();
+          return brepBoolean({operands[0], operands[1], std::make_shared<TopoDS_Shape>(envelope)},
+                             BrepOperation::Union, 0)
+            .shape;
+        }
         if (std::abs(b1[2] - b2[2]) <= Precision::Confusion() &&
             std::abs(b1[5] - b2[5]) <= Precision::Confusion()) {
           const double dx = c2->Location().X() - c1->Location().X(),

@@ -39,8 +39,8 @@ is not implemented yet.
 - Round, miter, and chamfer offsets of supported profiles, and both cut and shadow
   projections used as extrusion profiles. Shadow projection uses OCCT silhouettes
   and native region classification, not a rendered image or triangle mesh.
-- Polyhedral hulls; smooth hulls of two spheres or two parallel vertical cylinders
-  with matching cap heights (including extruded two-circle hulls).
+- Polyhedral hulls; smooth hulls of two spheres, two parallel vertical cylinders
+  with matching cap heights, or separated coaxial cylinders (including extruded two-circle hulls).
 - Minkowski sums of polyhedra, including nonconvex operands; polyhedron/sphere rounding;
   sphere/sphere sums; vertical constant-section prisms with a vertical cylinder
   (including planar circle offsets). Operands must fit a supported path at each

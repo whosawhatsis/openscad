@@ -1287,6 +1287,36 @@ TEST_CASE("B-Rep hull of two spheres keeps the tangent envelope smooth", "[brep]
   CHECK(brep->getBoundingBox().max().x() == Catch::Approx(7).margin(1e-5));
 }
 
+TEST_CASE("B-Rep hull of separated coaxial cylinders keeps the tangent envelope smooth", "[brep]")
+{
+  ModuleInstantiation inst("hull");
+  const CurveDiscretizer smooth([](const char *) -> std::optional<double> { return std::nullopt; });
+  auto lower = std::make_shared<CylinderNode>(&inst, smooth);
+  lower->r1 = lower->r2 = 2;
+  lower->h = 2;
+  auto upper = std::make_shared<CylinderNode>(&inst, smooth);
+  upper->r1 = upper->r2 = 1;
+  upper->h = 2;
+  auto translate = std::make_shared<TransformNode>(&inst, "translate");
+  translate->matrix.translate(Vector3d(0, 0, 4));
+  translate->children = {upper};
+  auto hull = std::make_shared<CgalAdvNode>(&inst, CgalAdvType::HULL);
+  hull->children = {lower, translate};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(hull);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*hull, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) >= 2);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cone) == 1);
+  CHECK(brep->getBoundingBox().min().z() == Catch::Approx(0).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().z() == Catch::Approx(6).margin(1e-5));
+}
+
 TEST_CASE("B-Rep planar hull and Minkowski preserve circles", "[brep]")
 {
   ModuleInstantiation inst("advanced");
