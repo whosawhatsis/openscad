@@ -945,6 +945,16 @@ int compute_worker_main()
       // The parent creates this file to withdraw the request. Polling a path is crude, but the
       // channel is not readable while this thread is inside the evaluation it would be cancelling.
       const std::string cancelFile = request.value("cancelFile", std::string{});
+      // Experimental features are per-process state and this process is not the window's. Set the
+      // whole list every request rather than only enabling what is named: the worker is
+      // persistent, so a feature left on by an earlier request would silently outlive the
+      // preference change that turned it off.
+      const auto features = request.value("features", std::vector<std::string>{});
+      for (auto feature = Feature::begin(); feature != Feature::end(); ++feature) {
+        const bool wanted =
+          std::find(features.begin(), features.end(), (*feature)->get_name()) != features.end();
+        Feature::enable_feature((*feature)->get_name(), wanted);
+      }
       const int result =
         cmdline(CommandLine{false,
                             input,
