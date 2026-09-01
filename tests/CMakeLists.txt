@@ -1413,6 +1413,13 @@ if (ENABLE_MANIFOLD_TESTS)
 endif()
 add_cmdline_test(dump-discretization-by-error EXPERIMENTAL OPENSCAD FILES ${EXPERIMENTAL_DISCRETIZATION_FILES} EXPECTEDDIR dump-discretization-by-error SUFFIX csg ARGS --enable=discretization-by-error)
 add_cmdline_test(transparent-tearing    SCRIPT ${TEARINGTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/transparent-tearing.scad ARGS ${OPENSCAD_EXE_ARG} --camera=0,0,0,60,0,30,140 --imgsize=400,400)
+# Blessed image, deliberately, where the relational metrics could not help: correct
+# and incorrect layer ordering differ across a region in mid-tones, not in any
+# aggregate this suite can compute - measured, they agree on mean, p10, p90 and peak
+# brightness while differing on 33516 pixels. The image is the only oracle available.
+add_cmdline_test(render-shaded-cavity OPENSCAD SUFFIX png
+  FILES ${TEST_SCAD_DIR}/misc/transparent-cavity.scad
+  ARGS --render --view=shaded --camera=0,0,0,68,0,25,105 --imgsize=400,400)
 
 
 ############################
