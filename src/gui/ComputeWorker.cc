@@ -12,7 +12,9 @@
 #include <functional>
 #include <map>
 #include <utility>
+#include <vector>
 
+#include "Feature.h"
 #include "geometry/Geometry.h"
 #include "glview/CsgInfo.h"
 #include "io/ipc_channel.h"
@@ -34,6 +36,19 @@ constexpr auto kPreviewOutputName = "preview.json";
 namespace {
 //! How long a child gets to notice a cancellation before it is killed instead.
 constexpr int kCancelGracePeriodMs = 1000;
+
+//! The experimental features this process has on. They are per-process state, so a worker that is
+//! not told renders as if every experimental builtin did not exist -- the module is ignored with a
+//! warning and the result is empty. Sent with every request rather than at startup, so a
+//! preference changed mid-session takes effect on the next render.
+std::vector<std::string> enabledFeatures()
+{
+  std::vector<std::string> names;
+  for (auto feature = Feature::begin(); feature != Feature::end(); ++feature) {
+    if ((*feature)->is_enabled()) names.push_back((*feature)->get_name());
+  }
+  return names;
+}
 }  // namespace
 
 struct ComputeWorker::Private {
@@ -232,6 +247,7 @@ void ComputeWorker::startRender(const QString& scadPath, const QString& paramete
 
   nlohmann::json request;
   request["command"] = "render";
+  request["features"] = enabledFeatures();
   request["cancelFile"] = d->cancelFile.toStdString();
   request["input"] = scadPath.toStdString();
   request["output"] = kRenderOutputName;
@@ -276,6 +292,7 @@ void ComputeWorker::startPreview(const QString& scadPath, const QString& paramet
 
   nlohmann::json request;
   request["command"] = "preview";
+  request["features"] = enabledFeatures();
   request["cancelFile"] = d->cancelFile.toStdString();
   request["input"] = scadPath.toStdString();
   request["output"] = kPreviewOutputName;

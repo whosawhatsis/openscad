@@ -485,6 +485,39 @@ class ComputeWorkerIncludeReload(WorkerFixture, unittest.TestCase):
         self.assertNotEqual(first["first.osig"], second["second.osig"],
                             "the worker rendered the include it had already seen")
 
+class ComputeWorkerFeatures(WorkerFixture, unittest.TestCase):
+    """Experimental features are per-process, and the worker is a different process.
+
+    The window enables them from Preferences; the worker starts with the defaults. So unless the
+    request says which are on, a model using an experimental builtin renders as if that builtin did
+    not exist -- the module is ignored with a warning and the result is an empty top-level object.
+    A window then shows nothing and an F6 reports "evaluation failed", with the real reason only in
+    a warning the user never sees. Process isolation is itself behind such a flag, so every
+    isolated render is in exactly this position.
+    """
+
+    # roof() exists only when its feature is enabled, and it is not process-isolation's own flag,
+    # so this keeps testing something after that one stabilises.
+    MODEL = "roof() square(10);"
+
+    def render(self, **extra):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, command="render", requestId=1, input=self.write_scad(self.MODEL),
+                output="result.osig", **extra)
+        return self.read_until_done(parent)
+
+    def test_an_experimental_builtin_needs_its_feature_named(self):
+        """The failure this guards: without the list, the module is unknown and nothing is built."""
+        _, done = self.render()
+        self.assertFalse(done.get("ok"),
+                         f"expected an empty result without the feature enabled: {done}")
+
+    def test_a_request_naming_the_feature_renders(self):
+        payloads, done = self.render(features=["roof"])
+        self.assertTrue(done.get("ok"), f"render failed with the feature enabled: {done}")
+        self.assertIn("result.osig", payloads)
+
 
 if __name__ == "__main__":
     unittest.main()
