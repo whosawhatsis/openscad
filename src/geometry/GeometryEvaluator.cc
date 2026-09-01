@@ -98,9 +98,15 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
       import_svg(imported->discretizer, imported->filename, imported->id, imported->layer, imported->dpi,
                  false, imported->modinst->location(), &curves);
       std::vector<BrepGeometry> shapes;
-      for (const auto& profile : curves)
-        shapes.push_back(
-          BrepGeometry::rationalPrism(profile.contours, extrusionHeight, profile.evenOdd));
+      for (const auto& profile : curves) {
+        if (profile.strokeWidth > 0)
+          shapes.push_back(BrepGeometry::strokePrism(profile.contours, profile.strokeWidth,
+                                                     extrusionHeight, profile.strokeLineCap,
+                                                     profile.strokeLineJoin));
+        else
+          shapes.push_back(
+            BrepGeometry::rationalPrism(profile.contours, extrusionHeight, profile.evenOdd));
+      }
       BrepFilletDiagnostics unused;
       auto result = BrepGeometry::boolean(shapes, BrepOperation::Union, 0, unused);
       if (imported->center && !result.isEmpty()) {

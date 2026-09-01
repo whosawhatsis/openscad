@@ -42,6 +42,7 @@ private:
     path_list_t curves;
   };
   std::vector<RetainedCurve> retained_curves;
+  path_list_t retained_contour(const path_t& points, size_t contour) const;
   [[nodiscard]] inline double t(double t, int exp) const { return std::pow(1.0 - t, exp); }
 
   bool is_open_path(path_t& path) const;

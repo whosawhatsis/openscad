@@ -445,6 +445,8 @@ void path::set_attrs(attr_map_t& attrs, void *context)
         path_t path = path_list.back();
         if (!path_list.back().empty()) {
           if (is_open_path(path)) {
+            if (reinterpret_cast<const fnContext *>(context)->retainCurves && has_stroke())
+              stroke_contours.push_back(retained_contour(path, path_list.size() - 1));
             native_curves_valid = false;
             path_list.pop_back();
             offset_path(path_list, path, get_stroke_width(), get_stroke_linecap());
@@ -509,6 +511,8 @@ void path::set_attrs(attr_map_t& attrs, void *context)
   if (!path_closed && !path_list.empty()) {
     path_t path = path_list.back();
     if (is_open_path(path)) {
+      if (reinterpret_cast<const fnContext *>(context)->retainCurves && has_stroke())
+        stroke_contours.push_back(retained_contour(path, path_list.size() - 1));
       native_curves_valid = false;
       path_list.pop_back();
       offset_path(path_list, path, get_stroke_width(), get_stroke_linecap());
@@ -536,9 +540,29 @@ void path::set_attrs(attr_map_t& attrs, void *context)
           ++i;
         }
       }
+      if (has_stroke()) stroke_contours.push_back(bezier_contours.back());
     }
   }
   retained_curves.clear();
+}
+
+path_list_t path::retained_contour(const path_t& points, size_t contour) const
+{
+  path_list_t result;
+  auto curve = retained_curves.begin();
+  while (curve != retained_curves.end() && curve->contour < contour) ++curve;
+  for (size_t i = 0; i + 1 < points.size();) {
+    if (curve != retained_curves.end() && curve->contour == contour && curve->first == i) {
+      result.insert(result.end(), curve->curves.begin(), curve->curves.end());
+      i = curve->last;
+      ++curve;
+    } else {
+      if ((points[i] - points[i + 1]).norm() > 1e-12)
+        result.push_back({{points[i].x(), points[i].y(), 1}, {points[i + 1].x(), points[i + 1].y(), 1}});
+      ++i;
+    }
+  }
+  return result;
 }
 
 bool path::is_open_path(path_t& path) const

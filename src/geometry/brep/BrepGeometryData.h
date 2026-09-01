@@ -17,6 +17,9 @@ std::shared_ptr<void> brepBezierPrism(
 std::shared_ptr<void> brepRationalPrism(
   const std::vector<std::vector<std::vector<std::array<double, 3>>>>& contours, double height,
   bool evenOdd);
+std::shared_ptr<void> brepStrokePrism(
+  const std::vector<std::vector<std::vector<std::array<double, 3>>>>& centerlines, double width,
+  double height, int lineCap, int lineJoin);
 std::shared_ptr<void> brepOffset2d(const std::shared_ptr<void>& shape, double delta, bool round,
                                    double height, bool chamfer = false);
 std::shared_ptr<void> brepCutProjection(const std::shared_ptr<void>& shape, double height);

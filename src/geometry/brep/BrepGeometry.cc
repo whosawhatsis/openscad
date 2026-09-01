@@ -88,6 +88,13 @@ BrepGeometry BrepGeometry::rationalPrism(
   return BrepGeometry(brepRationalPrism(contours, height, evenOdd));
 }
 
+BrepGeometry BrepGeometry::strokePrism(
+  const std::vector<std::vector<std::vector<std::array<double, 3>>>>& centerlines, double width,
+  double height, int lineCap, int lineJoin)
+{
+  return BrepGeometry(brepStrokePrism(centerlines, width, height, lineCap, lineJoin));
+}
+
 BrepGeometry BrepGeometry::shadowProjection(double height) const
 {
   return BrepGeometry(brepShadowProjection(shape_, height));

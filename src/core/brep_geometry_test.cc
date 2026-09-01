@@ -747,6 +747,8 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
   bool faceted = false;
   bool checkFill = false, hole = true;
   size_t curvedFaces = 2;
+  size_t cylindricalFaces = 0;
+  double expectedMinX = 3, expectedMaxX = 11;
   SECTION("absolute controls")
   {
   }
@@ -835,6 +837,14 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     imported->id = "stroke";
     unsupported = true;
   }
+  SECTION("open round-capped stroke")
+  {
+    imported->id = "open-stroke";
+    curvedFaces = 0;
+    cylindricalFaces = 2;
+    expectedMinX = 1;
+    expectedMaxX = 13;
+  }
   auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
   extrusion->height = Vector3d(0, 0, 5);
   extrusion->children = {imported};
@@ -852,6 +862,8 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
   }
   REQUIRE_FALSE(brep->isEmpty());
   CHECK(brep->surfaceCount(BrepSurfaceType::Other) == curvedFaces);
+  if (cylindricalFaces) CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) >= cylindricalFaces);
+  else CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == 0);
   if (faceted) {
     CHECK(brep->surfaceCount(BrepSurfaceType::Plane) == 8);
     return;
@@ -878,8 +890,10 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     CHECK(occupied(2.7));
     CHECK_FALSE(occupied(2.9));  // An unweighted quadratic would bulge into this probe.
   }
-  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(imported->center ? -4 : 3).margin(1e-5));
-  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(imported->center ? 4 : 11).margin(1e-5));
+  CHECK(brep->getBoundingBox().min().x() ==
+        Catch::Approx(imported->center ? -4 : expectedMinX).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().x() ==
+        Catch::Approx(imported->center ? 4 : expectedMaxX).margin(1e-5));
 }
 
 TEST_CASE("B-Rep DXF extrusion retains curves and placement", "[brep]")

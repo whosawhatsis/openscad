@@ -42,6 +42,9 @@ public:
   static BrepGeometry rationalPrism(
     const std::vector<std::vector<std::vector<std::array<double, 3>>>>& contours, double height,
     bool evenOdd = false);
+  static BrepGeometry strokePrism(
+    const std::vector<std::vector<std::vector<std::array<double, 3>>>>& centerlines, double width,
+    double height, int lineCap, int lineJoin);
   [[nodiscard]] BrepGeometry offset2d(double delta, bool round, double height,
                                       bool chamfer = false) const;
   [[nodiscard]] BrepGeometry cutProjection(double height) const;

@@ -101,14 +101,12 @@ void shape::set_attrs(attr_map_t& attrs, void *context)
   this->stroke_linecap = attrs["stroke-linecap"];
   this->stroke_linejoin = attrs["stroke-linejoin"];
   this->style = attrs["style"];
+  stroke = get_style("stroke");
+  if (stroke.empty()) stroke = attrs["stroke"];
+  fill = get_style("fill");
+  if (fill.empty()) fill = attrs["fill"];
   fill_rule = get_style("fill-rule");
   if (fill_rule.empty()) fill_rule = attrs["fill-rule"];
-  for (const auto& name : {"stroke", "fill"}) {
-    const auto value = get_style(name).empty() ? attrs[name] : get_style(name);
-    if ((std::string(name) == "stroke" && !value.empty() && value != "none") ||
-        (std::string(name) == "fill" && value == "none"))
-      native_style_valid = false;
-  }
 
   std::string display = get_style("display");
   if (display.empty()) {
@@ -279,24 +277,67 @@ void shape::apply_transform()
     }
   }
   path_list = result_list;
-  for (auto& contour : bezier_contours)
-    for (auto& curve : contour)
-      for (auto& pole : curve) {
-        const double weight = pole.z();
-        pole.z() = 1;
-        for (auto it = matrices.rbegin(); it != matrices.rend(); ++it) pole = *it * pole;
-        pole.z() = weight;
-      }
+  for (const auto& matrix : matrices) {
+    const Eigen::Vector2d x = matrix.block<2, 1>(0, 0);
+    const Eigen::Vector2d y = matrix.block<2, 1>(0, 1);
+    if (std::abs(x.norm() - y.norm()) > 1e-9 || std::abs(x.dot(y)) > 1e-9) {
+      native_stroke_valid = false;
+      break;
+    }
+    native_stroke_scale *= x.norm();
+  }
+  for (auto *contours : {&bezier_contours, &stroke_contours})
+    for (auto& contour : *contours)
+      for (auto& curve : contour)
+        for (auto& pole : curve) {
+          const double weight = pole.z();
+          pole.z() = 1;
+          for (auto it = matrices.rbegin(); it != matrices.rend(); ++it) pole = *it * pole;
+          pole.z() = weight;
+        }
 }
 
 const bezier_contours_t& shape::get_bezier_contours() const
 {
-  for (const shape *s = this; s; s = s->get_parent())
-    if (!s->native_style_valid)
-      throw std::runtime_error("Native SVG strokes and unfilled paths are not supported yet");
   if (!native_curves_valid)
     throw std::runtime_error("Native SVG import requires a supported closed profile");
   return bezier_contours;
+}
+
+const bezier_contours_t& shape::get_stroke_contours() const
+{
+  if (!native_stroke_valid) throw std::runtime_error("Native SVG strokes require similarity transforms");
+  if (stroke_contours.empty()) throw std::runtime_error("Native SVG stroke has no supported path");
+  return stroke_contours;
+}
+
+bool shape::has_stroke() const
+{
+  for (const shape *s = this; s; s = s->get_parent())
+    if (!s->stroke.empty()) return s->stroke != "none";
+  return false;
+}
+
+bool shape::has_fill() const
+{
+  for (const shape *s = this; s; s = s->get_parent())
+    if (!s->fill.empty()) return s->fill != "none";
+  return true;
+}
+
+double shape::native_stroke_width() const
+{
+  return get_stroke_width() * native_stroke_scale;
+}
+
+int shape::native_stroke_linecap() const
+{
+  return static_cast<int>(get_stroke_linecap());
+}
+
+int shape::native_stroke_linejoin() const
+{
+  return static_cast<int>(get_stroke_linejoin());
 }
 
 void shape::offset_path(path_list_t& path_list, path_t& path, double stroke_width,

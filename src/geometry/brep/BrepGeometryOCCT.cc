@@ -836,6 +836,49 @@ std::shared_ptr<void> brepRationalPrism(
   return bezierPrismImpl(contours, height, evenOdd);
 }
 
+std::shared_ptr<void> brepStrokePrism(
+  const std::vector<std::vector<std::vector<std::array<double, 3>>>>& centerlines, double width,
+  double height, int lineCap, int lineJoin)
+{
+  if (!std::isfinite(width) || width <= 0) throw std::invalid_argument("Invalid SVG stroke width");
+  (void)lineJoin;
+  if (lineCap != 2 && lineCap != 4)
+    throw std::invalid_argument("Native SVG strokes currently support butt and round caps");
+  try {
+    std::vector<std::shared_ptr<void>> strokes;
+    for (const auto& centerline : centerlines) {
+      if (centerline.size() != 1 || centerline.front().size() != 2)
+        throw std::invalid_argument("Native curved SVG strokes are not supported yet");
+      const auto& curve = centerline.front();
+      const gp_Pnt start(curve[0][0], curve[0][1], 0), end(curve[1][0], curve[1][1], 0);
+      gp_Vec direction(start, end);
+      if (direction.Magnitude() <= Precision::Confusion()) continue;
+      direction.Normalize();
+      const gp_Vec normal(-direction.Y() * width / 2, direction.X() * width / 2, 0);
+      BRepBuilderAPI_MakePolygon outline;
+      outline.Add(start.Translated(normal));
+      outline.Add(end.Translated(normal));
+      outline.Add(end.Translated(-normal));
+      outline.Add(start.Translated(-normal));
+      outline.Close();
+      auto face = BRepBuilderAPI_MakeFace(outline.Wire(), true).Face();
+      std::shared_ptr<void> stroke = std::make_shared<TopoDS_Shape>(
+        TopoDS::Solid(BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, height)).Shape()));
+      if (lineCap == 4) {
+        auto first = std::make_shared<TopoDS_Shape>(
+          BRepPrimAPI_MakeCylinder(gp_Ax2(start, gp_Dir(0, 0, 1)), width / 2, height).Shape());
+        auto last = std::make_shared<TopoDS_Shape>(
+          BRepPrimAPI_MakeCylinder(gp_Ax2(end, gp_Dir(0, 0, 1)), width / 2, height).Shape());
+        stroke = brepBoolean({stroke, first, last}, BrepOperation::Union, 0).shape;
+      }
+      strokes.push_back(stroke);
+    }
+    return brepBoolean(strokes, BrepOperation::Union, 0).shape;
+  } catch (const Standard_Failure& error) {
+    throw std::runtime_error(error.GetMessageString());
+  }
+}
+
 std::shared_ptr<void> brepShadowProjection(const std::shared_ptr<void>& shape, double height)
 {
   if (brepIsEmpty(shape)) return {};

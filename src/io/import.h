@@ -22,6 +22,9 @@ using SvgBezierContours = std::vector<std::vector<std::vector<std::array<double,
 struct SvgProfile {
   SvgBezierContours contours;
   bool evenOdd{false};
+  double strokeWidth{0};
+  int strokeLineCap{0};
+  int strokeLineJoin{0};
 };
 std::unique_ptr<class Polygon2d> import_svg(CurveDiscretizer discretizer, const std::string& filename,
                                             const boost::optional<std::string>& id,

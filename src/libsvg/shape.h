@@ -87,8 +87,12 @@ protected:
   double y{0};
   path_list_t path_list;
   bezier_contours_t bezier_contours;
+  bezier_contours_t stroke_contours;
   bool native_curves_valid{false};
-  bool native_style_valid{true};
+  bool native_stroke_valid{true};
+  double native_stroke_scale{1};
+  std::string stroke;
+  std::string fill;
   std::string fill_rule;
   std::string transform;
   std::string stroke_width;
@@ -136,6 +140,12 @@ public:
 
   [[nodiscard]] virtual const path_list_t& get_path_list() const { return path_list; }
   [[nodiscard]] const bezier_contours_t& get_bezier_contours() const;
+  [[nodiscard]] const bezier_contours_t& get_stroke_contours() const;
+  [[nodiscard]] bool has_stroke() const;
+  [[nodiscard]] bool has_fill() const;
+  [[nodiscard]] double native_stroke_width() const;
+  [[nodiscard]] int native_stroke_linecap() const;
+  [[nodiscard]] int native_stroke_linejoin() const;
   [[nodiscard]] bool uses_even_odd_fill() const;
 
   [[nodiscard]] virtual bool is_excluded() const;
