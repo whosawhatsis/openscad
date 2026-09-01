@@ -23,6 +23,8 @@ public:
   void draw(bool showedges, const ShaderUtils::ShaderInfo *shaderinfo) const override;
   void setColorScheme(const ColorScheme& cs) override;
   BoundingBox getBoundingBox() const override;
+  //! The evaluated mesh is drawn in one ordinary pass.
+  [[nodiscard]] bool providesSceneDepth() const override { return true; }
 
   /**
    * @brief Search for a segment or vertex on the line between near_pt and far_pt (with some tolerance)
@@ -46,6 +48,9 @@ private:
   std::vector<std::shared_ptr<const class PolySet>> polysets_;
   std::vector<std::pair<std::shared_ptr<const Polygon2d>, std::shared_ptr<const PolySet>>> polygons_;
 
+  // The shader the containers below were prepared against; they are rebuilt
+  // when it changes. See prepare().
+  const ShaderUtils::ShaderInfo *prepared_shaderinfo_{nullptr};
   std::vector<VertexStateContainer> polyset_vertex_state_containers_;
   // Transparent faces, drawn after the opaque ones with depth writes disabled.
   std::vector<VertexStateContainer> polyset_transparent_containers_;

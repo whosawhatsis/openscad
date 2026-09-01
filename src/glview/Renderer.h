@@ -45,6 +45,13 @@ public:
   virtual void draw(bool showedges, const ShaderUtils::ShaderInfo *shaderinfo) const = 0;
   [[nodiscard]] virtual BoundingBox getBoundingBox() const = 0;
 
+  //! Whether this renderer leaves an ordinary scene depth buffer behind, so
+  //! that screen-space effects may read it. False for the OpenCSG preview,
+  //! whose depth buffer is the working residue of the CSG passes rather than a
+  //! picture of the model - reflections and shadows read that as geometry and
+  //! produce confident nonsense.
+  [[nodiscard]] virtual bool providesSceneDepth() const { return false; }
+
   enum class ColorMode {
     NONE,
     MATERIAL,

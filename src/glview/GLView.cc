@@ -637,8 +637,8 @@ void GLView::paintGL()
   // Before anything is drawn, because without an FBO this scribbles on the
   // colour buffer and relies on the clear below to wipe it.
   shadow_map_valid_ = false;
-  if (this->renderer && analysis_mode == AnalysisMode::Shaded && phong_shader &&
-      Feature::ExperimentalShadows.is_enabled()) {
+  if (this->renderer && this->renderer->providesSceneDepth() && analysis_mode == AnalysisMode::Shaded &&
+      phong_shader && Feature::ExperimentalShadows.is_enabled()) {
     this->renderer->prepare(phong_shader.get());
     renderShadowMap();
   }
@@ -815,8 +815,8 @@ void GLView::paintGL()
       // Inside the non-Canny/Wireframe branch: SSR only applies to Shaded, which
       // is neither of those, and the feature-edge modes do not draw geometry here
       // at all.
-      if (analysis_mode == AnalysisMode::Shaded && phong_shader &&
-          Feature::ExperimentalScreenSpaceReflections.is_enabled()) {
+      if (this->renderer->providesSceneDepth() && analysis_mode == AnalysisMode::Shaded &&
+          phong_shader && Feature::ExperimentalScreenSpaceReflections.is_enabled()) {
         captureSceneForReflections();
         glUseProgram(active_shader->resource.shader_program);
         glUniform1i(active_shader->uniforms.at("ssrEnabled"), GL_TRUE);

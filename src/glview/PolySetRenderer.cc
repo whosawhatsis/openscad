@@ -310,6 +310,28 @@ void PolySetRenderer::createPolygonEdgeStates()
 
 void PolySetRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
 {
+  // Rebuild when the shader changes, not only when nothing has been built yet.
+  // A prepared container carries glVertexAttribPointer calls recorded against
+  // one program's attribute locations; draw() then enables whatever attributes
+  // the *current* program declares. Keeping stale containers across a shader
+  // change therefore leaves attributes enabled with no pointer behind them.
+  //
+  // In the GUI that is the difference between working and not: press F6 in the
+  // default view and the containers are built for the edge shader, so switching
+  // to Shaded afterwards left `material` unbound - metals lost their
+  // environment and reflections never appeared. Every CLI test passed because a
+  // command-line render only ever prepares once, with the shader it then draws
+  // with. OpenCSGRenderer::prepare already does this; the mesh renderer was
+  // never given the same treatment.
+  if (!polyset_vertex_state_containers_.empty() && shaderinfo != prepared_shaderinfo_) {
+    polyset_vertex_state_containers_.clear();
+    // Transparent faces live in their own containers on this branch and go
+    // stale for exactly the same reason.
+    polyset_transparent_containers_.clear();
+    polygon_vertex_state_containers_.clear();
+  }
+  prepared_shaderinfo_ = shaderinfo;
+
   if (polyset_vertex_state_containers_.empty() && polygon_vertex_state_containers_.empty()) {
     if (!this->polysets_.empty() && !this->polygons_.empty()) {
       LOG(message_group::Error, "PolySetRenderer::prepare() called with both polysets and polygons");
