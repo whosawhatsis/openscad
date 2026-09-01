@@ -1328,6 +1328,7 @@ TEST_CASE("B-Rep hull of translated cylinders keeps the swept envelope smooth", 
   second->r1 = second->r2 = 1;
   second->h = 2;
   double expectedMinX = -1;
+  double expectedMaxZ = 5;
   double outsideY = 1.1;
   size_t expectedCylinders = 2;
   SECTION("equal radii")
@@ -1339,6 +1340,12 @@ TEST_CASE("B-Rep hull of translated cylinders keeps the swept envelope smooth", 
     expectedMinX = -2;
     outsideY = 1.6;
     expectedCylinders = 1;
+  }
+  SECTION("unequal heights")
+  {
+    first->h = 3;
+    second->h = 1;
+    expectedMaxZ = 4;
   }
   auto translate = std::make_shared<TransformNode>(&inst, "translate");
   translate->matrix.translate(Vector3d(4, 0, 3));
@@ -1358,7 +1365,7 @@ TEST_CASE("B-Rep hull of translated cylinders keeps the swept envelope smooth", 
   CHECK(brep->getBoundingBox().min().x() == Catch::Approx(expectedMinX).margin(1e-5));
   CHECK(brep->getBoundingBox().max().x() == Catch::Approx(5).margin(1e-5));
   CHECK(brep->getBoundingBox().min().z() == Catch::Approx(0).margin(1e-5));
-  CHECK(brep->getBoundingBox().max().z() == Catch::Approx(5).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().z() == Catch::Approx(expectedMaxZ).margin(1e-5));
   auto probe = BrepGeometry::cube(0.05, 0.05, 0.05);
   Transform3d placement = Transform3d::Identity();
   placement.translate(Vector3d(2, 0, 2.5));

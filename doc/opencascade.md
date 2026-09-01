@@ -40,8 +40,9 @@ is not implemented yet.
   projections used as extrusion profiles. Shadow projection uses OCCT silhouettes
   and native region classification, not a rendered image or triangle mesh.
 - Polyhedral hulls; smooth hulls of two spheres, two parallel vertical cylinders
-  with matching cap heights, separated coaxial cylinders, or equal-height cylinders translated in
-  3D, including unequal radii (and extruded two-circle hulls).
+  with matching cap heights, separated coaxial cylinders, equal-radius cylinders translated in 3D
+  with unequal heights, or equal-height translated cylinders with unequal radii (including extruded
+  two-circle hulls).
 - Minkowski sums of polyhedra, including nonconvex operands; polyhedron/sphere rounding;
   sphere/sphere sums; vertical constant-section prisms with a vertical cylinder
   (including planar circle offsets). Operands must fit a supported path at each

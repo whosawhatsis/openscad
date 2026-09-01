@@ -664,6 +664,44 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
             throw std::runtime_error("Translated unequal-cylinder hull is invalid");
           return result;
         }
+        if (centerDistance > Precision::Confusion() &&
+            std::abs(c1->Radius() - c2->Radius()) <= Precision::Confusion() &&
+            std::abs(h1 - h2) > Precision::Confusion()) {
+          const auto capFace = [](const std::shared_ptr<void>& shape, double z) {
+            for (TopExp_Explorer faces(shapeFrom(shape), TopAbs_FACE); faces.More(); faces.Next()) {
+              const auto face = TopoDS::Face(faces.Current());
+              const BRepAdaptor_Surface surface(face);
+              if (surface.GetType() == GeomAbs_Plane &&
+                  std::abs(surface.Plane().Location().Z() - z) <= Precision::Confusion())
+                return face;
+            }
+            throw std::runtime_error("Translated cylinder hull cap not found");
+          };
+          std::vector<std::shared_ptr<void>> swept = operands;
+          for (const auto& [z1, z2] : {std::pair{b1[2], b2[2]}, std::pair{b1[5], b2[5]}}) {
+            BRepPrimAPI_MakePrism prism(capFace(operands[0], z1),
+                                        gp_Vec(c2->Location().X() - c1->Location().X(),
+                                               c2->Location().Y() - c1->Location().Y(), z2 - z1));
+            if (!prism.IsDone()) throw std::runtime_error("Translated cylinder hull cap sweep failed");
+            swept.push_back(std::make_shared<TopoDS_Shape>(prism.Shape()));
+          }
+          const double dx = c2->Location().X() - c1->Location().X();
+          const double dy = c2->Location().Y() - c1->Location().Y();
+          const double nx = -dy * c1->Radius() / centerDistance;
+          const double ny = dx * c1->Radius() / centerDistance;
+          std::vector<gp_Pnt> core;
+          for (const auto& [cylinder, bounds] : {std::pair{*c1, b1}, std::pair{*c2, b2}}) {
+            for (const double z : {bounds[2], bounds[5]}) {
+              core.emplace_back(cylinder.Location().X() + nx, cylinder.Location().Y() + ny, z);
+              core.emplace_back(cylinder.Location().X() - nx, cylinder.Location().Y() - ny, z);
+            }
+          }
+          swept.push_back(pointHull(core));
+          auto result = brepBoolean(swept, BrepOperation::Union, 0).shape;
+          if (brepIsEmpty(result) || !BRepCheck_Analyzer(shapeFrom(result)).IsValid())
+            throw std::runtime_error("Translated unequal-height cylinder hull is invalid");
+          return result;
+        }
         if (std::abs(c1->Radius() - c2->Radius()) <= Precision::Confusion() &&
             std::abs(h1 - h2) <= Precision::Confusion() &&
             std::abs(b1[2] - b2[2]) > Precision::Confusion()) {
