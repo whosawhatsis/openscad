@@ -64,10 +64,16 @@ GLView::~GLView()
 // shadowing both would cancel out to almost nothing.
 void GLView::renderShadowMap()
 {
-  const int size = 1024;
   GLint viewport[4];
   glGetIntegerv(GL_VIEWPORT, viewport);
   if (viewport[2] <= 0 || viewport[3] <= 0) return;
+  // The map cannot be larger than the framebuffer it is copied out of.
+  // glCopyTexImage2D reads the *framebuffer*, and enlarging the viewport does
+  // not enlarge that; asking for 1024 out of a 460-pixel buffer read back as
+  // all zeros - a map that is uniformly "nearest depth" and shadows nothing it
+  // is actually sampled against, with no GL error raised.
+  const int size = std::min(1024, std::min(viewport[2], viewport[3]));
+  if (size < 16) return;
 
   // Eye-space transform of the model, exactly as the real pass will use it: the
   // lights are eye-space and parented to the camera, so the whole shadow
@@ -145,7 +151,12 @@ void GLView::renderShadowMap()
   proj(2, 2) = -2.0 / (maxz - minz);
   proj(0, 3) = -(maxx + minx) / (maxx - minx);
   proj(1, 3) = -(maxy + miny) / (maxy - miny);
-  proj(2, 3) = -(maxz + minz) / (maxz - minz);
+  // Plus, not minus, unlike x and y: the z row is flipped (m22 is negative,
+  // because the light looks down -z), and flipping the scale flips the sign of
+  // the translation with it. Nearly invisible in practice - the range is
+  // centred, so this term is close to zero - which is exactly why it would have
+  // survived any amount of eyeballing.
+  proj(2, 3) = (maxz + minz) / (maxz - minz);
 
   const Eigen::Matrix4d lightClipFromEye = proj * lightView;
   // Column-major for GL, and biased from clip space [-1,1] into texture [0,1].
@@ -159,6 +170,7 @@ void GLView::renderShadowMap()
     }
   }
 
+  shadow_texel_ = 1.0f / static_cast<float>(size);
   const Eigen::Matrix4d lightFromObject = lightView * eyeFromObject;
   // No transpose: Eigen stores column-major and glLoadMatrixd wants column-major,
   // so data() is already in the right order. Transposing here sent the depth pass
@@ -267,6 +279,7 @@ void GLView::setupShader()
         {"shadowsEnabled", glGetUniformLocation(phong_resource.shader_program, "shadowsEnabled")},
         {"shadowMap", glGetUniformLocation(phong_resource.shader_program, "shadowMap")},
         {"shadowMatrix", glGetUniformLocation(phong_resource.shader_program, "shadowMatrix")},
+        {"shadowTexel", glGetUniformLocation(phong_resource.shader_program, "shadowTexel")},
       },
     .attributes =
       {
@@ -725,6 +738,7 @@ void GLView::paintGL()
       if (shadow_map_valid_) {
         glUniform1i(active_shader->uniforms.at("shadowMap"), 3);
         glUniformMatrix4fv(active_shader->uniforms.at("shadowMatrix"), 1, GL_FALSE, shadow_matrix_);
+        glUniform1f(active_shader->uniforms.at("shadowTexel"), shadow_texel_);
         glActiveTexture(GL_TEXTURE3);
         glBindTexture(GL_TEXTURE_2D, shadow_map_tex_);
         glActiveTexture(GL_TEXTURE0);

@@ -14,6 +14,7 @@
 # Usage: <script> <inputfile> --openscad=<executable-path> [<openscad args>] <outputfile>
 
 import argparse
+import collections
 import os
 import subprocess
 import sys
@@ -60,12 +61,23 @@ shadowed = render("shadowed", ["--enable=shadows"])
 
 darker = sum(1 for a, b in zip(shadowed, lit) if sum(b) - sum(a) > 24)
 brighter = sum(1 for a, b in zip(shadowed, lit) if sum(a) - sum(b) > 24)
-print("darker=%d brighter=%d" % (darker, brighter), file=sys.stderr)
+# As a fraction of the model rather than an absolute count, so the assertion
+# does not silently weaken if the image size or the camera changes.
+background = collections.Counter(lit).most_common(1)[0][0]
+model = sum(1 for p in lit if p != background)
+print("darker=%d brighter=%d model=%d (%.1f%%)"
+      % (darker, brighter, model, 100.0 * darker / max(model, 1)), file=sys.stderr)
 
 report = [
     "shadows change the render: %s" % ("yes" if shadowed != lit else "NO"),
-    # A region has to go dark, not a few stray pixels.
-    "a region of the model is shadowed: %s" % ("yes" if darker > 800 else "NO"),
+    # A wall this size throws a shadow across a good part of the plate, so
+    # require a real proportion of the model to darken. An earlier version of
+    # this asked only for 800 pixels and passed against an implementation whose
+    # shadow map was unreadable - the few pixels it did darken were an artifact,
+    # not a shadow. Measured: 1.3% of the model in that broken state against 15%
+    # when it works.
+    "a region of the model is shadowed: %s"
+    % ("yes" if darker > 0.05 * model else "NO"),
     # Shadows subtract light. Anything that gets brighter is not a shadow, so
     # the darkened area must dominate by a wide margin.
     "shadowing only removes light: %s"

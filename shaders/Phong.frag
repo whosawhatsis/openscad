@@ -17,6 +17,8 @@ uniform bool showEdges;
 uniform bool shadowsEnabled;
 uniform sampler2D shadowMap;
 uniform mat4 shadowMatrix;
+// One texel of the shadow map, which is sized to fit the framebuffer.
+uniform float shadowTexel;
 
 uniform bool ssrEnabled;
 uniform sampler2D ssrColor;
@@ -191,7 +193,7 @@ float shadowFactor(vec3 eyePosition)
   // the floating-point slack in getting the same point back through two
   // different matrix chains.
   float bias = 1.5e-4;
-  float texel = 1.0 / 1024.0;
+  float texel = shadowTexel;
   float lit = 0.0;
   for (int y = 0; y < 2; ++y) {
     for (int x = 0; x < 2; ++x) {

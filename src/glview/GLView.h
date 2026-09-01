@@ -145,6 +145,7 @@ public:
   // eye-space-to-light-clip transform the shader needs to look into it.
   GLuint shadow_map_tex_{0};
   float shadow_matrix_[16]{};
+  float shadow_texel_{1.0f / 1024.0f};
   bool shadow_map_valid_{false};
   void renderShadowMap();
 
