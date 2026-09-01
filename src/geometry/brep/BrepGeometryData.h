@@ -46,3 +46,4 @@ BrepDifferenceData brepDifference(const std::shared_ptr<void>& object, const std
 BrepDifferenceData brepBoolean(const std::vector<std::shared_ptr<void>>& operands,
                                BrepOperation operation, double filletRadius);
 bool brepWriteStep(const std::shared_ptr<void>& shape, const std::string& filename);
+std::shared_ptr<void> brepReadStep(const std::string& filename);

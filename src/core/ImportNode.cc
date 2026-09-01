@@ -29,6 +29,11 @@
 #include "geometry/Geometry.h"
 #include "geometry/PolySet.h"
 #include "io/import.h"
+#ifdef ENABLE_OPENCSCADE
+#include "geometry/brep/BrepGeometry.h"
+#include "geometry/brep/BrepGeometryData.h"
+#include "glview/RenderSettings.h"
+#endif
 #ifdef ENABLE_CGAL
 #include "geometry/cgal/CGALNefGeometry.h"
 #include "geometry/cgal/cgalutils.h"
@@ -100,6 +105,7 @@ static std::shared_ptr<AbstractNode> do_import(const ModuleInstantiation *inst, 
     else if (ext == ".amf") actualtype = ImportType::AMF;
     else if (ext == ".svg") actualtype = ImportType::SVG;
     else if (ext == ".obj") actualtype = ImportType::OBJ;
+    else if (ext == ".step" || ext == ".stp") actualtype = ImportType::STEP;
   }
 
   auto node =
@@ -232,6 +238,33 @@ std::unique_ptr<const Geometry> ImportNode::createGeometry() const
     g = optionally_center(import_obj(this->filename, loc), this->center);
     break;
   }
+#ifdef ENABLE_OPENCSCADE
+  case ImportType::STEP: {
+    try {
+      auto brep = std::make_unique<BrepGeometry>(brepReadStep(this->filename));
+      if (this->center && !brep->isEmpty()) {
+        auto placement = Transform3d::Identity();
+        placement.translate(-brep->getBoundingBox().center());
+        brep->transform(placement);
+      }
+      if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
+        g = std::move(brep);
+      } else {
+        const double radius = std::max(brep->getBoundingBox().diagonal().norm() / 2.0, 0.01);
+        const int segments = this->discretizer.getCircularSegmentCount(radius).value_or(3);
+        const double angle = 2.0 * M_PI / segments;
+        const double deflection = std::max(radius * (1.0 - std::cos(angle / 2.0)), 1e-6);
+        g = brep->toPolySet(deflection, angle);
+      }
+    } catch (const std::exception& error) {
+      LOG(message_group::Error, "OpenCASCADE STEP import failed: %1$s", error.what());
+      g = RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend
+            ? std::unique_ptr<Geometry>(std::make_unique<BrepGeometry>(nullptr))
+            : std::unique_ptr<Geometry>(PolySet::createEmpty());
+    }
+    break;
+  }
+#endif
   case ImportType::SVG: {
     g =
       import_svg(this->discretizer, this->filename, this->id, this->layer, this->dpi, this->center, loc);

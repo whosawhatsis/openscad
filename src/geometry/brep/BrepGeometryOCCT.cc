@@ -57,6 +57,7 @@
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
 #include <STEPControl_Writer.hxx>
+#include <STEPControl_Reader.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS.hxx>
@@ -1622,4 +1623,15 @@ bool brepWriteStep(const std::shared_ptr<void>& shape, const std::string& filena
   STEPControl_Writer writer;
   if (writer.Transfer(shapeFrom(shape), STEPControl_AsIs) != IFSelect_RetDone) return false;
   return writer.Write(filename.c_str()) == IFSelect_RetDone;
+}
+
+std::shared_ptr<void> brepReadStep(const std::string& filename)
+{
+  STEPControl_Reader reader;
+  if (reader.ReadFile(filename.c_str()) != IFSelect_RetDone || reader.TransferRoots() == 0)
+    throw std::runtime_error("OpenCASCADE STEP import failed");
+  auto shape = std::make_shared<TopoDS_Shape>(reader.OneShape());
+  if (shape->IsNull() || !BRepCheck_Analyzer(*shape).IsValid())
+    throw std::runtime_error("OpenCASCADE STEP import produced invalid geometry");
+  return shape;
 }

@@ -12,6 +12,7 @@
 
 #include "geometry/PolySet.h"
 #include "geometry/brep/BrepGeometry.h"
+#include "geometry/brep/BrepGeometryData.h"
 #include "geometry/GeometryEvaluator.h"
 #include "glview/RenderSettings.h"
 #include "core/CsgOpNode.h"
@@ -64,6 +65,44 @@ TEST_CASE("STEP export writes retained analytic BREP geometry", "[brep]")
   CHECK(contents.find("ISO-10303-21") != std::string::npos);
   CHECK(contents.find("CYLINDRICAL_SURFACE") != std::string::npos);
   CHECK(contents.find("TRIANGULATED_FACE_SET") == std::string::npos);
+}
+
+TEST_CASE("STEP import retains BREP for OCCT and facets for mesh backends", "[brep]")
+{
+  const auto path = std::filesystem::temp_directory_path() / "openscad-brep-import-test.step";
+  REQUIRE(brepWriteStep(BrepGeometry::cylinder(4.0, 10.0).opaqueShape(), path.string()));
+  ModuleInstantiation inst("import");
+  ImportNode node(&inst, ImportType::STEP, CurveDiscretizer(8.0));
+  node.filename = path.string();
+  node.center = false;
+  node.convexity = 1;
+  const auto previous = RenderSettings::inst()->backend3D;
+
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  const auto retained = node.createGeometry();
+  const auto brep = dynamic_cast<const BrepGeometry *>(retained.get());
+  REQUIRE(brep);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == 1);
+
+  size_t coarseFacets = 0;
+  for (const auto backend : {RenderBackend3D::CGALBackend, RenderBackend3D::ManifoldBackend}) {
+    RenderSettings::inst()->backend3D = backend;
+    const auto faceted = node.createGeometry();
+    const auto mesh = dynamic_cast<const PolySet *>(faceted.get());
+    REQUIRE(mesh);
+    CHECK(mesh->numFacets() > 0);
+    coarseFacets = mesh->numFacets();
+  }
+  ImportNode fineNode(&inst, ImportType::STEP, CurveDiscretizer(24.0));
+  fineNode.filename = path.string();
+  fineNode.center = false;
+  fineNode.convexity = 1;
+  const auto fine = fineNode.createGeometry();
+  RenderSettings::inst()->backend3D = previous;
+  std::filesystem::remove(path);
+  const auto fineMesh = dynamic_cast<const PolySet *>(fine.get());
+  REQUIRE(fineMesh);
+  CHECK(fineMesh->numFacets() > coarseFacets);
 }
 
 TEST_CASE("BrepGeometry display mesh carries analytic normals and boundary edges", "[brep]")
