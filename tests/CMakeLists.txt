@@ -141,6 +141,7 @@ set(TEST_PYTHON_DIR     "${CCSD}/data/python")
 set(STLEXPORTSANITYTEST_PY   "${CCSD}/stlexportsanitytest.py")
 set(MULTISTLEXPORTTEST_PY    "${CCSD}/multistlexporttest.py")
 set(MATERIALRENDERTEST_PY    "${CCSD}/materialrendertest.py")
+set(SHADEDTRANSPARENCYTEST_PY "${CCSD}/shadedtransparencytest.py")
 set(SSRRENDERTEST_PY         "${CCSD}/ssrrendertest.py")
 set(EXPORT_IMPORT_PNGTEST_PY "${CCSD}/export_import_pngtest.py")
 set(EXPORT_PNGTEST_PY        "${CCSD}/export_pngtest.py")
@@ -911,9 +912,15 @@ add_cmdline_test(export-chromatic     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING
 
 # At alpha zero the body contributes nothing, so every non-background pixel in
 # the expected image must come from the unattenuated Blinn-Phong highlight.
-add_cmdline_test(preview-shaded-transparency OPENSCAD SUFFIX png
+# Relational, not a blessed image. The blessed version was re-blessed by two
+# different feature branches for two different legitimate shading changes, so
+# their integration branch ended up carrying one branch's image with the other's
+# shader and failing for nobody's defect. What this scene is for - a surface at
+# alpha 0 still showing its reflected highlight - does not depend on the
+# lighting model, so the test should not either.
+add_cmdline_test(preview-shaded-transparency EXPERIMENTAL SCRIPT ${SHADEDTRANSPARENCYTEST_PY} SUFFIX txt
   FILES ${TEST_SCAD_DIR}/misc/shaded-transparent.scad
-  ARGS --view=shaded --camera=0,0,0,70,0,25,140 --imgsize=512,256)
+  ARGS ${OPENSCAD_EXE_ARG} --view=shaded --camera=0,0,0,70,0,25,140 --imgsize=512,256)
 
 # Note: we're missing coverage for ${PREVIEW_DIFFERENT_EXPECTATIONS} files for throwntogether
 add_cmdline_test(throwntogether-cgal  OPENSCAD FILES ${ALL_THROWNTOGETHER_FILES} SUFFIX png EXPECTEDDIR throwntogether ARGS --preview=throwntogether --backend=cgal)
