@@ -901,9 +901,23 @@ add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELO
 # ordinary preview and stay stable. These go through the preview path by design -
 # the modes are shader/lighting overrides on it, and --render is refused.
 set(AGENT_LIGHTING_FILES ${TEST_SCAD_DIR}/misc/agent-lighting.scad)
+# IMAGE_COMPARE_EXE, not Python3_EXECUTABLE: this script imports PIL at module
+# scope, and PIL is only guaranteed in the testing venv that ImageCompare.cmake
+# builds - the interpreter CMake found need not have it, and on this Mac does
+# not. Registered against the bare interpreter these two tests failed with
+# ModuleNotFoundError on every run, which reads in the summary as a Canny defect
+# rather than a missing dependency. Every other image test reaches PIL through
+# the same venv, via test_cmdline_tool.py's comparator.
+# IMAGE_COMPARE_EXE is only defined when USE_IMAGE_COMPARE_PY built the venv;
+# fall back to the interpreter CMake found, which then has to supply PIL itself.
+if(IMAGE_COMPARE_EXE)
+  set(CANNY_PY_EXE ${IMAGE_COMPARE_EXE} ${IMAGE_COMPARE_OPTS})
+else()
+  set(CANNY_PY_EXE ${Python3_EXECUTABLE})
+endif()
 foreach(canny_backend cgal manifold)
   add_test(NAME canny-map-${canny_backend}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/canny-map-test.py
+    COMMAND ${CANNY_PY_EXE} ${CMAKE_CURRENT_SOURCE_DIR}/canny-map-test.py
       ${OPENSCAD_BINPATH} ${canny_backend})
 endforeach()
 add_cmdline_test(export-normalmap     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=normalmap)
