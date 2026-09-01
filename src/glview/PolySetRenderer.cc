@@ -373,7 +373,13 @@ void PolySetRenderer::drawPolySets(bool showedges, const ShaderUtils::ShaderInfo
     for (const auto& container : containers) {
       for (const auto& vertex_state : container.states()) {
         const auto shader_vs = std::dynamic_pointer_cast<VBOShaderVertexState>(vertex_state);
-        if (!shader_vs || (shader_vs && showedges)) {
+        // Run these whenever the shader is bound, not only when edges are shown.
+        // A VBOShaderVertexState is what calls glVertexAttribPointer for the
+        // attributes shader_attribs_enable has just enabled; skipping it leaves
+        // those attributes enabled with no pointer behind them and the driver
+        // dereferences null inside the draw. Whether edges are *visible* is the
+        // showEdges uniform's business, not this loop's.
+        if (!shader_vs || enable_shader || showedges) {
           vertex_state->draw();
         }
       }
