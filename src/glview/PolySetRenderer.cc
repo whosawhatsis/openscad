@@ -324,14 +324,33 @@ void PolySetRenderer::drawPolySets(bool showedges, const ShaderUtils::ShaderInfo
 
   draw_containers(polyset_vertex_state_containers_);
 
-  // Depth writes off, not sorted: this removes the self-occlusion that tore the
-  // surface, and leaves blending between separate transparent surfaces in
-  // arbitrary order. That is the honest half of the fix - correct ordering needs
-  // per-triangle sorting or OIT, which is candidate 2 on this row and a larger
-  // change. Depth *testing* stays on, so opaque geometry still occludes.
+  // Transparent geometry: depth writes off, and drawn in two culled passes so
+  // the far side of each shell composites before the near side.
+  //
+  // Depth writes off removes the self-occlusion that tore the surface. The two
+  // passes then supply the ordering: for a closed shell every far face really is
+  // behind every near face along the view ray, so culling gives correct
+  // back-to-front order for free - no per-frame sort, no VBO rebuild when the
+  // camera moves.
+  //
+  // GL_BACK first, which looks backwards and is not: VBOBuilder emits inward-
+  // facing normals (see Phong.vert), so this mesh's winding is the opposite of
+  // OpenGL's convention and GL's "front" is the geometric far side. Culling
+  // GL_BACK therefore draws the far side. Getting this pair the wrong way round
+  // draws near-before-far, which is wrong order and looks identical to no
+  // ordering at all - it is not a no-op, and it cost a wrong conclusion once.
+  //
+  // Still unordered: two *separate* transparent shells overlapping each other,
+  // and non-closed surfaces. Those need real sorting or OIT. Depth testing stays
+  // on throughout, so opaque geometry still occludes.
   if (!polyset_transparent_containers_.empty()) {
     GL_CHECKD(glDepthMask(GL_FALSE));
+    GL_CHECKD(glEnable(GL_CULL_FACE));
+    GL_CHECKD(glCullFace(GL_BACK));
     draw_containers(polyset_transparent_containers_);
+    GL_CHECKD(glCullFace(GL_FRONT));
+    draw_containers(polyset_transparent_containers_);
+    GL_CHECKD(glDisable(GL_CULL_FACE));
     GL_CHECKD(glDepthMask(GL_TRUE));
   }
 
