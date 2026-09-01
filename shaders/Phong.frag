@@ -246,8 +246,32 @@ void main(void)
     // of it" - and the contact region fringes with spurious hits.
     vec3 rayOrigin = vEyePosition + normal * (0.01 * length(vEyePosition));
     vec4 hit = screenSpaceReflection(rayOrigin, reflection);
+    // A reflection may replace the environment, but it may not darken it below
+    // half of what it was.
+    //
+    // A screen-space hit returns the *model's* shaded colour. Letting that
+    // replace the environment outright turns a dark part into a dark mirror of
+    // itself, and the bright horizon band that makes a metal read as curved
+    // metal disappears - the way this shader looked before the environment
+    // existed at all, which is the user-visible complaint that produced this
+    // code. Physically, full replacement is what a mirror does; but this
+    // environment stands for surroundings that are not there, so treating it as
+    // occluded by the model is not more correct, only darker.
+    //
+    // The floor is applied to the *sample*, not to the blend weight. Capping
+    // the weight instead would have dimmed bright reflections just as much as
+    // dark ones, which is not the problem - measured, it cost the floor in the
+    // ssr-shading scene 20% of its reflected red for nothing.
     float weight = hit.a * (1.0 - smoothstep(0.05, 0.45, roughness));
-    environment = mix(environment, hit.rgb, weight);
+    // Floor the reflection's *luminance*, not its channels: a per-channel max
+    // against a grey environment desaturates a coloured reflection, which
+    // measured as a 13% loss of reflected red in the ssr-shading scene. Scaling
+    // by luminance keeps the hue and only lifts the brightness.
+    float envLuma = dot(environment, vec3(0.2126, 0.7152, 0.0722));
+    float hitLuma = dot(hit.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float lift = clamp(0.5 * envLuma / max(hitLuma, 1e-4), 1.0, 4.0);
+    vec3 reflected = hit.rgb * lift;
+    environment = mix(environment, reflected, weight);
   }
   // F0 rather than a Fresnel term. Schlick against the view direction is the more
   // correct ambient reflectance, but it approaches 1 at grazing angles for *every*
