@@ -56,6 +56,7 @@
 #include <Precision.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
+#include <STEPControl_Writer.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS.hxx>
@@ -1614,4 +1615,11 @@ BrepDifferenceData brepBoolean(const std::vector<std::shared_ptr<void>>& operand
   BrepBooleanResult result = applyBrepBoolean(shapes, booleanOperation, filletRadius);
   return {std::make_shared<TopoDS_Shape>(std::move(result.shape)),
           {result.filletedEdgeCount, result.achievedFilletRadius, result.clearanceRadiusUpperBound}};
+}
+
+bool brepWriteStep(const std::shared_ptr<void>& shape, const std::string& filename)
+{
+  STEPControl_Writer writer;
+  if (writer.Transfer(shapeFrom(shape), STEPControl_AsIs) != IFSelect_RetDone) return false;
+  return writer.Write(filename.c_str()) == IFSelect_RetDone;
 }

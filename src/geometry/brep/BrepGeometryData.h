@@ -2,6 +2,7 @@
 
 #include <array>
 #include <memory>
+#include <string>
 #include "geometry/brep/BrepGeometry.h"
 
 struct BrepDifferenceData {
@@ -44,3 +45,4 @@ BrepDifferenceData brepDifference(const std::shared_ptr<void>& object, const std
                                   double filletRadius);
 BrepDifferenceData brepBoolean(const std::vector<std::shared_ptr<void>>& operands,
                                BrepOperation operation, double filletRadius);
+bool brepWriteStep(const std::shared_ptr<void>& shape, const std::string& filename);

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <stdexcept>
 
@@ -27,6 +28,7 @@
 #include "core/TextNode.h"
 #include "core/CgalAdvNode.h"
 #include "platform/PlatformUtils.h"
+#include "io/export.h"
 #include "core/primitives.h"
 
 TEST_CASE("BrepGeometry retains analytic surfaces until tessellation", "[brep]")
@@ -38,6 +40,30 @@ TEST_CASE("BrepGeometry retains analytic surfaces until tessellation", "[brep]")
   REQUIRE(geometry.surfaceCount(BrepSurfaceType::Cylinder) == 1);
   REQUIRE(mesh->numFacets() > 0);
   REQUIRE(geometry.numFacets() == 0);
+}
+
+TEST_CASE("STEP export writes retained analytic BREP geometry", "[brep]")
+{
+  FileFormat format;
+  REQUIRE(fileformat::fromIdentifier("step", format));
+  REQUIRE(format == FileFormat::STEP);
+  const auto path = std::filesystem::temp_directory_path() / "openscad-brep-export-test.step";
+  const auto geometry = std::make_shared<BrepGeometry>(BrepGeometry::cylinder(4.0, 10.0));
+  const ExportInfo info{.format = format,
+                        .info = fileformat::info(format),
+                        .title = path.filename().string(),
+                        .sourceFilePath = path.string(),
+                        .camera = nullptr,
+                        .defaultColor = {},
+                        .colorScheme = nullptr};
+
+  REQUIRE(exportFileByName(geometry, path.string(), info));
+  std::ifstream input(path);
+  const std::string contents((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  std::filesystem::remove(path);
+  CHECK(contents.find("ISO-10303-21") != std::string::npos);
+  CHECK(contents.find("CYLINDRICAL_SURFACE") != std::string::npos);
+  CHECK(contents.find("TRIANGULATED_FACE_SET") == std::string::npos);
 }
 
 TEST_CASE("BrepGeometry display mesh carries analytic normals and boundary edges", "[brep]")

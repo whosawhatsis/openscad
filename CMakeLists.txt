@@ -605,13 +605,14 @@ else()
 endif(ENABLE_CGAL)
 
 if(ENABLE_OPENCSCADE)
-  find_package(OpenCASCADE REQUIRED COMPONENTS FoundationClasses ModelingData ModelingAlgorithms)
+  find_package(OpenCASCADE REQUIRED COMPONENTS FoundationClasses ModelingData ModelingAlgorithms
+    Visualization ApplicationFramework DataExchange)
   if(OpenCASCADE_MAJOR_VERSION LESS 7 OR
      (OpenCASCADE_MAJOR_VERSION EQUAL 7 AND OpenCASCADE_MINOR_VERSION LESS 9))
     message(FATAL_ERROR "OpenCASCADE 7.9 or newer is required")
   endif()
   target_compile_definitions(OpenSCADLibInternal PUBLIC ENABLE_OPENCSCADE)
-  target_link_libraries(OpenSCADLibInternal PUBLIC TKFillet TKBool TKPrim TKMesh TKOffset TKHLR)
+  target_link_libraries(OpenSCADLibInternal PUBLIC TKFillet TKBool TKPrim TKMesh TKOffset TKHLR TKDESTEP)
   message(STATUS "OpenCASCADE: ${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}")
 endif()
 
@@ -1152,7 +1153,8 @@ if(ENABLE_OPENCSCADE)
     src/geometry/brep/BrepGeometry.cc
     src/geometry/brep/BrepGeometry.h
     src/geometry/brep/BrepGeometryData.h
-    src/geometry/brep/BrepGeometryOCCT.cc)
+    src/geometry/brep/BrepGeometryOCCT.cc
+    src/io/export_step.cc)
 endif()
 
 if(EXPERIMENTAL AND ENABLE_CGAL)

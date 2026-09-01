@@ -7,8 +7,8 @@ OpenCASCADE do not offer the option. The View menu's CAD Shaded option uses
 retained BREP geometry for preview and rendered views.
 
 Smooth geometry stays in BREP; viewport triangulation is separate from mesh
-export tessellation. Explicit polygonal inputs remain polygonal. STEP/IGES I/O
-is not implemented yet.
+export tessellation. Explicit polygonal inputs remain polygonal. STEP export writes retained BREP
+geometry directly without tessellation. STEP import and IGES I/O are not implemented yet.
 
 ## Native operation coverage
 
