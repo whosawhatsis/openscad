@@ -102,7 +102,7 @@ void TestAnalysisView::checkModesChangeTheRender()
   restoreWindowInitialState();
 
   const QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty.scad";
   window->tabManager->open(filename);
 
   window->viewActionAnalysisViewDefault->trigger();
@@ -171,7 +171,7 @@ void TestAnalysisView::checkShadedComposesWithEdges()
   restoreWindowInitialState();
 
   const QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty.scad";
   window->tabManager->open(filename);
   window->viewActionAnalysisViewShaded->trigger();
   window->viewActionShowEdges->setChecked(false);
@@ -211,8 +211,8 @@ void TestAnalysisView::checkShadedIsIndependentOfRenderOrder()
 {
   restoreWindowInitialState();
 
-  const QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/material-shaded.scad";
+  const QString filename = QString::fromStdString(PlatformUtils::resourceBasePath()) +
+                           "/tests/data/basic-ux/material-shaded.scad";
   window->tabManager->open(filename);
 
   // Render while in the default view, then switch to Shaded. This is the order a
