@@ -58,6 +58,8 @@
 #include <Standard_Failure.hxx>
 #include <STEPControl_Writer.hxx>
 #include <STEPControl_Reader.hxx>
+#include <IGESControl_Writer.hxx>
+#include <IGESControl_Reader.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS.hxx>
@@ -1633,5 +1635,22 @@ std::shared_ptr<void> brepReadStep(const std::string& filename)
   auto shape = std::make_shared<TopoDS_Shape>(reader.OneShape());
   if (shape->IsNull() || !BRepCheck_Analyzer(*shape).IsValid())
     throw std::runtime_error("OpenCASCADE STEP import produced invalid geometry");
+  return shape;
+}
+
+bool brepWriteIges(const std::shared_ptr<void>& shape, const std::string& filename)
+{
+  IGESControl_Writer writer;
+  return writer.AddShape(shapeFrom(shape)) && writer.Write(filename.c_str());
+}
+
+std::shared_ptr<void> brepReadIges(const std::string& filename)
+{
+  IGESControl_Reader reader;
+  if (reader.ReadFile(filename.c_str()) != IFSelect_RetDone || reader.TransferRoots() == 0)
+    throw std::runtime_error("OpenCASCADE IGES import failed");
+  auto shape = std::make_shared<TopoDS_Shape>(reader.OneShape());
+  if (shape->IsNull() || !BRepCheck_Analyzer(*shape).IsValid())
+    throw std::runtime_error("OpenCASCADE IGES import produced invalid geometry");
   return shape;
 }

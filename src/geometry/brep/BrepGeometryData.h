@@ -47,3 +47,5 @@ BrepDifferenceData brepBoolean(const std::vector<std::shared_ptr<void>>& operand
                                BrepOperation operation, double filletRadius);
 bool brepWriteStep(const std::shared_ptr<void>& shape, const std::string& filename);
 std::shared_ptr<void> brepReadStep(const std::string& filename);
+bool brepWriteIges(const std::shared_ptr<void>& shape, const std::string& filename);
+std::shared_ptr<void> brepReadIges(const std::string& filename);

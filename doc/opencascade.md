@@ -10,7 +10,7 @@ Smooth geometry stays in BREP; viewport triangulation is separate from mesh
 export tessellation. Explicit polygonal inputs remain polygonal. STEP export writes retained BREP
 geometry directly without tessellation. STEP import retains BREP with the OpenCASCADE backend; with
 CGAL or Manifold it tessellates through OpenCASCADE using the active `$fn` or `$fa`/`$fs` settings.
-IGES I/O is not implemented yet.
+IGES import/export follows the same retained-BREP and backend-aware tessellation rules.
 
 ## Native operation coverage
 

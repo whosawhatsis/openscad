@@ -20,6 +20,7 @@ enum class ImportType {
   NEF3,
   OBJ,
   STEP,
+  IGES,
 };
 
 class ImportNode : public LeafNode

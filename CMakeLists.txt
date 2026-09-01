@@ -612,7 +612,8 @@ if(ENABLE_OPENCSCADE)
     message(FATAL_ERROR "OpenCASCADE 7.9 or newer is required")
   endif()
   target_compile_definitions(OpenSCADLibInternal PUBLIC ENABLE_OPENCSCADE)
-  target_link_libraries(OpenSCADLibInternal PUBLIC TKFillet TKBool TKPrim TKMesh TKOffset TKHLR TKDESTEP)
+  target_link_libraries(OpenSCADLibInternal PUBLIC TKFillet TKBool TKPrim TKMesh TKOffset TKHLR
+    TKDESTEP TKDEIGES)
   message(STATUS "OpenCASCADE: ${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}")
 endif()
 

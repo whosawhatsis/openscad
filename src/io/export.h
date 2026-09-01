@@ -45,7 +45,8 @@ enum class FileFormat {
   PDF,
   POV,
   PARAM,
-  STEP
+  STEP,
+  IGES
 };
 
 struct FileFormatInfo {
@@ -316,6 +317,7 @@ void export_obj(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
 void export_off(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
 #ifdef ENABLE_OPENCSCADE
 bool export_step(const std::shared_ptr<const Geometry>& geom, const std::string& filename);
+bool export_iges(const std::shared_ptr<const Geometry>& geom, const std::string& filename);
 #endif
 void export_wrl(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
 void export_amf(const std::shared_ptr<const Geometry>& geom, std::ostream& output);

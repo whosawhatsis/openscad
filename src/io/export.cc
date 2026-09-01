@@ -99,6 +99,8 @@ Containers& containers()
     add_item(*containers, {FileFormat::POV, "pov", "pov", "POV"});
 #ifdef ENABLE_OPENCSCADE
     add_item(*containers, {FileFormat::STEP, "step", "step", "STEP"});
+    add_item(*containers, {FileFormat::IGES, "iges", "iges", "IGES"});
+    containers->identifierToInfo["igs"] = containers->identifierToInfo["iges"];
 #endif
 
     // Alias
@@ -172,7 +174,8 @@ bool is3D(FileFormat format)
   return format == FileFormat::ASCII_STL || format == FileFormat::BINARY_STL ||
          format == FileFormat::OBJ || format == FileFormat::OFF || format == FileFormat::WRL ||
          format == FileFormat::AMF || format == FileFormat::_3MF || format == FileFormat::NEFDBG ||
-         format == FileFormat::NEF3 || format == FileFormat::POV || format == FileFormat::STEP;
+         format == FileFormat::NEF3 || format == FileFormat::POV || format == FileFormat::STEP ||
+         format == FileFormat::IGES;
 }
 
 bool is2D(FileFormat format)
@@ -224,6 +227,7 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
   case FileFormat::PDF:        export_pdf(root_geom, output, exportInfo); break;
   case FileFormat::POV:        export_pov(root_geom, output, exportInfo); break;
   case FileFormat::STEP:       throw std::runtime_error("STEP export requires a filename");
+  case FileFormat::IGES:       throw std::runtime_error("IGES export requires a filename");
 #ifdef ENABLE_CGAL
   case FileFormat::NEFDBG: export_nefdbg(root_geom, output); break;
   case FileFormat::NEF3:   export_nef3(root_geom, output); break;
@@ -246,6 +250,7 @@ bool exportFileByName(const std::shared_ptr<const Geometry>& root_geom, const st
 {
 #ifdef ENABLE_OPENCSCADE
   if (exportInfo.format == FileFormat::STEP) return export_step(root_geom, filename);
+  if (exportInfo.format == FileFormat::IGES) return export_iges(root_geom, filename);
 #endif
   std::ios::openmode mode = std::ios::out | std::ios::trunc;
   if (exportInfo.format == FileFormat::_3MF || exportInfo.format == FileFormat::BINARY_STL ||

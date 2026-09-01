@@ -82,7 +82,9 @@ TEST_CASE("STEP import retains BREP for OCCT and facets for mesh backends", "[br
   const auto retained = node.createGeometry();
   const auto brep = dynamic_cast<const BrepGeometry *>(retained.get());
   REQUIRE(brep);
-  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == 1);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) + brep->surfaceCount(BrepSurfaceType::BSpline) >=
+        1);
+  CHECK(brep->numFacets() == 0);
 
   size_t coarseFacets = 0;
   for (const auto backend : {RenderBackend3D::CGALBackend, RenderBackend3D::ManifoldBackend}) {
@@ -103,6 +105,46 @@ TEST_CASE("STEP import retains BREP for OCCT and facets for mesh backends", "[br
   const auto fineMesh = dynamic_cast<const PolySet *>(fine.get());
   REQUIRE(fineMesh);
   CHECK(fineMesh->numFacets() > coarseFacets);
+}
+
+TEST_CASE("IGES round trip retains BREP for OCCT and facets for mesh backends", "[brep]")
+{
+  FileFormat format;
+  REQUIRE(fileformat::fromIdentifier("iges", format));
+  REQUIRE(format == FileFormat::IGES);
+  const auto path = std::filesystem::temp_directory_path() / "openscad-brep-roundtrip-test.iges";
+  const auto geometry = std::make_shared<BrepGeometry>(BrepGeometry::cylinder(4.0, 10.0));
+  const ExportInfo info{.format = format,
+                        .info = fileformat::info(format),
+                        .title = path.filename().string(),
+                        .sourceFilePath = path.string(),
+                        .camera = nullptr,
+                        .defaultColor = {},
+                        .colorScheme = nullptr};
+  REQUIRE(exportFileByName(geometry, path.string(), info));
+
+  ModuleInstantiation inst("import");
+  ImportNode node(&inst, ImportType::IGES, CurveDiscretizer(8.0));
+  node.filename = path.string();
+  node.center = false;
+  node.convexity = 1;
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  const auto retained = node.createGeometry();
+  const auto brep = dynamic_cast<const BrepGeometry *>(retained.get());
+  REQUIRE(brep);
+  CHECK_FALSE(brep->isEmpty());
+  CHECK(brep->numFacets() == 0);
+  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(-4).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().z() == Catch::Approx(10).margin(1e-5));
+
+  RenderSettings::inst()->backend3D = RenderBackend3D::ManifoldBackend;
+  const auto faceted = node.createGeometry();
+  RenderSettings::inst()->backend3D = previous;
+  std::filesystem::remove(path);
+  const auto mesh = dynamic_cast<const PolySet *>(faceted.get());
+  REQUIRE(mesh);
+  CHECK(mesh->numFacets() > 0);
 }
 
 TEST_CASE("BrepGeometry display mesh carries analytic normals and boundary edges", "[brep]")

@@ -106,6 +106,7 @@ static std::shared_ptr<AbstractNode> do_import(const ModuleInstantiation *inst, 
     else if (ext == ".svg") actualtype = ImportType::SVG;
     else if (ext == ".obj") actualtype = ImportType::OBJ;
     else if (ext == ".step" || ext == ".stp") actualtype = ImportType::STEP;
+    else if (ext == ".iges" || ext == ".igs") actualtype = ImportType::IGES;
   }
 
   auto node =
@@ -239,9 +240,11 @@ std::unique_ptr<const Geometry> ImportNode::createGeometry() const
     break;
   }
 #ifdef ENABLE_OPENCSCADE
-  case ImportType::STEP: {
+  case ImportType::STEP:
+  case ImportType::IGES: {
     try {
-      auto brep = std::make_unique<BrepGeometry>(brepReadStep(this->filename));
+      auto brep = std::make_unique<BrepGeometry>(
+        this->type == ImportType::STEP ? brepReadStep(this->filename) : brepReadIges(this->filename));
       if (this->center && !brep->isEmpty()) {
         auto placement = Transform3d::Identity();
         placement.translate(-brep->getBoundingBox().center());
@@ -257,7 +260,7 @@ std::unique_ptr<const Geometry> ImportNode::createGeometry() const
         g = brep->toPolySet(deflection, angle);
       }
     } catch (const std::exception& error) {
-      LOG(message_group::Error, "OpenCASCADE STEP import failed: %1$s", error.what());
+      LOG(message_group::Error, "OpenCASCADE CAD import failed: %1$s", error.what());
       g = RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend
             ? std::unique_ptr<Geometry>(std::make_unique<BrepGeometry>(nullptr))
             : std::unique_ptr<Geometry>(PolySet::createEmpty());
