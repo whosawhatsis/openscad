@@ -199,10 +199,15 @@ bool renderAndWait(MainWindow *window)
   window->designActionRender->trigger();
   QElapsedTimer timer;
   timer.start();
-  while (!compiled && timer.elapsed() < 60000) {
+  // compilationDone fires when the source has compiled, NOT when the F6
+  // geometry is finished and the viewport has been handed the mesh renderer.
+  // Waiting on it alone returns while the viewport is still showing the preview,
+  // and every grab after that reads the wrong renderer.
+  while ((!compiled || window->qglview->getRenderer() != window->geomRenderer.get()) &&
+         timer.elapsed() < 60000) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
   }
-  return compiled;
+  return compiled && window->qglview->getRenderer() == window->geomRenderer.get();
 }
 
 }  // namespace
