@@ -39,7 +39,9 @@
 #include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
+#include <BOPAlgo_GlueEnum.hxx>
 #include <HLRBRep_Algo.hxx>
 #include <HLRBRep_HLRToShape.hxx>
 #include <HLRAlgo_Projector.hxx>
@@ -59,6 +61,7 @@
 #include <TopoDS.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <gp_GTrsf.hxx>
+#include <gp_Circ.hxx>
 #include <gp_Pln.hxx>
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_BSplineCurve.hxx>
@@ -610,6 +613,57 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
         const double centerDistance =
           std::hypot(c2->Location().X() - c1->Location().X(), c2->Location().Y() - c1->Location().Y());
         const double h1 = b1[5] - b1[2], h2 = b2[5] - b2[2];
+        if (centerDistance > Precision::Confusion() &&
+            std::abs(c1->Radius() - c2->Radius()) > Precision::Confusion() &&
+            std::abs(h1 - h2) <= Precision::Confusion() &&
+            std::abs(b1[2] - b2[2]) > Precision::Confusion()) {
+          const auto capWire = [](const gp_Cylinder& cylinder, double z) {
+            const gp_Pnt center(cylinder.Location().X(), cylinder.Location().Y(), z);
+            return BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(
+                                             gp_Ax2(center, gp_Dir(0, 0, 1)), cylinder.Radius())))
+              .Wire();
+          };
+          BRepOffsetAPI_ThruSections bottomHull(true, true, Precision::Confusion());
+          bottomHull.CheckCompatibility(false);
+          bottomHull.AddWire(capWire(*c1, b1[2]));
+          bottomHull.AddWire(capWire(*c2, b2[2]));
+          bottomHull.Build();
+          if (!bottomHull.IsDone()) throw std::runtime_error("Translated cylinder hull loft failed");
+          auto loftSolid = TopoDS::Solid(bottomHull.Shape());
+          if (!BRepLib::OrientClosedSolid(loftSolid) || !BRepCheck_Analyzer(loftSolid).IsValid())
+            throw std::runtime_error("Translated cylinder hull loft is invalid");
+          std::vector<std::shared_ptr<void>> swept{std::make_shared<TopoDS_Shape>(loftSolid)};
+          for (TopExp_Explorer faces(loftSolid, TopAbs_FACE); faces.More(); faces.Next()) {
+            BRepPrimAPI_MakePrism prism(faces.Current(), gp_Vec(0, 0, h1));
+            if (!prism.IsDone()) throw std::runtime_error("Translated cylinder hull extrusion failed");
+            auto prismSolid = TopoDS::Solid(prism.Shape());
+            if (!BRepLib::OrientClosedSolid(prismSolid) || !BRepCheck_Analyzer(prismSolid).IsValid())
+              throw std::runtime_error("Translated cylinder hull face extrusion is invalid");
+            swept.push_back(std::make_shared<TopoDS_Shape>(prismSolid));
+          }
+          TopoDS_Shape fused = shapeFrom(swept.front());
+          for (auto part = std::next(swept.begin()); part != swept.end(); ++part) {
+            BRepAlgoAPI_Fuse fuse(fused, shapeFrom(*part));
+            fuse.SetFuzzyValue(Precision::Confusion());
+            fuse.SetGlue(BOPAlgo_GlueShift);
+            fuse.Build();
+            if (!fuse.IsDone()) throw std::runtime_error("Translated cylinder hull fusion failed");
+            fused = fuse.Shape();
+          }
+          auto result = std::make_shared<TopoDS_Shape>(std::move(fused));
+          if (brepIsEmpty(result)) {
+            int solids = 0;
+            for (TopExp_Explorer explorer(shapeFrom(result), TopAbs_SOLID); explorer.More();
+                 explorer.Next())
+              ++solids;
+            throw std::runtime_error("Translated unequal-cylinder hull fused empty (shape " +
+                                     std::to_string(shapeFrom(result).ShapeType()) + ", solids " +
+                                     std::to_string(solids) + ")");
+          }
+          if (!BRepCheck_Analyzer(shapeFrom(result)).IsValid())
+            throw std::runtime_error("Translated unequal-cylinder hull is invalid");
+          return result;
+        }
         if (std::abs(c1->Radius() - c2->Radius()) <= Precision::Confusion() &&
             std::abs(h1 - h2) <= Precision::Confusion() &&
             std::abs(b1[2] - b2[2]) > Precision::Confusion()) {
@@ -1409,7 +1463,7 @@ size_t brepSurfaceCount(const std::shared_ptr<void>& shape, BrepSurfaceType type
 std::array<double, 6> brepBounds(const std::shared_ptr<void>& shape)
 {
   Bnd_Box box;
-  BRepBndLib::Add(shapeFrom(shape), box);
+  BRepBndLib::AddOptimal(shapeFrom(shape), box, false, false);
   std::array<double, 6> result;
   box.Get(result[0], result[1], result[2], result[3], result[4], result[5]);
   return result;

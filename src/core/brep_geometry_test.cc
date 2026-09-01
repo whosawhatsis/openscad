@@ -1327,6 +1327,19 @@ TEST_CASE("B-Rep hull of translated cylinders keeps the swept envelope smooth", 
   auto second = std::make_shared<CylinderNode>(&inst, smooth);
   second->r1 = second->r2 = 1;
   second->h = 2;
+  double expectedMinX = -1;
+  double outsideY = 1.1;
+  size_t expectedCylinders = 2;
+  SECTION("equal radii")
+  {
+  }
+  SECTION("unequal radii")
+  {
+    first->r1 = first->r2 = 2;
+    expectedMinX = -2;
+    outsideY = 1.6;
+    expectedCylinders = 1;
+  }
   auto translate = std::make_shared<TransformNode>(&inst, "translate");
   translate->matrix.translate(Vector3d(4, 0, 3));
   translate->children = {second};
@@ -1341,8 +1354,8 @@ TEST_CASE("B-Rep hull of translated cylinders keeps the swept envelope smooth", 
   const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
   REQUIRE(brep);
   REQUIRE_FALSE(brep->isEmpty());
-  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) >= 2);
-  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(-1).margin(1e-5));
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) >= expectedCylinders);
+  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(expectedMinX).margin(1e-5));
   CHECK(brep->getBoundingBox().max().x() == Catch::Approx(5).margin(1e-5));
   CHECK(brep->getBoundingBox().min().z() == Catch::Approx(0).margin(1e-5));
   CHECK(brep->getBoundingBox().max().z() == Catch::Approx(5).margin(1e-5));
@@ -1355,7 +1368,7 @@ TEST_CASE("B-Rep hull of translated cylinders keeps the swept envelope smooth", 
     BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
   probe = BrepGeometry::cube(0.05, 0.05, 0.05);
   placement = Transform3d::Identity();
-  placement.translate(Vector3d(2, 1.1, 2.5));
+  placement.translate(Vector3d(2, outsideY, 2.5));
   probe.transform(placement);
   CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
 }
