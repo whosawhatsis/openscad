@@ -198,6 +198,16 @@ void OpenCSGRenderer::clearCache()
 
 void OpenCSGRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
 {
+  // Rebuild when the shader changes, not only when there is nothing built yet. A prepared
+  // container carries glVertexAttribPointer calls recorded against one program's attribute
+  // locations, and draw() enables every attribute the *current* program declares. Reusing
+  // containers across a mode switch therefore enables an attribute whose pointer was never set
+  // for this program, and the driver dereferences null inside glDrawElements.
+  if (!vertex_state_containers_.empty() && shaderinfo != prepared_shaderinfo_) {
+    vertex_state_containers_.clear();
+  }
+  prepared_shaderinfo_ = shaderinfo;
+
   if (vertex_state_containers_.empty()) {
     if (root_products_) {
       createCSGVBOProducts(*root_products_, false, false, shaderinfo);

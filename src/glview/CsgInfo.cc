@@ -71,6 +71,10 @@ json writeChain(const std::vector<CSGChainObject>& chain, const std::string& fil
                       // composited in the window from the worker's product list would
                       // otherwise lose material() -- and with it the surface parameters the
                       // viewport shades from.
+                      // A property of the mesh rather than the leaf: it says how coarsely this
+                      // geometry was allowed to be tessellated, so the far side can decide which
+                      // of its edges were meant to read as curved.
+                      {"smoothAngle", object.leaf->polyset ? object.leaf->polyset->smoothAngle() : 0.0},
                       {"materialName", object.leaf->materialName},
                       {"finish",
                        {object.leaf->finish.roughness, object.leaf->finish.metallic,
@@ -139,6 +143,12 @@ bool readChain(const json& input, std::vector<CSGChainObject>& output,
   for (const auto& item : input) {
     const auto name = item.value("geometry", std::string{});
     auto polyset = readGeometry(name, payloads, decoded);
+    // Set on the mesh rather than the leaf: the tolerance belongs to the mesh, which is shared
+    // between every leaf referencing this payload. Absent in payloads written before it was
+    // carried, where the default is what those leaves had anyway.
+    if (polyset && item.contains("smoothAngle")) {
+      std::const_pointer_cast<PolySet>(polyset)->setSmoothAngle(item["smoothAngle"].get<double>());
+    }
     if (!polyset) {
       LOG(message_group::Error, "Preview refers to geometry '%1$s', which did not arrive.", name);
       return false;
