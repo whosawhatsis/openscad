@@ -609,6 +609,40 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
         const auto b1 = *verticalPrism(operands[0]), b2 = *verticalPrism(operands[1]);
         const double centerDistance =
           std::hypot(c2->Location().X() - c1->Location().X(), c2->Location().Y() - c1->Location().Y());
+        const double h1 = b1[5] - b1[2], h2 = b2[5] - b2[2];
+        if (std::abs(c1->Radius() - c2->Radius()) <= Precision::Confusion() &&
+            std::abs(h1 - h2) <= Precision::Confusion() &&
+            std::abs(b1[2] - b2[2]) > Precision::Confusion()) {
+          const gp_Vec displacement(c1->Location(), c2->Location());
+          if (displacement.Magnitude() > Precision::Confusion()) {
+            std::vector<std::shared_ptr<void>> swept{operands[0], operands[1]};
+            for (TopExp_Explorer faces(shapeFrom(operands[0]), TopAbs_FACE); faces.More();
+                 faces.Next()) {
+              BRepPrimAPI_MakePrism prism(faces.Current(), displacement);
+              if (!prism.IsDone()) throw std::runtime_error("Translated cylinder hull sweep failed");
+              swept.push_back(std::make_shared<TopoDS_Shape>(prism.Shape()));
+            }
+            const double dx = c2->Location().X() - c1->Location().X();
+            const double dy = c2->Location().Y() - c1->Location().Y();
+            const double horizontal = std::hypot(dx, dy);
+            if (horizontal > Precision::Confusion()) {
+              const double nx = -dy * c1->Radius() / horizontal;
+              const double ny = dx * c1->Radius() / horizontal;
+              std::vector<gp_Pnt> core;
+              for (const auto& [cylinder, bounds] : {std::pair{*c1, b1}, std::pair{*c2, b2}}) {
+                for (const double z : {bounds[2], bounds[5]}) {
+                  core.emplace_back(cylinder.Location().X() + nx, cylinder.Location().Y() + ny, z);
+                  core.emplace_back(cylinder.Location().X() - nx, cylinder.Location().Y() - ny, z);
+                }
+              }
+              swept.push_back(pointHull(core));
+            }
+            auto result = brepBoolean(swept, BrepOperation::Union, 0).shape;
+            if (!BRepCheck_Analyzer(shapeFrom(result)).IsValid())
+              throw std::runtime_error("Translated cylinder hull is invalid");
+            return result;
+          }
+        }
         if (centerDistance <= Precision::Confusion() &&
             (b1[5] <= b2[2] + Precision::Confusion() || b2[5] <= b1[2] + Precision::Confusion())) {
           const bool firstIsLower = b1[5] <= b2[2] + Precision::Confusion();

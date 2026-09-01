@@ -1317,6 +1317,49 @@ TEST_CASE("B-Rep hull of separated coaxial cylinders keeps the tangent envelope 
   CHECK(brep->getBoundingBox().max().z() == Catch::Approx(6).margin(1e-5));
 }
 
+TEST_CASE("B-Rep hull of translated cylinders keeps the swept envelope smooth", "[brep]")
+{
+  ModuleInstantiation inst("hull");
+  const CurveDiscretizer smooth([](const char *) -> std::optional<double> { return std::nullopt; });
+  auto first = std::make_shared<CylinderNode>(&inst, smooth);
+  first->r1 = first->r2 = 1;
+  first->h = 2;
+  auto second = std::make_shared<CylinderNode>(&inst, smooth);
+  second->r1 = second->r2 = 1;
+  second->h = 2;
+  auto translate = std::make_shared<TransformNode>(&inst, "translate");
+  translate->matrix.translate(Vector3d(4, 0, 3));
+  translate->children = {second};
+  auto hull = std::make_shared<CgalAdvNode>(&inst, CgalAdvType::HULL);
+  hull->children = {first, translate};
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(hull);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*hull, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) >= 2);
+  CHECK(brep->getBoundingBox().min().x() == Catch::Approx(-1).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(5).margin(1e-5));
+  CHECK(brep->getBoundingBox().min().z() == Catch::Approx(0).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().z() == Catch::Approx(5).margin(1e-5));
+  auto probe = BrepGeometry::cube(0.05, 0.05, 0.05);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(Vector3d(2, 0, 2.5));
+  probe.transform(placement);
+  BrepFilletDiagnostics diagnostics;
+  CHECK_FALSE(
+    BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
+  probe = BrepGeometry::cube(0.05, 0.05, 0.05);
+  placement = Transform3d::Identity();
+  placement.translate(Vector3d(2, 1.1, 2.5));
+  probe.transform(placement);
+  CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
+}
+
 TEST_CASE("B-Rep planar hull and Minkowski preserve circles", "[brep]")
 {
   ModuleInstantiation inst("advanced");
