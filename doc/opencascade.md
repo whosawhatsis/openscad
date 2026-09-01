@@ -29,7 +29,8 @@ is not implemented yet.
   Stroke width, cap, join, and miter-limit properties inherit from SVG groups. Stroke ribbons
   use retained OCCT offset curves rather than sampled polygons. Similarity transforms
   and uniform page scaling are supported. Miter joins honor SVG's default limit of 4
-  and custom `stroke-miterlimit` values.
+  and custom `stroke-miterlimit` values. Self-intersecting even-odd contours are split
+  into exact bounded planar regions before extrusion.
 - DXF profiles retain circles, circular arcs, ellipses, LINE/LWPOLYLINE edges,
   bulged polyline arcs, and resolved block INSERT transforms (including base points, rotation,
   and nonuniform scale). Layers, import origin/scale, centering, explicit `$fn`,
@@ -62,7 +63,7 @@ arrays/forward block references, nonuniformly transformed strokes, and negative 
 remain unsupported. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail
-OCCT construction or validity checks, as can self-intersecting imported contours.
+OCCT construction or validity checks. Self-intersecting nonzero-winding contours remain unsupported.
 Unsupported paths report errors instead
 of deliberately tessellating the input and handing the operation to a mesh kernel.
 

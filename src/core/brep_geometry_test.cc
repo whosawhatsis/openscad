@@ -796,6 +796,11 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     imported->id = "zeroarc";
     curvedFaces = 0;
   }
+  SECTION("self-intersecting even-odd contour")
+  {
+    imported->id = "self-intersecting";
+    curvedFaces = 0;
+  }
   SECTION("opposite-winding circular hole")
   {
     imported->id = "ring";
@@ -942,6 +947,20 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     BrepFilletDiagnostics diagnostics;
     CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty() ==
           hole);
+  }
+  if (imported->id.get() == "self-intersecting") {
+    const auto occupied = [&](const Vector3d& point) {
+      auto probe = BrepGeometry::cube(0.05, 0.05, 0.05);
+      Transform3d placement = Transform3d::Identity();
+      placement.translate(point);
+      probe.transform(placement);
+      BrepFilletDiagnostics diagnostics;
+      return !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics)
+                .isEmpty();
+    };
+    CHECK(occupied({5, 15, 1}));
+    CHECK(occupied({5, 9, 1}));
+    CHECK_FALSE(occupied({4, 12, 1}));
   }
   if (imported->id.get() == "circle") {
     const auto occupied = [&](double offset) {

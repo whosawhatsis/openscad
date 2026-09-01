@@ -797,9 +797,58 @@ static std::shared_ptr<void> bezierPrismImpl(
       BRepBuilderAPI_MakeFace face(wire.Wire(), true);
       if (!face.IsDone()) throw std::runtime_error("Font outline face construction failed");
       auto solid = TopoDS::Solid(BRepPrimAPI_MakePrism(face.Face(), gp_Vec(0, 0, height)).Shape());
-      if (!BRepLib::OrientClosedSolid(solid) || !BRepCheck_Analyzer(solid).IsValid())
-        throw std::runtime_error("Font outline does not form a valid prism");
-      std::shared_ptr<void> remaining = std::make_shared<TopoDS_Shape>(solid);
+      std::shared_ptr<void> remaining;
+      if (BRepLib::OrientClosedSolid(solid) && BRepCheck_Analyzer(solid).IsValid()) {
+        remaining = std::make_shared<TopoDS_Shape>(solid);
+      } else {
+        if (!evenOdd) throw std::runtime_error("Font outline does not form a valid prism");
+        double minX = contour.front().front()[0], maxX = minX;
+        double minY = contour.front().front()[1], maxY = minY;
+        for (const auto& curve : contour) {
+          for (const auto& point : curve) {
+            minX = std::min(minX, point[0]);
+            maxX = std::max(maxX, point[0]);
+            minY = std::min(minY, point[1]);
+            maxY = std::max(maxY, point[1]);
+          }
+        }
+        const double margin = std::max(maxX - minX, maxY - minY) + 1;
+        minX -= margin;
+        maxX += margin;
+        minY -= margin;
+        maxY += margin;
+        const auto plane =
+          BRepBuilderAPI_MakeFace(gp_Pln(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), minX, maxX, minY, maxY)
+            .Face();
+        TopTools_ListOfShape arguments, tools;
+        arguments.Append(plane);
+        for (TopExp_Explorer edges(wire.Wire(), TopAbs_EDGE); edges.More(); edges.Next()) {
+          auto edge = TopoDS::Edge(edges.Current());
+          BRepLib::BuildPCurveForEdgeOnPlane(edge, plane);
+          tools.Append(edge);
+        }
+        BRepAlgoAPI_Splitter splitter;
+        splitter.SetArguments(arguments);
+        splitter.SetTools(tools);
+        splitter.Build();
+        if (!splitter.IsDone()) throw std::runtime_error("Self-intersecting profile split failed");
+        std::vector<std::shared_ptr<void>> cells;
+        for (TopExp_Explorer faces(splitter.Shape(), TopAbs_FACE); faces.More(); faces.Next()) {
+          const auto candidate = std::make_shared<TopoDS_Shape>(faces.Current());
+          const auto bounds = brepBounds(candidate);
+          if (bounds[0] <= minX + Precision::Confusion() || bounds[1] <= minY + Precision::Confusion() ||
+              bounds[3] >= maxX - Precision::Confusion() || bounds[4] >= maxY - Precision::Confusion())
+            continue;
+          auto cell = std::make_shared<TopoDS_Shape>(TopoDS::Solid(
+            BRepPrimAPI_MakePrism(TopoDS::Face(faces.Current()), gp_Vec(0, 0, height)).Shape()));
+          if (!BRepCheck_Analyzer(shapeFrom(cell)).IsValid())
+            throw std::runtime_error("Self-intersecting profile cell is invalid");
+          cells.push_back(cell);
+        }
+        remaining = brepBoolean(cells, BrepOperation::Union, 0).shape;
+        if (brepIsEmpty(remaining))
+          throw std::runtime_error("Self-intersecting profile has no bounded regions");
+      }
       const auto contourShape = remaining;
       const int sign = evenOdd || signedArea >= 0 ? 1 : -1;
       std::vector<std::pair<std::shared_ptr<void>, int>> next;
