@@ -98,6 +98,7 @@ protected:
   std::string stroke_width;
   std::string stroke_linecap;
   std::string stroke_linejoin;
+  std::string stroke_miterlimit;
   std::string style;
   bool excluded{false};
   bool selected{false};
@@ -105,6 +106,7 @@ protected:
   [[nodiscard]] double get_stroke_width() const;
   [[nodiscard]] Clipper2Lib::EndType get_stroke_linecap() const;
   [[nodiscard]] Clipper2Lib::JoinType get_stroke_linejoin() const;
+  [[nodiscard]] double get_stroke_miterlimit() const;
   [[nodiscard]] const std::string get_style(const std::string& name) const;
   void draw_ellipse(path_t& path, double x, double y, double rx, double ry, void *context);
   static path_list_t ellipse_curves(double x, double y, double rx, double ry, double rotation,
@@ -146,6 +148,7 @@ public:
   [[nodiscard]] double native_stroke_width() const;
   [[nodiscard]] int native_stroke_linecap() const;
   [[nodiscard]] int native_stroke_linejoin() const;
+  [[nodiscard]] double native_stroke_miterlimit() const;
   [[nodiscard]] bool uses_even_odd_fill() const;
 
   [[nodiscard]] virtual bool is_excluded() const;

@@ -25,6 +25,7 @@ struct SvgProfile {
   double strokeWidth{0};
   int strokeLineCap{0};
   int strokeLineJoin{0};
+  double strokeMiterLimit{4};
 };
 std::unique_ptr<class Polygon2d> import_svg(CurveDiscretizer discretizer, const std::string& filename,
                                             const boost::optional<std::string>& id,

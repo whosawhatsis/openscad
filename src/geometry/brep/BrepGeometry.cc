@@ -90,9 +90,9 @@ BrepGeometry BrepGeometry::rationalPrism(
 
 BrepGeometry BrepGeometry::strokePrism(
   const std::vector<std::vector<std::vector<std::array<double, 3>>>>& centerlines, double width,
-  double height, int lineCap, int lineJoin)
+  double height, int lineCap, int lineJoin, double miterLimit)
 {
-  return BrepGeometry(brepStrokePrism(centerlines, width, height, lineCap, lineJoin));
+  return BrepGeometry(brepStrokePrism(centerlines, width, height, lineCap, lineJoin, miterLimit));
 }
 
 BrepGeometry BrepGeometry::shadowProjection(double height) const

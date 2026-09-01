@@ -880,6 +880,14 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     expectedMaxX = 11 + std::sqrt(2.0);
     joinProbe = {{7, 21.8, 1}, false};
   }
+  SECTION("closed stroke joins its final and initial segments")
+  {
+    imported->id = "closed-stroke";
+    curvedFaces = 0;
+    cylindricalFaces = 3;
+    expectedMinX = 1;
+    expectedMaxX = 13;
+  }
   SECTION("square stroke caps")
   {
     imported->id = "square-stroke";
@@ -893,6 +901,14 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     curvedFaces = 0;
     expectedMinX = 3 - 2 * std::sqrt(2.0);
     expectedMaxX = 11 + 2 * std::sqrt(2.0);
+  }
+  SECTION("inherited stroke miter limit")
+  {
+    imported->id = "limited-miter-stroke";
+    curvedFaces = 0;
+    expectedMinX = 3 - std::sqrt(2.0);
+    expectedMaxX = 11 + std::sqrt(2.0);
+    joinProbe = {{7, 22.5, 1}, false};
   }
   auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
   extrusion->height = Vector3d(0, 0, 5);

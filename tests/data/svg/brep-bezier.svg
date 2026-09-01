@@ -9,9 +9,13 @@
     <path id="joined-stroke" fill="none" stroke="black" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round" d="M 0 0 L 2 -2 L 4 0"/>
     <path id="miter-stroke" fill="none" stroke="black" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" d="M 0 0 L 2 -2 L 4 0"/>
     <path id="bevel-stroke" fill="none" stroke="black" stroke-width="2" stroke-linecap="butt" stroke-linejoin="bevel" d="M 0 0 L 2 -2 L 4 0"/>
+    <path id="closed-stroke" fill="none" stroke="black" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round" d="M 0 0 L 4 0 L 2 -2 Z"/>
     <path id="square-stroke" fill="none" stroke="black" stroke-width="2" stroke-linecap="square" d="M 0 0 L 4 0"/>
     <g fill="none" stroke="black" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
       <path id="inherited-stroke" d="M 0 0 L 2 -2 L 4 0"/>
+    </g>
+    <g fill="none" stroke="black" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="1">
+      <path id="limited-miter-stroke" d="M 0 0 L 2 -2 L 4 0"/>
     </g>
     <circle id="circle" cx="2" cy="0" r="2"/>
     <ellipse id="ellipse" cx="2" cy="0" rx="2" ry="1"/>

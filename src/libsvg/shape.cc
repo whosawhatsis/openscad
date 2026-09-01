@@ -100,6 +100,7 @@ void shape::set_attrs(attr_map_t& attrs, void *context)
   this->stroke_width = attrs["stroke-width"];
   this->stroke_linecap = attrs["stroke-linecap"];
   this->stroke_linejoin = attrs["stroke-linejoin"];
+  this->stroke_miterlimit = attrs["stroke-miterlimit"];
   this->style = attrs["style"];
   stroke = get_style("stroke");
   if (stroke.empty()) stroke = attrs["stroke"];
@@ -189,6 +190,19 @@ Clipper2Lib::JoinType shape::get_stroke_linejoin() const
     return Clipper2Lib::JoinType::Miter;
   }
   return Clipper2Lib::JoinType::Miter;
+}
+
+double shape::get_stroke_miterlimit() const
+{
+  for (const shape *s = this; s; s = s->get_parent()) {
+    const std::string value =
+      s->stroke_miterlimit.empty() ? s->get_style("stroke-miterlimit") : s->stroke_miterlimit;
+    if (!value.empty()) {
+      const double limit = parse_double(value);
+      if (std::isfinite(limit) && limit >= 1) return limit;
+    }
+  }
+  return 4;
 }
 
 void shape::collect_transform_matrices(std::vector<Eigen::Matrix3d>& matrices, shape *s)
@@ -333,6 +347,11 @@ int shape::native_stroke_linecap() const
 int shape::native_stroke_linejoin() const
 {
   return static_cast<int>(get_stroke_linejoin());
+}
+
+double shape::native_stroke_miterlimit() const
+{
+  return get_stroke_miterlimit();
 }
 
 void shape::offset_path(path_list_t& path_list, path_t& path, double stroke_width,

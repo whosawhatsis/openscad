@@ -102,7 +102,7 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
         if (profile.strokeWidth > 0)
           shapes.push_back(BrepGeometry::strokePrism(profile.contours, profile.strokeWidth,
                                                      extrusionHeight, profile.strokeLineCap,
-                                                     profile.strokeLineJoin));
+                                                     profile.strokeLineJoin, profile.strokeMiterLimit));
         else
           shapes.push_back(
             BrepGeometry::rationalPrism(profile.contours, extrusionHeight, profile.evenOdd));

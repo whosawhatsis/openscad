@@ -218,13 +218,13 @@ std::unique_ptr<Polygon2d> import_svg(CurveDiscretizer discretizer, const std::s
           };
           if (s.has_fill())
             curves->push_back(
-              {transformContours(s.get_bezier_contours()), s.uses_even_odd_fill(), 0, 0, 0});
+              {transformContours(s.get_bezier_contours()), s.uses_even_odd_fill(), 0, 0, 0, 4});
           if (s.has_stroke()) {
             if (std::abs(std::abs(scale.x()) - std::abs(scale.y())) > 1e-9)
               throw std::runtime_error("Native SVG strokes require uniform page scaling");
             curves->push_back({transformContours(s.get_stroke_contours()), false,
                                s.native_stroke_width() * std::abs(scale.x()), s.native_stroke_linecap(),
-                               s.native_stroke_linejoin()});
+                               s.native_stroke_linejoin(), s.native_stroke_miterlimit()});
           }
           continue;
         }

@@ -24,12 +24,12 @@ is not implemented yet.
   scaling, and centering are retained. Explicit `$fn` makes imported circles
   polygonal. Native import supports nonzero and even-odd fill rules, including
   inherited rules and local overrides. Fill rules apply within each shape;
-  separate shapes are unioned. Open line, Bezier, and conic strokes support butt
-  round, and square caps; multi-segment paths support round, bevel, and miter joins.
-  Stroke width, cap, and join properties inherit from SVG groups. Stroke ribbons
+  separate shapes are unioned. Open line, Bezier, and conic strokes support butt,
+  round, and square caps; multi-segment and closed paths support round, bevel, and miter joins.
+  Stroke width, cap, join, and miter-limit properties inherit from SVG groups. Stroke ribbons
   use retained OCCT offset curves rather than sampled polygons. Similarity transforms
-  and uniform page scaling are supported. Miter joins use SVG's default limit of 4;
-  custom `stroke-miterlimit` values are not retained yet.
+  and uniform page scaling are supported. Miter joins honor SVG's default limit of 4
+  and custom `stroke-miterlimit` values.
 - DXF profiles retain circles, circular arcs, ellipses, LINE/LWPOLYLINE edges,
   bulged polyline arcs, and resolved block INSERT transforms (including base points, rotation,
   and nonuniform scale). Layers, import origin/scale, centering, explicit `$fn`,
@@ -58,8 +58,7 @@ is not implemented yet.
 
 This is not yet a replacement for every CGAL/Manifold operation. General curved
 hulls, general curved-operand Minkowski sums, DXF spline entities and INSERT
-arrays/forward block references, custom SVG stroke miter limits,
-nonuniformly transformed strokes, and negative extrusion scales
+arrays/forward block references, nonuniformly transformed strokes, and negative extrusion scales
 remain unsupported. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail
