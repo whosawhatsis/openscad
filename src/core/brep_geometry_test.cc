@@ -750,6 +750,7 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
   size_t cylindricalFaces = 0;
   double expectedMinX = 3, expectedMaxX = 11;
   bool curvedStroke = false;
+  std::optional<std::pair<Vector3d, bool>> joinProbe;
   SECTION("absolute controls")
   {
   }
@@ -861,6 +862,37 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     cylindricalFaces = 1;
     expectedMinX = 3 - std::sqrt(2.0);
     expectedMaxX = 11 + std::sqrt(2.0);
+    joinProbe = {{7, 21.8, 1}, true};
+  }
+  SECTION("miter join between straight stroke segments")
+  {
+    imported->id = "miter-stroke";
+    curvedFaces = 0;
+    expectedMinX = 3 - std::sqrt(2.0);
+    expectedMaxX = 11 + std::sqrt(2.0);
+    joinProbe = {{7, 22.5, 1}, true};
+  }
+  SECTION("bevel join between straight stroke segments")
+  {
+    imported->id = "bevel-stroke";
+    curvedFaces = 0;
+    expectedMinX = 3 - std::sqrt(2.0);
+    expectedMaxX = 11 + std::sqrt(2.0);
+    joinProbe = {{7, 21.8, 1}, false};
+  }
+  SECTION("square stroke caps")
+  {
+    imported->id = "square-stroke";
+    curvedFaces = 0;
+    expectedMinX = 1;
+    expectedMaxX = 13;
+  }
+  SECTION("inherited stroke properties")
+  {
+    imported->id = "inherited-stroke";
+    curvedFaces = 0;
+    expectedMinX = 3 - 2 * std::sqrt(2.0);
+    expectedMaxX = 11 + 2 * std::sqrt(2.0);
   }
   auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
   extrusion->height = Vector3d(0, 0, 5);
@@ -907,6 +939,16 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     };
     CHECK(occupied(2.7));
     CHECK_FALSE(occupied(2.9));  // An unweighted quadratic would bulge into this probe.
+  }
+  if (joinProbe) {
+    auto probe = BrepGeometry::cube(0.01, 0.01, 0.01);
+    Transform3d placement = Transform3d::Identity();
+    placement.translate(joinProbe->first);
+    probe.transform(placement);
+    BrepFilletDiagnostics diagnostics;
+    CHECK(
+      !BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty() ==
+      joinProbe->second);
   }
   CHECK(brep->getBoundingBox().min().x() ==
         Catch::Approx(imported->center ? -4 : expectedMinX).margin(1e-5));

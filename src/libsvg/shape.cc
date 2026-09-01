@@ -150,23 +150,21 @@ const std::string shape::get_style(const std::string& name) const
 
 double shape::get_stroke_width() const
 {
-  double stroke_width;
-  if (this->stroke_width.empty()) {
-    stroke_width = parse_double(get_style("stroke-width"));
-  } else {
-    stroke_width = parse_double(this->stroke_width);
+  for (const shape *s = this; s; s = s->get_parent()) {
+    const std::string value = s->stroke_width.empty() ? s->get_style("stroke-width") : s->stroke_width;
+    if (!value.empty()) {
+      const double width = parse_double(value);
+      return width < 0.01 ? 1 : width;
+    }
   }
-  return stroke_width < 0.01 ? 1 : stroke_width;
+  return 1;
 }
 
 Clipper2Lib::EndType shape::get_stroke_linecap() const
 {
   std::string cap;
-  if (this->stroke_linecap.empty()) {
-    cap = get_style("stroke-linecap");
-  } else {
-    cap = this->stroke_linecap;
-  }
+  for (const shape *s = this; s && cap.empty(); s = s->get_parent())
+    cap = s->stroke_linecap.empty() ? s->get_style("stroke-linecap") : s->stroke_linecap;
 
   if (cap == "butt") {
     return Clipper2Lib::EndType::Butt;
@@ -181,11 +179,8 @@ Clipper2Lib::EndType shape::get_stroke_linecap() const
 Clipper2Lib::JoinType shape::get_stroke_linejoin() const
 {
   std::string join;
-  if (this->stroke_linejoin.empty()) {
-    join = get_style("stroke-linejoin");
-  } else {
-    join = this->stroke_linejoin;
-  }
+  for (const shape *s = this; s && join.empty(); s = s->get_parent())
+    join = s->stroke_linejoin.empty() ? s->get_style("stroke-linejoin") : s->stroke_linejoin;
   if (join == "bevel") {
     return Clipper2Lib::JoinType::Square;
   } else if (join == "round") {

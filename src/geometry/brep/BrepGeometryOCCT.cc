@@ -842,13 +842,24 @@ std::shared_ptr<void> brepStrokePrism(
   double height, int lineCap, int lineJoin)
 {
   if (!std::isfinite(width) || width <= 0) throw std::invalid_argument("Invalid SVG stroke width");
-  if (lineCap != 2 && lineCap != 4)
-    throw std::invalid_argument("Native SVG strokes currently support butt and round caps");
+  if (lineCap != 2 && lineCap != 3 && lineCap != 4)
+    throw std::invalid_argument("Invalid SVG stroke cap");
+  if (lineJoin != 0 && lineJoin != 2 && lineJoin != 3)
+    throw std::invalid_argument("Invalid SVG stroke join");
   try {
     std::vector<std::shared_ptr<void>> strokes;
+    const auto polygonPrism = [&](std::initializer_list<gp_Pnt> points) {
+      BRepBuilderAPI_MakePolygon boundary;
+      for (const auto& point : points) boundary.Add(point);
+      boundary.Close();
+      BRepBuilderAPI_MakeFace face(boundary.Wire(), true);
+      if (!face.IsDone()) throw std::runtime_error("SVG stroke polygon construction failed");
+      return std::make_shared<TopoDS_Shape>(
+        TopoDS::Solid(BRepPrimAPI_MakePrism(face.Face(), gp_Vec(0, 0, height)).Shape()));
+    };
     for (const auto& centerline : centerlines) {
-      if (centerline.size() > 1 && lineJoin != 2)
-        throw std::invalid_argument("Native multi-segment SVG strokes currently require round joins");
+      std::optional<gp_Vec> previousTangent;
+      gp_Pnt previousEnd;
       for (size_t segment = 0; segment < centerline.size(); ++segment) {
         const auto& curve = centerline[segment];
         if (curve.size() < 2 || curve.size() > 4)
@@ -860,10 +871,12 @@ std::shared_ptr<void> brepStrokePrism(
           weights(i + 1) = curve[i][2];
         }
         std::shared_ptr<void> stroke;
+        gp_Vec startTangent, endTangent;
         if (curve.size() == 2) {
           gp_Vec direction(poles(1), poles(2));
           if (direction.Magnitude() <= Precision::Confusion()) continue;
           direction.Normalize();
+          startTangent = endTangent = direction;
           const gp_Vec normal(-direction.Y() * width / 2, direction.X() * width / 2, 0);
           BRepBuilderAPI_MakePolygon boundary;
           boundary.Add(poles(1).Translated(normal));
@@ -876,6 +889,11 @@ std::shared_ptr<void> brepStrokePrism(
             TopoDS::Solid(BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, height)).Shape()));
         } else {
           Handle(Geom_Curve) basis = new Geom_BezierCurve(poles, weights);
+          gp_Pnt endpoint;
+          basis->D1(basis->FirstParameter(), endpoint, startTangent);
+          basis->D1(basis->LastParameter(), endpoint, endTangent);
+          startTangent.Normalize();
+          endTangent.Normalize();
           Handle(Geom_OffsetCurve) positive = new Geom_OffsetCurve(basis, width / 2, gp_Dir(0, 0, 1));
           Handle(Geom_OffsetCurve) negative = new Geom_OffsetCurve(basis, -width / 2, gp_Dir(0, 0, 1));
           const double firstParameter = basis->FirstParameter(), lastParameter = basis->LastParameter();
@@ -894,20 +912,59 @@ std::shared_ptr<void> brepStrokePrism(
           stroke = std::make_shared<TopoDS_Shape>(
             TopoDS::Solid(BRepPrimAPI_MakePrism(face.Face(), gp_Vec(0, 0, height)).Shape()));
         }
-        const bool roundStart = lineCap == 4 || segment > 0;
-        const bool roundEnd = lineCap == 4 || segment + 1 < centerline.size();
         std::vector<std::shared_ptr<void>> parts{stroke};
-        if (roundStart)
+        if (segment == 0 && lineCap == 4)
           parts.push_back(std::make_shared<TopoDS_Shape>(
             BRepPrimAPI_MakeCylinder(gp_Ax2(poles(1), gp_Dir(0, 0, 1)), width / 2, height).Shape()));
-        if (roundEnd)
+        if (segment + 1 == centerline.size() && lineCap == 4)
           parts.push_back(std::make_shared<TopoDS_Shape>(
             BRepPrimAPI_MakeCylinder(gp_Ax2(poles(curve.size()), gp_Dir(0, 0, 1)), width / 2, height)
               .Shape()));
+        const auto squareCap = [&](const gp_Pnt& center, gp_Vec outward) {
+          outward.Normalize();
+          const gp_Vec normal(-outward.Y() * width / 2, outward.X() * width / 2, 0);
+          const gp_Vec extension = outward * (width / 2);
+          return polygonPrism({center.Translated(normal), center.Translated(normal + extension),
+                               center.Translated(-normal + extension), center.Translated(-normal)});
+        };
+        if (segment == 0 && lineCap == 3) parts.push_back(squareCap(poles(1), -startTangent));
+        if (segment + 1 == centerline.size() && lineCap == 3)
+          parts.push_back(squareCap(poles(curve.size()), endTangent));
+        if (previousTangent) {
+          const double turn =
+            previousTangent->X() * startTangent.Y() - previousTangent->Y() * startTangent.X();
+          if (std::abs(turn) > Precision::Angular()) {
+            if (lineJoin == 2) {
+              parts.push_back(std::make_shared<TopoDS_Shape>(
+                BRepPrimAPI_MakeCylinder(gp_Ax2(previousEnd, gp_Dir(0, 0, 1)), width / 2, height)
+                  .Shape()));
+            } else {
+              const double side = turn > 0 ? -1 : 1;
+              const gp_Vec previousNormal(-previousTangent->Y() * width / 2 * side,
+                                          previousTangent->X() * width / 2 * side, 0);
+              const gp_Vec nextNormal(-startTangent.Y() * width / 2 * side,
+                                      startTangent.X() * width / 2 * side, 0);
+              const gp_Pnt previousOuter = previousEnd.Translated(previousNormal),
+                           nextOuter = previousEnd.Translated(nextNormal);
+              if (lineJoin == 0) parts.push_back(polygonPrism({previousEnd, previousOuter, nextOuter}));
+              else {
+                const gp_Vec between(previousOuter, nextOuter);
+                const double along =
+                  (between.X() * startTangent.Y() - between.Y() * startTangent.X()) / turn;
+                const gp_Pnt miter = previousOuter.Translated(*previousTangent * along);
+                if (miter.Distance(previousEnd) <= 2 * width)
+                  parts.push_back(polygonPrism({previousOuter, miter, nextOuter}));
+                else parts.push_back(polygonPrism({previousEnd, previousOuter, nextOuter}));
+              }
+            }
+          }
+        }
         auto joined = brepBoolean(parts, BrepOperation::Union, 0).shape;
         if (!BRepCheck_Analyzer(shapeFrom(joined)).IsValid())
           throw std::runtime_error("SVG stroke prism is invalid");
         strokes.push_back(joined);
+        previousTangent = endTangent;
+        previousEnd = poles(curve.size());
       }
     }
     return brepBoolean(strokes, BrepOperation::Union, 0).shape;
