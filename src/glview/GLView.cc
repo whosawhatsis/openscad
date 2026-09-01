@@ -627,8 +627,8 @@ void GLView::paintGL()
   // Before anything is drawn, because without an FBO this scribbles on the
   // colour buffer and relies on the clear below to wipe it.
   shadow_map_valid_ = false;
-  if (this->renderer && analysis_mode == AnalysisMode::Shaded && phong_shader &&
-      Feature::ExperimentalShadows.is_enabled()) {
+  if (this->renderer && this->renderer->providesSceneDepth() && analysis_mode == AnalysisMode::Shaded &&
+      phong_shader && Feature::ExperimentalShadows.is_enabled()) {
     this->renderer->prepare(phong_shader.get());
     renderShadowMap();
   }
@@ -757,7 +757,7 @@ void GLView::paintGL()
     // depth. Second, not deferred into a fullscreen pass: a G-buffer would need
     // normals and material in render targets, and the OpenGL 2.1 floor this
     // viewport supports has no multiple render targets to put them in.
-    if (analysis_mode == AnalysisMode::Shaded && phong_shader &&
+    if (this->renderer->providesSceneDepth() && analysis_mode == AnalysisMode::Shaded && phong_shader &&
         Feature::ExperimentalScreenSpaceReflections.is_enabled()) {
       captureSceneForReflections();
       glUseProgram(active_shader->resource.shader_program);

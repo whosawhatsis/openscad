@@ -4,6 +4,8 @@
 #include <QImage>
 #include <QString>
 #include <QTest>
+#include <QElapsedTimer>
+#include <QCoreApplication>
 
 #include "platform/PlatformUtils.h"
 
@@ -183,4 +185,55 @@ void TestAnalysisView::checkShadedComposesWithEdges()
   window->viewActionShowEdges->setChecked(false);
   QVERIFY2(sameRender(grabViewport(window), shaded),
            "disabling Show Edges does not restore plain shaded rendering");
+}
+
+namespace {
+
+//! Trigger F6 and wait for it, the way TestMainWindow does: the work crosses a
+//! process boundary, so the wait has to be generous but must still end.
+bool renderAndWait(MainWindow *window)
+{
+  bool compiled = false;
+  QObject::connect(window, &MainWindow::compilationDone, window,
+                   [&compiled](SourceFile *) { compiled = true; });
+  window->designActionRender->trigger();
+  QElapsedTimer timer;
+  timer.start();
+  while (!compiled && timer.elapsed() < 60000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  return compiled;
+}
+
+}  // namespace
+
+void TestAnalysisView::checkShadedIsIndependentOfRenderOrder()
+{
+  restoreWindowInitialState();
+
+  const QString filename =
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/material-shaded.scad";
+  window->tabManager->open(filename);
+
+  // Render while in the default view, then switch to Shaded. This is the order a
+  // user actually works in - look at the model, then turn shading on - and it is
+  // the order that was broken.
+  window->viewActionAnalysisViewDefault->trigger();
+  QVERIFY2(renderAndWait(window), "the first render never finished");
+  window->viewActionAnalysisViewShaded->trigger();
+  grabViewport(window);  // discard: the first paint after a mode change is not settled
+  const QImage shadedAfterRender = grabViewport(window);
+  QVERIFY(!shadedAfterRender.isNull());
+
+  // The same thing the other way round: Shaded first, then render.
+  window->viewActionAnalysisViewDefault->trigger();
+  window->viewActionAnalysisViewShaded->trigger();
+  QVERIFY2(renderAndWait(window), "the second render never finished");
+  grabViewport(window);
+  const QImage shadedBeforeRender = grabViewport(window);
+
+  QVERIFY2(sameRender(shadedAfterRender, shadedBeforeRender),
+           "the shaded render depends on whether F6 ran before or after entering "
+           "Shaded; the mesh renderer is reusing vertex state prepared for a "
+           "different shader");
 }
