@@ -24,8 +24,10 @@ is not implemented yet.
   scaling, and centering are retained. Explicit `$fn` makes imported circles
   polygonal. Native import supports nonzero and even-odd fill rules, including
   inherited rules and local overrides. Fill rules apply within each shape;
-  separate shapes are unioned. Open single-line strokes support butt and round
-  caps as exact BREP geometry under similarity transforms and uniform page scaling.
+  separate shapes are unioned. Open line, Bezier, and conic strokes support butt
+  and round caps; multi-segment paths support round joins. Stroke ribbons use
+  retained OCCT offset curves rather than sampled polygons. Similarity transforms
+  and uniform page scaling are supported.
 - DXF profiles retain circles, circular arcs, ellipses, LINE/LWPOLYLINE edges,
   bulged polyline arcs, and resolved block INSERT transforms (including base points, rotation,
   and nonuniform scale). Layers, import origin/scale, centering, explicit `$fn`,
@@ -54,8 +56,8 @@ is not implemented yet.
 
 This is not yet a replacement for every CGAL/Manifold operation. General curved
 hulls, general curved-operand Minkowski sums, DXF spline entities and INSERT
-arrays/forward block references, curved or multi-segment SVG strokes, square
-stroke caps, nonuniformly transformed strokes, and negative extrusion scales
+arrays/forward block references, SVG miter/bevel joins, square stroke caps,
+nonuniformly transformed strokes, and negative extrusion scales
 remain unsupported. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail

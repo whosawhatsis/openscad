@@ -61,6 +61,7 @@
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_BezierCurve.hxx>
+#include <Geom_OffsetCurve.hxx>
 #include <math_Function.hxx>
 #include <math_GaussSingleIntegration.hxx>
 #include <TColStd_Array1OfReal.hxx>
@@ -841,37 +842,73 @@ std::shared_ptr<void> brepStrokePrism(
   double height, int lineCap, int lineJoin)
 {
   if (!std::isfinite(width) || width <= 0) throw std::invalid_argument("Invalid SVG stroke width");
-  (void)lineJoin;
   if (lineCap != 2 && lineCap != 4)
     throw std::invalid_argument("Native SVG strokes currently support butt and round caps");
   try {
     std::vector<std::shared_ptr<void>> strokes;
     for (const auto& centerline : centerlines) {
-      if (centerline.size() != 1 || centerline.front().size() != 2)
-        throw std::invalid_argument("Native curved SVG strokes are not supported yet");
-      const auto& curve = centerline.front();
-      const gp_Pnt start(curve[0][0], curve[0][1], 0), end(curve[1][0], curve[1][1], 0);
-      gp_Vec direction(start, end);
-      if (direction.Magnitude() <= Precision::Confusion()) continue;
-      direction.Normalize();
-      const gp_Vec normal(-direction.Y() * width / 2, direction.X() * width / 2, 0);
-      BRepBuilderAPI_MakePolygon outline;
-      outline.Add(start.Translated(normal));
-      outline.Add(end.Translated(normal));
-      outline.Add(end.Translated(-normal));
-      outline.Add(start.Translated(-normal));
-      outline.Close();
-      auto face = BRepBuilderAPI_MakeFace(outline.Wire(), true).Face();
-      std::shared_ptr<void> stroke = std::make_shared<TopoDS_Shape>(
-        TopoDS::Solid(BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, height)).Shape()));
-      if (lineCap == 4) {
-        auto first = std::make_shared<TopoDS_Shape>(
-          BRepPrimAPI_MakeCylinder(gp_Ax2(start, gp_Dir(0, 0, 1)), width / 2, height).Shape());
-        auto last = std::make_shared<TopoDS_Shape>(
-          BRepPrimAPI_MakeCylinder(gp_Ax2(end, gp_Dir(0, 0, 1)), width / 2, height).Shape());
-        stroke = brepBoolean({stroke, first, last}, BrepOperation::Union, 0).shape;
+      if (centerline.size() > 1 && lineJoin != 2)
+        throw std::invalid_argument("Native multi-segment SVG strokes currently require round joins");
+      for (size_t segment = 0; segment < centerline.size(); ++segment) {
+        const auto& curve = centerline[segment];
+        if (curve.size() < 2 || curve.size() > 4)
+          throw std::invalid_argument("Invalid SVG stroke curve degree");
+        TColgp_Array1OfPnt poles(1, curve.size());
+        TColStd_Array1OfReal weights(1, curve.size());
+        for (size_t i = 0; i < curve.size(); ++i) {
+          poles(i + 1) = gp_Pnt(curve[i][0], curve[i][1], 0);
+          weights(i + 1) = curve[i][2];
+        }
+        std::shared_ptr<void> stroke;
+        if (curve.size() == 2) {
+          gp_Vec direction(poles(1), poles(2));
+          if (direction.Magnitude() <= Precision::Confusion()) continue;
+          direction.Normalize();
+          const gp_Vec normal(-direction.Y() * width / 2, direction.X() * width / 2, 0);
+          BRepBuilderAPI_MakePolygon boundary;
+          boundary.Add(poles(1).Translated(normal));
+          boundary.Add(poles(2).Translated(normal));
+          boundary.Add(poles(2).Translated(-normal));
+          boundary.Add(poles(1).Translated(-normal));
+          boundary.Close();
+          const auto face = BRepBuilderAPI_MakeFace(boundary.Wire(), true).Face();
+          stroke = std::make_shared<TopoDS_Shape>(
+            TopoDS::Solid(BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, height)).Shape()));
+        } else {
+          Handle(Geom_Curve) basis = new Geom_BezierCurve(poles, weights);
+          Handle(Geom_OffsetCurve) positive = new Geom_OffsetCurve(basis, width / 2, gp_Dir(0, 0, 1));
+          Handle(Geom_OffsetCurve) negative = new Geom_OffsetCurve(basis, -width / 2, gp_Dir(0, 0, 1));
+          const double firstParameter = basis->FirstParameter(), lastParameter = basis->LastParameter();
+          const gp_Pnt positiveStart = positive->Value(firstParameter),
+                       positiveEnd = positive->Value(lastParameter),
+                       negativeStart = negative->Value(firstParameter),
+                       negativeEnd = negative->Value(lastParameter);
+          BRepBuilderAPI_MakeWire boundary;
+          boundary.Add(BRepBuilderAPI_MakeEdge(positive).Edge());
+          boundary.Add(BRepBuilderAPI_MakeEdge(positiveEnd, negativeEnd).Edge());
+          boundary.Add(TopoDS::Edge(BRepBuilderAPI_MakeEdge(negative).Edge().Reversed()));
+          boundary.Add(BRepBuilderAPI_MakeEdge(negativeStart, positiveStart).Edge());
+          if (!boundary.IsDone()) throw std::runtime_error("SVG stroke boundary is disconnected");
+          BRepBuilderAPI_MakeFace face(boundary.Wire(), true);
+          if (!face.IsDone()) throw std::runtime_error("SVG stroke face construction failed");
+          stroke = std::make_shared<TopoDS_Shape>(
+            TopoDS::Solid(BRepPrimAPI_MakePrism(face.Face(), gp_Vec(0, 0, height)).Shape()));
+        }
+        const bool roundStart = lineCap == 4 || segment > 0;
+        const bool roundEnd = lineCap == 4 || segment + 1 < centerline.size();
+        std::vector<std::shared_ptr<void>> parts{stroke};
+        if (roundStart)
+          parts.push_back(std::make_shared<TopoDS_Shape>(
+            BRepPrimAPI_MakeCylinder(gp_Ax2(poles(1), gp_Dir(0, 0, 1)), width / 2, height).Shape()));
+        if (roundEnd)
+          parts.push_back(std::make_shared<TopoDS_Shape>(
+            BRepPrimAPI_MakeCylinder(gp_Ax2(poles(curve.size()), gp_Dir(0, 0, 1)), width / 2, height)
+              .Shape()));
+        auto joined = brepBoolean(parts, BrepOperation::Union, 0).shape;
+        if (!BRepCheck_Analyzer(shapeFrom(joined)).IsValid())
+          throw std::runtime_error("SVG stroke prism is invalid");
+        strokes.push_back(joined);
       }
-      strokes.push_back(stroke);
     }
     return brepBoolean(strokes, BrepOperation::Union, 0).shape;
   } catch (const Standard_Failure& error) {

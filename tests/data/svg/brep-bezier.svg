@@ -5,6 +5,8 @@
     <path id="arc" d="M 0 0 A 2 2 0 0 1 4 0 L 0 0 Z"/>
     <path id="stroke" stroke="black" d="M 0 0 Q 2 -2 4 0 C 4 2 0 2 0 0 Z"/>
     <path id="open-stroke" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" d="M 0 0 L 4 0"/>
+    <path id="curved-stroke" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" d="M 0 0 Q 2 -2 4 0"/>
+    <path id="joined-stroke" fill="none" stroke="black" stroke-width="2" stroke-linecap="butt" stroke-linejoin="round" d="M 0 0 L 2 -2 L 4 0"/>
     <circle id="circle" cx="2" cy="0" r="2"/>
     <ellipse id="ellipse" cx="2" cy="0" rx="2" ry="1"/>
     <rect id="rect" x="0" y="0" width="4" height="2"/>

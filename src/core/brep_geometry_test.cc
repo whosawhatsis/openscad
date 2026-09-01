@@ -749,6 +749,7 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
   size_t curvedFaces = 2;
   size_t cylindricalFaces = 0;
   double expectedMinX = 3, expectedMaxX = 11;
+  bool curvedStroke = false;
   SECTION("absolute controls")
   {
   }
@@ -845,6 +846,22 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     expectedMinX = 1;
     expectedMaxX = 13;
   }
+  SECTION("open curved stroke")
+  {
+    imported->id = "curved-stroke";
+    curvedStroke = true;
+    cylindricalFaces = 2;
+    expectedMinX = 1;
+    expectedMaxX = 13;
+  }
+  SECTION("round join between straight stroke segments")
+  {
+    imported->id = "joined-stroke";
+    curvedFaces = 0;
+    cylindricalFaces = 1;
+    expectedMinX = 3 - std::sqrt(2.0);
+    expectedMaxX = 11 + std::sqrt(2.0);
+  }
   auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
   extrusion->height = Vector3d(0, 0, 5);
   extrusion->children = {imported};
@@ -861,7 +878,8 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     return;
   }
   REQUIRE_FALSE(brep->isEmpty());
-  CHECK(brep->surfaceCount(BrepSurfaceType::Other) == curvedFaces);
+  if (curvedStroke) CHECK(brep->surfaceCount(BrepSurfaceType::Other) >= 2);
+  else CHECK(brep->surfaceCount(BrepSurfaceType::Other) == curvedFaces);
   if (cylindricalFaces) CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) >= cylindricalFaces);
   else CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == 0);
   if (faceted) {
