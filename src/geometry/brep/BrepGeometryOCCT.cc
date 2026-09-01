@@ -20,6 +20,7 @@
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
+#include <BRepClass_FaceClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepLib.hxx>
@@ -27,6 +28,7 @@
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
@@ -64,6 +66,8 @@
 #include <Geom_OffsetCurve.hxx>
 #include <math_Function.hxx>
 #include <math_GaussSingleIntegration.hxx>
+#include <math_DirectPolynomialRoots.hxx>
+#include <GProp_GProps.hxx>
 #include <TColStd_Array1OfReal.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <Geom_Line.hxx>
@@ -801,7 +805,6 @@ static std::shared_ptr<void> bezierPrismImpl(
       if (BRepLib::OrientClosedSolid(solid) && BRepCheck_Analyzer(solid).IsValid()) {
         remaining = std::make_shared<TopoDS_Shape>(solid);
       } else {
-        if (!evenOdd) throw std::runtime_error("Font outline does not form a valid prism");
         double minX = contour.front().front()[0], maxX = minX;
         double minY = contour.front().front()[1], maxY = minY;
         for (const auto& curve : contour) {
@@ -832,6 +835,50 @@ static std::shared_ptr<void> bezierPrismImpl(
         splitter.SetTools(tools);
         splitter.Build();
         if (!splitter.IsDone()) throw std::runtime_error("Self-intersecting profile split failed");
+        const auto windingAt = [&](const gp_Pnt& sample) {
+          int winding = 0;
+          for (const auto& curve : contour) {
+            const size_t degree = curve.size() - 1;
+            std::array<double, 4> bernstein{};
+            TColgp_Array1OfPnt poles(1, curve.size());
+            TColStd_Array1OfReal weights(1, curve.size());
+            for (size_t i = 0; i < curve.size(); ++i) {
+              double weight = 1;
+              if constexpr (N == 3) weight = curve[i][2];
+              bernstein[i] = weight * (curve[i][1] - sample.Y());
+              poles(i + 1) = gp_Pnt(curve[i][0], curve[i][1], 0);
+              weights(i + 1) = weight;
+            }
+            std::vector<double> roots;
+            const auto appendRoots = [&](const math_DirectPolynomialRoots& solution) {
+              if (!solution.IsDone() || solution.InfiniteRoots()) return;
+              for (int i = 1; i <= solution.NbSolutions(); ++i) roots.push_back(solution.Value(i));
+            };
+            if (degree == 1) {
+              appendRoots(math_DirectPolynomialRoots(bernstein[1] - bernstein[0], bernstein[0]));
+            } else if (degree == 2) {
+              appendRoots(math_DirectPolynomialRoots(bernstein[0] - 2 * bernstein[1] + bernstein[2],
+                                                     2 * (bernstein[1] - bernstein[0]), bernstein[0]));
+            } else {
+              appendRoots(math_DirectPolynomialRoots(
+                -bernstein[0] + 3 * bernstein[1] - 3 * bernstein[2] + bernstein[3],
+                3 * (bernstein[0] - 2 * bernstein[1] + bernstein[2]), 3 * (bernstein[1] - bernstein[0]),
+                bernstein[0]));
+            }
+            Handle(Geom_BezierCurve) geometry;
+            if constexpr (N == 3) geometry = new Geom_BezierCurve(poles, weights);
+            else geometry = new Geom_BezierCurve(poles);
+            for (const double root : roots) {
+              if (root < -Precision::PConfusion() || root >= 1 - Precision::PConfusion()) continue;
+              gp_Pnt point;
+              gp_Vec tangent;
+              geometry->D1(std::clamp(root, 0.0, 1.0), point, tangent);
+              if (point.X() > sample.X() && std::abs(tangent.Y()) > Precision::Confusion())
+                winding += tangent.Y() > 0 ? 1 : -1;
+            }
+          }
+          return winding;
+        };
         std::vector<std::shared_ptr<void>> cells;
         for (TopExp_Explorer faces(splitter.Shape(), TopAbs_FACE); faces.More(); faces.Next()) {
           const auto candidate = std::make_shared<TopoDS_Shape>(faces.Current());
@@ -839,8 +886,17 @@ static std::shared_ptr<void> bezierPrismImpl(
           if (bounds[0] <= minX + Precision::Confusion() || bounds[1] <= minY + Precision::Confusion() ||
               bounds[3] >= maxX - Precision::Confusion() || bounds[4] >= maxY - Precision::Confusion())
             continue;
-          auto cell = std::make_shared<TopoDS_Shape>(TopoDS::Solid(
-            BRepPrimAPI_MakePrism(TopoDS::Face(faces.Current()), gp_Vec(0, 0, height)).Shape()));
+          GProp_GProps properties;
+          const auto candidateFace = TopoDS::Face(faces.Current());
+          BRepGProp::SurfaceProperties(candidateFace, properties);
+          const gp_Pnt sample = properties.CentreOfMass();
+          if (BRepClass_FaceClassifier(candidateFace, sample, Precision::Confusion()).State() !=
+              TopAbs_IN)
+            throw std::runtime_error("Self-intersecting profile cell has no interior point");
+          const int winding = windingAt(sample);
+          if (evenOdd ? std::abs(winding) % 2 == 0 : winding == 0) continue;
+          auto cell = std::make_shared<TopoDS_Shape>(
+            TopoDS::Solid(BRepPrimAPI_MakePrism(candidateFace, gp_Vec(0, 0, height)).Shape()));
           if (!BRepCheck_Analyzer(shapeFrom(cell)).IsValid())
             throw std::runtime_error("Self-intersecting profile cell is invalid");
           cells.push_back(cell);

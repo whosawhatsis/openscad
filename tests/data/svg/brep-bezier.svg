@@ -24,6 +24,7 @@
     <polygon id="polygon" points="0,0 4,0 4,2 0,2"/>
     <path id="zeroarc" d="M0 0 A0 2 0 0 1 4 0 L4 2 L0 2 Z"/>
     <path id="self-intersecting" fill-rule="evenodd" d="M0 0 L4 4 L0 4 L4 0 Z"/>
+    <path id="self-intersecting-nonzero" d="M0 0 L4 4 L0 4 L4 0 Z"/>
     <path id="ring" d="M0 0 A2 2 0 1 0 4 0 A2 2 0 1 0 0 0 Z M1 0 A1 1 0 1 1 3 0 A1 1 0 1 1 1 0 Z"/>
     <path id="evenodd" fill-rule="nonzero" style="fill-rule:evenodd" d="M0 0 A2 2 0 1 0 4 0 A2 2 0 1 0 0 0 Z M1 0 A1 1 0 1 0 3 0 A1 1 0 1 0 1 0 Z"/>
     <g fill-rule="evenodd">

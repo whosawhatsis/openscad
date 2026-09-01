@@ -801,6 +801,11 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     imported->id = "self-intersecting";
     curvedFaces = 0;
   }
+  SECTION("self-intersecting nonzero contour")
+  {
+    imported->id = "self-intersecting-nonzero";
+    curvedFaces = 0;
+  }
   SECTION("opposite-winding circular hole")
   {
     imported->id = "ring";
@@ -948,7 +953,7 @@ TEST_CASE("B-Rep SVG extrusion retains original Bezier curves", "[brep]")
     CHECK(BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty() ==
           hole);
   }
-  if (imported->id.get() == "self-intersecting") {
+  if (imported->id.get() == "self-intersecting" || imported->id.get() == "self-intersecting-nonzero") {
     const auto occupied = [&](const Vector3d& point) {
       auto probe = BrepGeometry::cube(0.05, 0.05, 0.05);
       Transform3d placement = Transform3d::Identity();
