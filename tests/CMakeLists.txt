@@ -1416,10 +1416,18 @@ add_cmdline_test(transparent-tearing    SCRIPT ${TEARINGTEST_PY} SUFFIX txt FILE
 # Blessed image, deliberately, where the relational metrics could not help: correct
 # and incorrect layer ordering differ across a region in mid-tones, not in any
 # aggregate this suite can compute - measured, they agree on mean, p10, p90 and peak
-# brightness while differing on 33516 pixels. The image is the only oracle available.
-add_cmdline_test(render-shaded-cavity OPENSCAD SUFFIX png
+# brightness while differing on tens of thousands of pixels. The image is the only
+# oracle available.
+#
+# Default view, NOT --view=shaded, though the artifact is just as visible in both
+# (measured: identical 5.91% of 3x3 blocks, median 13, either way). The default view
+# has no PBR shader and no smooth shading to drift, so this image is byte-identical
+# across the feature branch and dogfooding - checked, not assumed. A shaded version
+# of this test was written first and failed on dogfooding for that exact reason,
+# which is the same trap preview-shaded-transparency is stuck in.
+add_cmdline_test(render-transparent-cavity OPENSCAD SUFFIX png
   FILES ${TEST_SCAD_DIR}/misc/transparent-cavity.scad
-  ARGS --render --view=shaded --camera=0,0,0,68,0,25,105 --imgsize=400,400)
+  ARGS --render --camera=0,0,0,68,0,25,105 --imgsize=400,400)
 
 
 ############################
