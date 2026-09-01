@@ -150,6 +150,14 @@ public:
   std::shared_ptr<FeatureEdgeResources> feature_edge_resources;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_coord_shader;
   std::unique_ptr<ShaderUtils::ShaderInfo> agent_chromatic_shader;
+  // Depth of the scene as seen from the key light, for self-shadowing, plus the
+  // eye-space-to-light-clip transform the shader needs to look into it.
+  GLuint shadow_map_tex_{0};
+  float shadow_matrix_[16]{};
+  float shadow_texel_{1.0f / 1024.0f};
+  bool shadow_map_valid_{false};
+  void renderShadowMap();
+
   // The first pass's color and depth, for screen-space reflections.
   GLuint ssr_color_tex_{0};
   GLuint ssr_depth_tex_{0};

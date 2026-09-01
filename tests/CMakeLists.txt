@@ -142,6 +142,7 @@ set(STLEXPORTSANITYTEST_PY   "${CCSD}/stlexportsanitytest.py")
 set(MULTISTLEXPORTTEST_PY    "${CCSD}/multistlexporttest.py")
 set(MATERIALRENDERTEST_PY    "${CCSD}/materialrendertest.py")
 set(SMOOTHRENDERTEST_PY      "${CCSD}/smoothrendertest.py")
+set(SHADOWRENDERTEST_PY      "${CCSD}/shadowrendertest.py")
 set(SHADEDTRANSPARENCYTEST_PY "${CCSD}/shadedtransparencytest.py")
 set(SSRRENDERTEST_PY         "${CCSD}/ssrrendertest.py")
 set(EXPORT_IMPORT_PNGTEST_PY "${CCSD}/export_import_pngtest.py")
@@ -1165,6 +1166,7 @@ add_cmdline_test(smooth-shading         EXPERIMENTAL SCRIPT ${SMOOTHRENDERTEST_P
 add_cmdline_test(smooth-shading-boolean EXPERIMENTAL SCRIPT ${SMOOTHRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/smooth-shading-boolean.scad ARGS ${OPENSCAD_EXE_ARG} --render --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 add_cmdline_test(material-shading-render EXPERIMENTAL SCRIPT ${MATERIALRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --render --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 add_cmdline_test(ssr-shading            EXPERIMENTAL SCRIPT ${SSRRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/ssr-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --render --view=shaded --camera=0,0,6,72,0,25,260 --imgsize=256,256)
+add_cmdline_test(self-shadow           EXPERIMENTAL SCRIPT ${SHADOWRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/self-shadow.scad ARGS ${OPENSCAD_EXE_ARG} --render --view=shaded --camera=0,0,0,62,0,32,150 --imgsize=400,400)
 
 # Export/import color support
 add_cmdline_test(offcolorpngtest EXPERIMENTAL SCRIPT ${EXPORT_IMPORT_PNGTEST_PY} SUFFIX png FILES ${COLOR_3D_TEST_FILES} EXPECTEDDIR render-manifold ARGS ${OPENSCAD_EXE_ARG} --format=OFF --backend=manifold --render)

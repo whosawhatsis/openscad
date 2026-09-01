@@ -30,6 +30,7 @@ public:
   static const Feature ExperimentalTransparentCompositing;
   static const Feature ExperimentalTransparencyOrdering;
   static const Feature ExperimentalScreenSpaceReflections;
+  static const Feature ExperimentalShadows;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif

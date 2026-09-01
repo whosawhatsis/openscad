@@ -54,6 +54,10 @@ const Feature Feature::ExperimentalScreenSpaceReflections(
   "screen-space-reflections",
   "In the shaded view, reflect the model in itself by marching the depth buffer, instead of "
   "reflecting only the stand-in environment. Costs a second pass over the geometry.");
+const Feature Feature::ExperimentalShadows(
+  "shadows",
+  "In the shaded view, let the model cast shadows on itself. Adds one depth pass over the geometry "
+  "from the key light's point of view.");
 const Feature Feature::ExperimentalAiFeatures("ai-features",
                                               "Enable AI features (Note: AI integration is under "
                                               "development and does not connect to external APIs yet).");

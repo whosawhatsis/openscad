@@ -11,6 +11,15 @@ uniform bool showEdges;
 // so a surface can reflect the model itself instead of only the stand-in
 // environment. Off unless the experimental feature is enabled, in which case
 // the geometry is drawn twice and this is the second pass.
+// Self-shadowing. The scene's depth from the key light, plus the transform from
+// eye space into that light's [0,1] texture space - eye space, because the
+// lights are parented to the camera, so nothing here needs world coordinates.
+uniform bool shadowsEnabled;
+uniform sampler2D shadowMap;
+uniform mat4 shadowMatrix;
+// One texel of the shadow map, which is sized to fit the framebuffer.
+uniform float shadowTexel;
+
 uniform bool ssrEnabled;
 uniform sampler2D ssrColor;
 uniform sampler2D ssrDepth;
@@ -168,6 +177,33 @@ vec4 screenSpaceReflection(vec3 origin, vec3 dir)
   return vec4(texture2D(ssrColor, uv).rgb, edge.x * edge.y);
 }
 
+// 1.0 lit, 0.0 fully shadowed. Four taps rather than one: a single comparison
+// gives a hard stair-stepped edge at any shadow-map resolution, and four cost
+// almost nothing next to the geometry pass that filled the map.
+float shadowFactor(vec3 eyePosition)
+{
+  vec4 light = shadowMatrix * vec4(eyePosition, 1.0);
+  if (light.w <= 0.0) return 1.0;
+  vec3 coord = light.xyz / light.w;
+  // Outside the light's frustum there is nothing recorded to be shadowed by.
+  if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0 || coord.z > 1.0) {
+    return 1.0;
+  }
+  // The depth pass already applied a slope-scaled polygon offset; this is only
+  // the floating-point slack in getting the same point back through two
+  // different matrix chains.
+  float bias = 1.5e-4;
+  float texel = shadowTexel;
+  float lit = 0.0;
+  for (int y = 0; y < 2; ++y) {
+    for (int x = 0; x < 2; ++x) {
+      vec2 at = coord.xy + (vec2(float(x), float(y)) - 0.5) * texel;
+      lit += texture2D(shadowMap, at).r + bias < coord.z ? 0.0 : 1.0;
+    }
+  }
+  return lit * 0.25;
+}
+
 void main(void)
 {
   vec3 normal = normalize(vNormal);
@@ -221,6 +257,12 @@ void main(void)
   // bright enough for metals to read.
   vec3 specular = F0 * environment;
 
+  // Only light 0 casts. Light 1 sits at exactly the negation of light 0, so it
+  // fills precisely what light 0 shadows; shadowing both cancels out to nearly
+  // nothing, which is not a subtlety but the difference between a visible
+  // feature and no feature.
+  float shadow = shadowsEnabled ? shadowFactor(vEyePosition) : 1.0;
+
   for (int i = 0; i < 2; ++i) {
     vec3 lightDirection = normalize(gl_LightSource[i].position.xyz);
     float NdotL = max(dot(normal, lightDirection), 0.0);
@@ -236,6 +278,7 @@ void main(void)
       // restores the previous brightness - measured back to 72.9 - without
       // abandoning energy conservation, which is what a bare 1.0 costs here.
       vec3 radiance = gl_LightSource[i].diffuse.rgb * NdotL * 1.55;
+      if (i == 0) radiance *= shadow;
 
       specular += distributionGGX(NdotH, a) * visibilitySmith(NdotV, NdotL, a) * F * radiance;
       diffuse += (vec3(1.0) - F) * albedo * (1.0 / PI) * radiance;
