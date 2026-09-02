@@ -9,6 +9,7 @@
 
 #include "geometry/Geometry.h"
 #include "geometry/PolySet.h"
+#include "geometry/SurfaceFinish.h"
 #include "geometry/PolySetUtils.h"
 #include "geometry/Polygon2d.h"
 #include "geometry/linalg.h"
@@ -20,7 +21,7 @@ namespace {
 // a different build, which is all the compatibility this format owes anyone -- both ends are the
 // same binary on the same machine.
 constexpr uint32_t kMagic = 0x4749534f;
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2;  // 2 added the finish channel and body shading attributes
 
 // What a body is. The transport carries meshes and 2D outlines; anything else (Manifold, Nef) is
 // converted to a PolySet on the way out, which is the one lossy step left here.
@@ -44,7 +45,8 @@ struct PolySetHeader {
   uint32_t polygonCount;
   uint32_t colorCount;
   uint32_t colorIndexCount;
-  uint32_t reserved;
+  //! Parallel to colors, or zero. Was `reserved` in version 1.
+  uint32_t finishCount;
 };
 
 struct Polygon2dHeader {
@@ -117,13 +119,14 @@ void appendPolySet(std::vector<char>& buffer, const PolySet& polyset)
   uint32_t indexCount = 0;
   for (const auto& face : polyset.indices) indexCount += face.size();
 
-  append(buffer,
-         PolySetHeader{
-           polyset.getDimension(), static_cast<int32_t>(polyset.getConvexity()),
-           static_cast<uint32_t>((polyset.isTriangular() ? 1u : 0u) | (polyset.isManifold() ? 2u : 0u)),
-           static_cast<uint32_t>(polyset.vertices.size()), static_cast<uint32_t>(polyset.indices.size()),
-           static_cast<uint32_t>(polyset.colors.size()),
-           static_cast<uint32_t>(polyset.color_indices.size()), 0});
+  append(
+    buffer,
+    PolySetHeader{
+      polyset.getDimension(), static_cast<int32_t>(polyset.getConvexity()),
+      static_cast<uint32_t>((polyset.isTriangular() ? 1u : 0u) | (polyset.isManifold() ? 2u : 0u)),
+      static_cast<uint32_t>(polyset.vertices.size()), static_cast<uint32_t>(polyset.indices.size()),
+      static_cast<uint32_t>(polyset.colors.size()), static_cast<uint32_t>(polyset.color_indices.size()),
+      static_cast<uint32_t>(polyset.finishes.size())});
   buffer.reserve(buffer.size() + polyset.vertices.size() * 3 * sizeof(double) +
                  (polyset.indices.size() + indexCount) * sizeof(uint32_t) +
                  polyset.colors.size() * 4 * sizeof(float) +
@@ -146,12 +149,75 @@ void appendPolySet(std::vector<char>& buffer, const PolySet& polyset)
     appendBytes(buffer, rgba, sizeof(rgba));
   }
   for (const auto index : polyset.color_indices) append(buffer, static_cast<int32_t>(index));
+  // The finish channel rides the colour index, so it must cross with the colours
+  // or the far side has materials for faces it can no longer identify.
+  for (const auto& finish : polyset.finishes) {
+    const float values[4] = {finish.roughness, finish.metallic, finish.reflectance, finish.emission};
+    appendBytes(buffer, values, sizeof(values));
+  }
+}
+
+// Shading state that lives on Geometry rather than on the mesh. Dropping it is
+// invisible in a CLI render, which never crosses a process boundary, and shows
+// up in the GUI as unsmoothed, material-less F6 geometry.
+void appendBodyAttributes(std::vector<char>& buffer, const Geometry& body)
+{
+  const auto& name = body.materialName();
+  append(buffer, static_cast<uint32_t>(name.size()));
+  appendBytes(buffer, name.data(), name.size());
+  append(buffer, body.smoothAngle());
+  append(buffer, static_cast<uint32_t>(body.hasRoughness() ? 1u : 0u));
+  append(buffer, body.roughness());
+  append(buffer, body.metallic());
+}
+
+//! Read into a plain struct rather than straight onto a Geometry: the attributes
+//! precede the shape on the wire, so there is nothing to write them to yet, and
+//! they must be consumed even for a body kind this build cannot decode or the
+//! cursor desynchronizes for every body after it.
+struct BodyAttributes {
+  std::string materialName;
+  double smoothAngle{0.0};
+  bool hasRoughness{false};
+  float roughness{0.0f};
+  float metallic{0.0f};
+
+  void applyTo(Geometry& body) const
+  {
+    if (!materialName.empty()) body.setMaterialName(materialName);
+    body.setSmoothAngle(smoothAngle);
+    if (hasRoughness) body.setRoughness(roughness);
+    body.setMetallic(metallic);
+  }
+};
+
+bool readBodyAttributes(Cursor& cursor, BodyAttributes& body)
+{
+  uint32_t nameLength = 0;
+  if (!cursor.read(nameLength)) return false;
+  std::string name(nameLength, '\0');
+  if (nameLength && !cursor.read(name.data(), nameLength)) return false;
+  double smoothAngle = 0.0;
+  uint32_t hasRoughness = 0;
+  float roughness = 0.0f;
+  float metallic = 0.0f;
+  if (!cursor.read(smoothAngle) || !cursor.read(hasRoughness) || !cursor.read(roughness) ||
+      !cursor.read(metallic)) {
+    return false;
+  }
+  body.materialName = std::move(name);
+  body.smoothAngle = smoothAngle;
+  body.hasRoughness = hasRoughness != 0;
+  body.roughness = roughness;
+  body.metallic = metallic;
+  return true;
 }
 
 void appendBody(std::vector<char>& buffer, const std::shared_ptr<const Geometry>& body)
 {
   if (const auto polygon = std::dynamic_pointer_cast<const Polygon2d>(body)) {
     append(buffer, kKindPolygon2d);
+    appendBodyAttributes(buffer, *polygon);
     appendPolygon2d(buffer, *polygon);
     return;
   }
@@ -159,6 +225,9 @@ void appendBody(std::vector<char>& buffer, const std::shared_ptr<const Geometry>
   // geometry the parent receives -- only how it is encoded. Manifold and Nef arrive here.
   const auto polyset = PolySetUtils::getGeometryAsPolySet(body);
   append(buffer, kKindPolySet);
+  // From the *original* body: getGeometryAsPolySet may mint a fresh PolySet whose
+  // body attributes were never copied across.
+  appendBodyAttributes(buffer, *body);
   appendPolySet(buffer, *polyset);
 }
 
@@ -235,6 +304,12 @@ std::unique_ptr<PolySet> readPolySet(Cursor& cursor)
     if (!cursor.read(value)) return {};
     index = value;
   }
+  polyset->finishes.resize(header.finishCount);
+  for (auto& finish : polyset->finishes) {
+    float values[4];
+    if (!cursor.read(values, sizeof(values))) return {};
+    finish = SurfaceFinish{values[0], values[1], values[2], values[3]};
+  }
   return polyset;
 }
 
@@ -278,8 +353,13 @@ std::shared_ptr<const Geometry> import_ipc_geometry_buffer(const char *data, con
     uint32_t kind = 0;
     if (!cursor.read(kind)) return {};
     std::shared_ptr<Geometry> body;
+    // Attributes precede the shape, and must be read even for a kind this build
+    // does not understand, or the cursor desynchronizes.
+    BodyAttributes attributes;
+    if (!readBodyAttributes(cursor, attributes)) return {};
     if (kind == kKindPolygon2d) body = readPolygon2d(cursor);
     else if (kind == kKindPolySet) body = readPolySet(cursor);
+    if (body) attributes.applyTo(*body);
     else {
       LOG(message_group::Error, "Compute worker geometry '%1$s' carries an unknown body kind.", name);
       return {};
@@ -308,5 +388,9 @@ std::unique_ptr<PolySet> import_ipc_polyset_buffer(const char *data, const std::
   }
   uint32_t kind = 0;
   if (!cursor.read(kind) || kind != kKindPolySet) return {};
-  return readPolySet(cursor);
+  BodyAttributes attributes;
+  if (!readBodyAttributes(cursor, attributes)) return {};
+  auto polyset = readPolySet(cursor);
+  if (polyset) attributes.applyTo(*polyset);
+  return polyset;
 }

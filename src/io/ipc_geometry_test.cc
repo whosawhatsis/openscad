@@ -15,6 +15,7 @@
 
 #include "geometry/Geometry.h"
 #include "geometry/PolySet.h"
+#include "geometry/SurfaceFinish.h"
 #include "geometry/Polygon2d.h"
 #include "geometry/linalg.h"
 
@@ -176,4 +177,47 @@ TEST_CASE("IPC geometry single-body decode skips the list wrapper", "[io][IPC][I
   CHECK(ps->getConvexity() == 7);
   CHECK(ps->colors.size() == 3);
   CHECK(ps->vertices.size() == 4);
+}
+
+// The GUI renders F6 in a separate compute process, so anything this codec drops
+// is simply absent from the rendered viewport - which is how the shaded view came
+// to show unsmoothed, material-less geometry in the GUI while every CLI render,
+// being in-process, looked correct.
+TEST_CASE("IPC geometry codec preserves shading attributes", "[io][IPC][IPC-Geometry]")
+{
+  auto original = coloredTetrahedron();
+  original->finishes = {SurfaceFinish{0.25f, 1.0f, 0.08f, 0.5f}, SurfaceFinish{0.9f, 0.0f, 0.04f, 0.0f}};
+  original->setSmoothAngle(31.0);
+  original->setMaterialName("brushed");
+  original->setRoughness(0.25f);
+  original->setMetallic(1.0f);
+
+  const auto decoded = std::dynamic_pointer_cast<const PolySet>(decode(encode(original)));
+  REQUIRE(decoded);
+
+  SECTION("the per-face finish channel survives")
+  {
+    REQUIRE(decoded->finishes.size() == original->finishes.size());
+    for (std::size_t i = 0; i < original->finishes.size(); ++i) {
+      CHECK(decoded->finishes[i].roughness == Catch::Approx(original->finishes[i].roughness));
+      CHECK(decoded->finishes[i].metallic == Catch::Approx(original->finishes[i].metallic));
+      CHECK(decoded->finishes[i].reflectance == Catch::Approx(original->finishes[i].reflectance));
+      CHECK(decoded->finishes[i].emission == Catch::Approx(original->finishes[i].emission));
+    }
+  }
+
+  // Without this the GUI's F6 draws every curve faceted, because the renderer
+  // asks the geometry for its angle and gets the default back.
+  SECTION("the smoothing angle survives")
+  {
+    CHECK(decoded->smoothAngle() == Catch::Approx(31.0));
+  }
+
+  SECTION("the body's own material attributes survive")
+  {
+    CHECK(decoded->materialName() == "brushed");
+    CHECK(decoded->hasRoughness());
+    CHECK(decoded->roughness() == Catch::Approx(0.25f));
+    CHECK(decoded->metallic() == Catch::Approx(1.0f));
+  }
 }
