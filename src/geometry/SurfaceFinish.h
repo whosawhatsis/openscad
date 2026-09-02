@@ -35,7 +35,6 @@ struct SurfaceFinish {
   //! part); negative smears them across it. Deliberately signed rather than
   //! glTF's strength + rotation pair, because the only rotation this needs is
   //! the 90-degree one, and a sign is cheaper than an angle.
-  //! TODO(row 64): not implemented yet - see alphaFor().
   float anisotropy{0.0f};
 
   //! The two GGX alphas for this finish: `along` the anisotropy direction and
@@ -46,13 +45,26 @@ struct SurfaceFinish {
     float across;
   };
 
-  //! TODO(row 64): STUB - returns the isotropic split regardless of anisotropy,
-  //! so SurfaceFinish_test.cc fails on the anisotropic cases. Replace with the
-  //! reciprocal 0.9-factor split.
-  static MicrofacetAlpha alphaFor(float roughness, float /*anisotropy*/)
+  //! Splits roughness into the two GGX alphas. The 0.9 factor is the
+  //! glTF/Blender convention; it keeps the widened axis finite at anisotropy 1,
+  //! where an undamped split would divide by zero and paint the surface NaN.
+  //!
+  //! The split is a reciprocal pair - one axis is divided by k and the other
+  //! multiplied by it - so `along * across` stays alpha^2 at every anisotropy
+  //! and the lobe redistributes energy instead of gaining it.
+  //!
+  //! The magnitude is taken before the split and the pair swapped afterwards,
+  //! rather than letting a signed anisotropy flow into k. Those are not the
+  //! same function: k(-x) != 1/k(x), so feeding the sign through would make
+  //! negative anisotropy a differently-shaped lobe instead of the same lobe
+  //! turned 90 degrees, which is what the sign is defined to mean.
+  static MicrofacetAlpha alphaFor(float roughness, float anisotropy)
   {
     const float alpha = roughness * roughness;
-    return {alpha, alpha};
+    const float magnitude = std::fmin(std::fabs(anisotropy), 1.0f);
+    const float k = std::sqrt(1.0f - 0.9f * magnitude);
+    const MicrofacetAlpha split{alpha / k, alpha * k};
+    return anisotropy < 0.0f ? MicrofacetAlpha{split.across, split.along} : split;
   }
 
   //! F0 for the given index of refraction, scaled by a specular multiplier.
@@ -67,13 +79,13 @@ struct SurfaceFinish {
 
   bool operator==(const SurfaceFinish& o) const
   {
-    return std::tie(roughness, metallic, reflectance, emission) ==
-           std::tie(o.roughness, o.metallic, o.reflectance, o.emission);
+    return std::tie(roughness, metallic, reflectance, emission, anisotropy) ==
+           std::tie(o.roughness, o.metallic, o.reflectance, o.emission, o.anisotropy);
   }
   bool operator!=(const SurfaceFinish& o) const { return !(*this == o); }
   bool operator<(const SurfaceFinish& o) const
   {
-    return std::tie(roughness, metallic, reflectance, emission) <
-           std::tie(o.roughness, o.metallic, o.reflectance, o.emission);
+    return std::tie(roughness, metallic, reflectance, emission, anisotropy) <
+           std::tie(o.roughness, o.metallic, o.reflectance, o.emission, o.anisotropy);
   }
 };
