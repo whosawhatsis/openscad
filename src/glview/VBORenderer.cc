@@ -195,5 +195,32 @@ void VBORenderer::add_shader_pointers(VBOBuilder& vbo_builder, const ShaderUtils
       });
   }
 
+  // The anisotropy axis, bound exactly like the finish above. A shader that does
+  // not declare it simply does not bind it -- and note that a fragment shader
+  // which declares the varying but never reads it will have the attribute
+  // optimized away by the GLSL compiler, so the location comes back -1 and this
+  // block is correctly skipped.
+  const auto materialAxis = shaderinfo->attributes.find("material_axis");
+  const int axis_location = materialAxis == shaderinfo->attributes.end() ? -1 : materialAxis->second;
+  if (axis_location >= 0) {
+    const GLuint axis_index = static_cast<GLuint>(axis_location);
+    const GLsizei acount =
+      vertex_data->attributes()[vbo_builder.shader_attributes_index_ + MATERIAL_AXIS_ATTRIB]->count();
+    const GLenum atype =
+      vertex_data->attributes()[vbo_builder.shader_attributes_index_ + MATERIAL_AXIS_ATTRIB]->glType();
+    const GLsizei astride = vertex_data->stride();
+    const size_t aoffset = start_offset + vertex_data->interleavedOffset(
+                                            vbo_builder.shader_attributes_index_ + MATERIAL_AXIS_ATTRIB);
+    ss->glBegin().emplace_back(
+      [axis_index, acount, atype, astride, aoffset, ss_ptr = std::weak_ptr<VertexState>(ss)]() {
+        auto ss = ss_ptr.lock();
+        if (!ss) return;
+        GL_TRACE("glVertexAttribPointer(%d, %d, %d, GL_FALSE, %d, %p)",
+                 axis_index % acount % atype % astride % (GLvoid *)(ss->drawOffset() + aoffset));
+        GL_CHECKD(glVertexAttribPointer(axis_index, acount, atype, GL_FALSE, astride,
+                                        (GLvoid *)(ss->drawOffset() + aoffset)));
+      });
+  }
+
   vbo_builder.states().emplace_back(std::move(ss));
 }
