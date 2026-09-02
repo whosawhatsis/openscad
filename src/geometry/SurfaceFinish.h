@@ -3,6 +3,8 @@
 #include <cmath>
 #include <tuple>
 
+#include "geometry/linalg.h"
+
 /*!
  * Per-surface shading parameters, the shading half of what color() and
  * material() declare. Carried alongside color everywhere color goes - through
@@ -36,6 +38,17 @@ struct SurfaceFinish {
   //! glTF's strength + rotation pair, because the only rotation this needs is
   //! the 90-degree one, and a sign is cheaper than an angle.
   float anisotropy{0.0f};
+  //! The surface direction the anisotropy is measured along - the layer
+  //! direction of a print, the turning direction of a lathed part. Captured as
+  //! the build axis (+Z) when material() is evaluated and then transformed with
+  //! the geometry, so a rotated part carries its layer direction with it.
+  //!
+  //! Stored rather than derived in the shader from a global +Z: an assembly of
+  //! parts each printed in a different orientation would otherwise get one
+  //! layer direction for all of them, correct for at most one. It costs
+  //! nothing to store, because anisotropy already forces a second vec4 vertex
+  //! attribute and (axis.xyz, anisotropy) fills it exactly.
+  Vector3d axis{0.0, 0.0, 1.0};
 
   //! The two GGX alphas for this finish: `along` the anisotropy direction and
   //! `across` it. Isotropic GGX is the anisotropy = 0 case, where both equal
@@ -67,6 +80,30 @@ struct SurfaceFinish {
     return anisotropy < 0.0f ? MicrofacetAlpha{split.across, split.along} : split;
   }
 
+  //! Moves the anisotropy axis by a transform applied to the geometry. It is a
+  //! direction, so only the linear part applies - a translation must not move
+  //! it, and the affine transform would tilt it by an amount depending on where
+  //! the part happens to sit.
+  //!
+  //! No inverse-transpose: the axis lies in the surface rather than normal to
+  //! it, so it transforms as a tangent. Under non-uniform scale a tangent and
+  //! the surface it should lie in disagree; anisotropy is ill-defined there
+  //! anyway, so renormalize and move on rather than add a correction nobody
+  //! asked for. A scale that flattens the axis to nothing leaves no direction
+  //! to speak of, so the finish drops to isotropic instead of normalizing a
+  //! zero vector into NaN.
+  void transformAxis(const Transform3d& mat)
+  {
+    const Vector3d moved = mat.linear() * axis;
+    const double length = moved.norm();
+    if (length > 1e-12) {
+      axis = moved / length;
+    } else {
+      axis = Vector3d(0.0, 0.0, 1.0);
+      anisotropy = 0.0f;
+    }
+  }
+
   //! F0 for the given index of refraction, scaled by a specular multiplier.
   //! ior 1.5 and specular 1 give the 0.04 default back.
   static float reflectanceFor(double ior, double specular)
@@ -79,13 +116,15 @@ struct SurfaceFinish {
 
   bool operator==(const SurfaceFinish& o) const
   {
-    return std::tie(roughness, metallic, reflectance, emission, anisotropy) ==
-           std::tie(o.roughness, o.metallic, o.reflectance, o.emission, o.anisotropy);
+    return std::tie(roughness, metallic, reflectance, emission, anisotropy, axis.x(), axis.y(),
+                    axis.z()) == std::tie(o.roughness, o.metallic, o.reflectance, o.emission,
+                                          o.anisotropy, o.axis.x(), o.axis.y(), o.axis.z());
   }
   bool operator!=(const SurfaceFinish& o) const { return !(*this == o); }
   bool operator<(const SurfaceFinish& o) const
   {
-    return std::tie(roughness, metallic, reflectance, emission, anisotropy) <
-           std::tie(o.roughness, o.metallic, o.reflectance, o.emission, o.anisotropy);
+    return std::tie(roughness, metallic, reflectance, emission, anisotropy, axis.x(), axis.y(),
+                    axis.z()) < std::tie(o.roughness, o.metallic, o.reflectance, o.emission,
+                                         o.anisotropy, o.axis.x(), o.axis.y(), o.axis.z());
   }
 };
