@@ -1134,6 +1134,11 @@ add_cmdline_test(material-shading-render EXPERIMENTAL SCRIPT ${MATERIALRENDERTES
 # axis rides the modelview and the material()-above-transform case cannot be
 # distinguished there. See the feature page for that limitation.
 add_cmdline_test(anisotropy-shading      EXPERIMENTAL SCRIPT ${ANISOTROPYRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-anisotropy-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --render --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
+# The same relationships in F5 preview. Preview reaches the shader by a wholly
+# different route -- CSGTreeEvaluator leaves whose matrices create_surface()
+# bakes into the vertices -- so the axis has to be handled there too, and this
+# is what proves the two paths agree.
+add_cmdline_test(anisotropy-shading-preview EXPERIMENTAL SCRIPT ${ANISOTROPYRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-anisotropy-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 add_cmdline_test(ssr-shading            EXPERIMENTAL SCRIPT ${SSRRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/ssr-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --render --view=shaded --camera=0,0,6,72,0,25,260 --imgsize=256,256)
 add_cmdline_test(self-shadow           EXPERIMENTAL SCRIPT ${SHADOWRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/self-shadow.scad ARGS ${OPENSCAD_EXE_ARG} --render --view=shaded --camera=0,0,0,62,0,32,150 --imgsize=400,400)
 

@@ -1,0 +1,6 @@
+anisotropy = 0 renders identically to no anisotropy: yes
+anisotropy changes the render: yes
+the sign of anisotropy changes the render: yes
+the isotropic control pair is identical: yes
+the anisotropy axis rotates with the part: yes
+plain color() is unaffected: yes

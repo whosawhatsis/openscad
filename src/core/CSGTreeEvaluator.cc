@@ -291,7 +291,20 @@ Response CSGTreeEvaluator::visit(State& state, const ColorNode& node)
   if (state.isPrefix()) {
     if (!state.color().isValid()) state.setColor(node.color);
     if (node.isMaterial && state.materialName().empty()) state.setMaterialName(node.materialName);
-    state.setFinish(node.finish());
+    // Bake the anisotropy axis into world space here, where state.matrix() is
+    // exactly the transform stack ABOVE this material() and nothing below it
+    // has been applied yet. That distinction is the whole point: transforms
+    // under a material() move the geometry it paints, not the layer direction
+    // it declares.
+    //
+    // F6 gets this from PolySet::transform(), which only ever sees the
+    // transforms above the node that set the finish. Preview has no equivalent
+    // moment - create_surface() bakes the leaf's FULL root-to-leaf matrix into
+    // the vertices, so using that matrix here would rotate the axis by the
+    // transforms below material() as well and make the two paths disagree.
+    SurfaceFinish finish = node.finish();
+    finish.transformAxis(state.matrix());
+    state.setFinish(finish);
   }
   if (state.isPostfix()) {
     applyToChildren(state, node, OpenSCADOperator::UNION);
