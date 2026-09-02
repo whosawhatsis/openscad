@@ -30,6 +30,30 @@ struct SurfaceFinish {
   //! the conventional default for everything that is not a metal.
   float reflectance{0.04f};
   float emission{0.0f};
+  //! Anisotropy of the specular lobe, in [-1, 1]. 0 is isotropic. Positive
+  //! smears reflections along the layer/turning direction (a 3D print, a lathed
+  //! part); negative smears them across it. Deliberately signed rather than
+  //! glTF's strength + rotation pair, because the only rotation this needs is
+  //! the 90-degree one, and a sign is cheaper than an angle.
+  //! TODO(row 64): not implemented yet - see alphaFor().
+  float anisotropy{0.0f};
+
+  //! The two GGX alphas for this finish: `along` the anisotropy direction and
+  //! `across` it. Isotropic GGX is the anisotropy = 0 case, where both equal
+  //! roughness^2.
+  struct MicrofacetAlpha {
+    float along;
+    float across;
+  };
+
+  //! TODO(row 64): STUB - returns the isotropic split regardless of anisotropy,
+  //! so SurfaceFinish_test.cc fails on the anisotropic cases. Replace with the
+  //! reciprocal 0.9-factor split.
+  static MicrofacetAlpha alphaFor(float roughness, float /*anisotropy*/)
+  {
+    const float alpha = roughness * roughness;
+    return {alpha, alpha};
+  }
 
   //! F0 for the given index of refraction, scaled by a specular multiplier.
   //! ior 1.5 and specular 1 give the 0.04 default back.
