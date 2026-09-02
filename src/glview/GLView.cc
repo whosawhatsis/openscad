@@ -637,6 +637,15 @@ void GLView::paintGL()
   // Before anything is drawn, because without an FBO this scribbles on the
   // colour buffer and relies on the clear below to wipe it.
   shadow_map_valid_ = false;
+  // Before the shadow pass prepares anything: prepare() is what builds the
+  // vertex state, and smooth shading is baked into it. Preparing first left the
+  // containers unsmoothed, and the later prepare() saw the same shader and did
+  // not rebuild - so with the shadows feature enabled, every F6 curve rendered
+  // faceted. Feature flags off, as in every CLI test, the block below never ran
+  // and the fault was invisible.
+  if (this->renderer) {
+    this->renderer->setSmoothShading(analysis_mode == AnalysisMode::Shaded);
+  }
   if (this->renderer && this->renderer->providesSceneDepth() && analysis_mode == AnalysisMode::Shaded &&
       phong_shader && Feature::ExperimentalShadows.is_enabled()) {
     this->renderer->prepare(phong_shader.get());
