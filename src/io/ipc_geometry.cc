@@ -337,6 +337,11 @@ void export_ipc_geometry(const PolySet& polyset, std::ostream& output)
   std::vector<char> buffer;
   append(buffer, ListHeader{kMagic, kVersion, 1, 0});
   append(buffer, kKindPolySet);
+  // Must match appendBody: the single-body writer and the list writer share one
+  // reader, so an attribute block written by only one of them desynchronizes the
+  // other. Omitting it here left the CSG product channel reading a polyset
+  // header out of the attribute bytes and silently producing no polyset.
+  appendBodyAttributes(buffer, polyset);
   appendPolySet(buffer, polyset);
   output.write(buffer.data(), buffer.size());
 }
