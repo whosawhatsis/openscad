@@ -1335,6 +1335,17 @@ list(APPEND EXPERIMENTAL_MATERIAL_BUMP_FILES
 add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_BUMP_FILES} ARGS --enable=multi-material)
 
 #
+# Feature 64: anisotropic (layer-lenticular) roughness on material() and color().
+# The dump is the geometry cache key, so this pins that the sign survives, that
+# out-of-range values reach it clamped, and that an unset anisotropy emits
+# nothing at all.
+#
+list(APPEND EXPERIMENTAL_MATERIAL_ANISOTROPY_FILES
+  ${TEST_SCAD_DIR}/misc/material-anisotropy-tests.scad
+)
+add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_ANISOTROPY_FILES} ARGS --enable=multi-material)
+
+#
 # Feature 15: parameters that were dropped must warn, not be swallowed.
 #
 list(APPEND EXPERIMENTAL_MATERIAL_DROPPED_FILES

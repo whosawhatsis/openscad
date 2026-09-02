@@ -36,6 +36,13 @@ public:
   double pbrRoughness{0.0};
   bool hasPbrRoughness{false};
   double metallic{0.0};
+  // Anisotropy of the specular lobe, in [-1, 1] - wider than the [0,1] of the
+  // parameters above, which is why it is not one of them. Positive smears
+  // reflections along the layer/turning direction of a printed or lathed
+  // surface, negative across it. Like roughness it is tracked as set/unset, so
+  // that dumps of scripts that never mention it stay byte-identical.
+  double anisotropy{0.0};
+  bool hasAnisotropy{false};
   // Additional POV-Ray finish parameters, kept as a map because nothing but the
   // POV exporter consumes them yet - see ColorNode.cc for the accepted names.
   std::map<std::string, double> finishParams;
@@ -53,6 +60,7 @@ public:
     SurfaceFinish f;
     if (hasPbrRoughness) f.roughness = static_cast<float>(pbrRoughness);
     if (hasMetallic) f.metallic = static_cast<float>(metallic);
+    if (hasAnisotropy) f.anisotropy = static_cast<float>(anisotropy);
     f.reflectance = SurfaceFinish::reflectanceFor(param("ior", 1.5), param("specular", 1.0));
     f.emission = static_cast<float>(param("emission", 0.0));
     return f;
