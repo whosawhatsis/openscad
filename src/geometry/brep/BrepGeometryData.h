@@ -36,6 +36,7 @@ std::shared_ptr<void> brepMakePrism(const std::vector<std::array<double, 2>>& ou
 std::shared_ptr<void> brepRevolve(const std::shared_ptr<void>& profile, double angle, double start,
                                   int segments);
 size_t brepSurfaceCount(const std::shared_ptr<void>& shape, BrepSurfaceType type);
+size_t brepMemsize(const std::shared_ptr<void>& shape);
 std::array<double, 6> brepBounds(const std::shared_ptr<void>& shape);
 std::shared_ptr<void> brepTransform(const std::shared_ptr<void>& shape,
                                     const std::array<double, 12>& matrix);

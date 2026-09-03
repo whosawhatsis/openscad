@@ -40,7 +40,7 @@
 #include "geometry/PolySetUtils.h"
 #include "geometry/Polygon2d.h"
 #include "geometry/boolean_utils.h"
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 #include "geometry/brep/BrepGeometry.h"
 #endif
 #include "geometry/cgal/cgal.h"
@@ -70,12 +70,26 @@ class Geometry;
 class Polygon2d;
 class Tree;
 
-#ifdef ENABLE_OPENCSCADE
-namespace {
+#ifdef ENABLE_OPENCASCADE
 
-std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
-                                                 BrepFilletDiagnostics *diagnostics = nullptr,
-                                                 double extrusionHeight = 0.0)
+std::unique_ptr<BrepGeometry> GeometryEvaluator::createBrepGeometry(const AbstractNode& node,
+                                                                    BrepFilletDiagnostics *diagnostics,
+                                                                    double extrusionHeight)
+{
+  // Only the plain 3D recursion is cacheable: an extruded profile is different geometry under
+  // the same node key, and a caller asking for diagnostics needs the operation actually run.
+  const bool cacheable = extrusionHeight == 0.0 && !diagnostics;
+  if (cacheable) {
+    if (const auto cached = std::dynamic_pointer_cast<const BrepGeometry>(smartCacheGet(node, true)))
+      return std::make_unique<BrepGeometry>(*cached);
+  }
+  auto result = createBrepGeometryUncached(node, diagnostics, extrusionHeight);
+  if (cacheable && result) smartCacheInsert(node, std::make_shared<BrepGeometry>(*result));
+  return result;
+}
+
+std::unique_ptr<BrepGeometry> GeometryEvaluator::createBrepGeometryUncached(
+  const AbstractNode& node, BrepFilletDiagnostics *diagnostics, double extrusionHeight)
 {
   if (extrusionHeight > 0) {
     if (const auto *imported = dynamic_cast<const ImportNode *>(&node);
@@ -191,10 +205,12 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
       auto result = std::make_unique<BrepGeometry>(
         BrepGeometry::boolean(operands, BrepOperation::Union, 0.0, unused));
       if (!result->isEmpty()) {
-        if (extrusion->scale_x != 1.0 || extrusion->scale_y != 1.0 || extrusion->twist != 0.0)
-          *result =
-            result->taper(extrusion->height.z(), extrusion->scale_x, extrusion->scale_y,
-                          -extrusion->twist * M_DEG2RAD, extrusion->has_slices ? extrusion->slices : 1);
+        // has_twist gates the twist in the mesh path and in the node dump that keys the
+        // geometry cache; reading twist without it would make two distinct extrusions share a key.
+        const double twist = extrusion->has_twist ? extrusion->twist : 0.0;
+        if (extrusion->scale_x != 1.0 || extrusion->scale_y != 1.0 || twist != 0.0)
+          *result = result->taper(extrusion->height.z(), extrusion->scale_x, extrusion->scale_y,
+                                  -twist * M_DEG2RAD, extrusion->has_slices ? extrusion->slices : 1);
         Transform3d placement = Transform3d::Identity();
         placement(0, 2) = extrusion->height.x() / extrusion->height.z();
         placement(1, 2) = extrusion->height.y() / extrusion->height.z();
@@ -350,6 +366,8 @@ std::unique_ptr<BrepGeometry> createBrepGeometry(const AbstractNode& node,
   return {};
 }
 
+namespace {
+
 std::pair<double, double> brepFacetSettings(const AbstractNode& node, const BrepGeometry& geometry)
 {
   double fa = 12.0;
@@ -400,12 +418,13 @@ GeometryEvaluator::GeometryEvaluator(const Tree& tree) : tree(tree)
 std::shared_ptr<const Geometry> GeometryEvaluator::evaluateGeometry(const AbstractNode& node,
                                                                     bool allownef)
 {
-  std::shared_ptr<const Geometry> result;
-#ifdef ENABLE_OPENCSCADE
-  if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
+  std::shared_ptr<const Geometry> result = smartCacheGet(node, allownef);
+#ifdef ENABLE_OPENCASCADE
+  if (!result && RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
     BrepFilletDiagnostics diagnostics;
     if (auto brep = createBrepGeometry(node, &diagnostics)) {
       result = std::shared_ptr<const Geometry>(std::move(brep));
+      smartCacheInsert(node, result);
       if (const auto *csg = dynamic_cast<const CsgOpNode *>(&node);
           csg && diagnostics.achievedRadius < csg->filletRadius) {
         LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
@@ -415,7 +434,6 @@ std::shared_ptr<const Geometry> GeometryEvaluator::evaluateGeometry(const Abstra
     }
   }
 #endif
-  if (!result) result = smartCacheGet(node, allownef);
   if (!result) {
     // If not found in any caches, we need to evaluate the geometry
     // traverse() will set this->root to a geometry, which can be any geometry
@@ -431,7 +449,7 @@ std::shared_ptr<const Geometry> GeometryEvaluator::evaluateGeometry(const Abstra
   // Note: we don't store the converted into the cache as it would conflict with subsequent calls where
   // allownef is true.
   if (!allownef) {
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
     if (auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result)) {
       const auto [linearDeflection, angularDeflection] = brepFacetSettings(node, *brep);
       return std::shared_ptr<const PolySet>(brep->toPolySet(linearDeflection, angularDeflection));
@@ -683,10 +701,22 @@ std::vector<std::shared_ptr<const Polygon2d>> GeometryEvaluator::collectChildren
    the appropriate cache.
    This method inserts the geometry into the appropriate cache if it's not already cached.
  */
+std::string GeometryEvaluator::cacheKey(const AbstractNode& node) const
+{
+#ifdef ENABLE_OPENCASCADE
+  // The node dump says nothing about the render backend, but OpenCASCADE stores exact B-Rep
+  // where the mesh kernels store a PolySet. Without this the two collide on one entry, and
+  // switching backends serves geometry built by the other kernel.
+  if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend)
+    return "occt:" + this->tree.getIdString(node);
+#endif
+  return this->tree.getIdString(node);
+}
+
 void GeometryEvaluator::smartCacheInsert(const AbstractNode& node,
                                          const std::shared_ptr<const Geometry>& geom)
 {
-  const std::string& key = this->tree.getIdString(node);
+  const std::string key = cacheKey(node);
 
   if (CGALCache::acceptsGeometry(geom)) {
     if (!CGALCache::instance()->contains(key)) {
@@ -707,14 +737,14 @@ void GeometryEvaluator::smartCacheInsert(const AbstractNode& node,
 
 bool GeometryEvaluator::isSmartCached(const AbstractNode& node)
 {
-  const std::string& key = this->tree.getIdString(node);
+  const std::string key = cacheKey(node);
   return GeometryCache::instance()->contains(key) || CGALCache::instance()->contains(key);
 }
 
 std::shared_ptr<const Geometry> GeometryEvaluator::smartCacheGet(const AbstractNode& node,
                                                                  bool preferNef)
 {
-  const std::string& key = this->tree.getIdString(node);
+  const std::string key = cacheKey(node);
   const bool hasgeom = GeometryCache::instance()->contains(key);
   const bool hascgal = CGALCache::instance()->contains(key);
   if (hascgal && (preferNef || !hasgeom)) return CGALCache::instance()->get(key);
@@ -1036,7 +1066,7 @@ Response GeometryEvaluator::visit(State& state, const TextNode& node)
       auto polygonlist = node.createPolygonList();
       geom = ClipperUtils::apply(polygonlist, Clipper2Lib::ClipType::Union);
     } else {
-      geom = GeometryCache::instance()->get(this->tree.getIdString(node));
+      geom = GeometryCache::instance()->get(cacheKey(node));
     }
     addToParent(state, node, geom);
     node.progress_report();
@@ -1059,7 +1089,7 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
   if (state.isPostfix()) {
     std::shared_ptr<const Geometry> geom;
     if (!isSmartCached(node)) {
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
       if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) {
         BrepFilletDiagnostics diagnostics;
         if (auto brep = createBrepGeometry(node, &diagnostics)) {
@@ -1075,21 +1105,17 @@ Response GeometryEvaluator::visit(State& state, const CsgOpNode& node)
               "operation is not supported by the OpenCASCADE 3D backend");
           geom = PolySet::createEmpty();
         }
-      } else if (node.hasFillet && node.filletRadius > 0.0) {
-        LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
-            "fillet ignored because the OpenCASCADE 3D backend is not selected");
-        geom = applyToChildren(node, node.type).constptr();
       } else {
+        if (node.hasFillet && node.filletRadius > 0.0)
+          LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
+              "fillet ignored because the OpenCASCADE 3D backend is not selected");
         geom = applyToChildren(node, node.type).constptr();
       }
 #else
-      if (node.hasFillet && node.filletRadius > 0.0) {
+      if (node.hasFillet && node.filletRadius > 0.0)
         LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
             "fillet ignored because this build has no OpenCASCADE 3D backend");
-        geom = applyToChildren(node, node.type).constptr();
-      } else {
-        geom = applyToChildren(node, node.type).constptr();
-      }
+      geom = applyToChildren(node, node.type).constptr();
 #endif
     } else {
       geom = smartCacheGet(node, state.preferNef());

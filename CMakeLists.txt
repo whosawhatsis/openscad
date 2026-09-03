@@ -70,7 +70,7 @@ set(ENABLE_HIDAPI "AUTO" CACHE STRING "Enable support for HIDAPI input driver")
 set_property(CACHE ENABLE_HIDAPI PROPERTY STRINGS "AUTO" "ON" "OFF")
 option(ENABLE_CGAL "Enable CGAL." ON)
 option(ENABLE_MANIFOLD "Enable Manifold." ON)
-option(ENABLE_OPENCSCADE "Enable experimental OpenCASCADE B-Rep support." OFF)
+option(ENABLE_OPENCASCADE "Enable experimental OpenCASCADE B-Rep support." OFF)
 option(CMAKE_REQUIRE_FIND_PACKAGE_Lib3MF "Require Lib3MF." ON)
 option(ALLOW_BUNDLED_HIDAPI "Allow usage of bundled HIDAPI library (Windows only)." OFF)
 option(ENABLE_PYTHON "Enable experimental Python Interpreter" OFF)
@@ -604,14 +604,17 @@ else()
 	  "(e.g. Minkowski).")
 endif(ENABLE_CGAL)
 
-if(ENABLE_OPENCSCADE)
+if(ENABLE_OPENCASCADE)
+  # OCCT's DataExchange config transitively references ApplicationFramework (OCAF) and
+  # Visualization targets, so both must be requested even though no toolkit from them is
+  # linked below. That transitive pull is a real footprint cost of STEP/IGES support.
   find_package(OpenCASCADE REQUIRED COMPONENTS FoundationClasses ModelingData ModelingAlgorithms
     Visualization ApplicationFramework DataExchange)
   if(OpenCASCADE_MAJOR_VERSION LESS 7 OR
      (OpenCASCADE_MAJOR_VERSION EQUAL 7 AND OpenCASCADE_MINOR_VERSION LESS 9))
     message(FATAL_ERROR "OpenCASCADE 7.9 or newer is required")
   endif()
-  target_compile_definitions(OpenSCADLibInternal PUBLIC ENABLE_OPENCSCADE)
+  target_compile_definitions(OpenSCADLibInternal PUBLIC ENABLE_OPENCASCADE)
   target_link_libraries(OpenSCADLibInternal PUBLIC TKFillet TKBool TKPrim TKMesh TKOffset TKHLR
     TKDESTEP TKDEIGES)
   message(STATUS "OpenCASCADE: ${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}")
@@ -1146,7 +1149,7 @@ if(ENABLE_PYTHON)
 	target_compile_definitions(OpenSCADLibInternal PUBLIC ENABLE_PYTHON)
 endif()
 
-if(ENABLE_OPENCSCADE)
+if(ENABLE_OPENCASCADE)
   list(APPEND CORE_SOURCES
     src/geometry/brep/BrepBoolean.cc
     src/geometry/brep/BrepBoolean.h

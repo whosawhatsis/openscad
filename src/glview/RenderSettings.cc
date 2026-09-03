@@ -21,7 +21,7 @@ std::optional<RenderBackend3D> renderBackend3DFromString(std::string backend)
     return RenderBackend3D::CGALBackend;
   } else if (backend == "manifold") {
     return RenderBackend3D::ManifoldBackend;
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   } else if (backend == "opencascade" || backend == "occt") {
     return RenderBackend3D::OpenCASCADEBackend;
 #endif

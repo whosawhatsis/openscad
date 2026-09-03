@@ -886,7 +886,7 @@ int openscad_main(int argc, char **argv)
     ("viewall", "adjust camera to fit object")
     ("backend", po::value<std::string>(),
       "3D rendering backend to use: 'CGAL' (old/slow), 'Manifold' (new/fast) [default]"
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
       ", or 'OpenCASCADE' (experimental B-Rep)"
 #endif
     )

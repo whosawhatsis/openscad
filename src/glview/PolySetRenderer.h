@@ -37,7 +37,7 @@ public:
 private:
   void addGeometry(const std::shared_ptr<const class Geometry>& geom);
   void createPolySetStates(const ShaderUtils::ShaderInfo *shaderinfo);
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   void createBrepStates(const ShaderUtils::ShaderInfo *shaderinfo);
 #endif
   void createPolygonStates();
@@ -48,13 +48,13 @@ private:
   void drawPolygons() const;
 
   std::vector<std::shared_ptr<const class PolySet>> polysets_;
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   std::vector<std::shared_ptr<const class BrepGeometry>> breps_;
 #endif
   std::vector<std::pair<std::shared_ptr<const Polygon2d>, std::shared_ptr<const PolySet>>> polygons_;
 
   std::vector<VertexStateContainer> polyset_vertex_state_containers_;
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   std::vector<VertexStateContainer> brep_surface_vertex_state_containers_;
   std::vector<VertexStateContainer> brep_edge_vertex_state_containers_;
 #endif

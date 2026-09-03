@@ -5,7 +5,7 @@
 
 #include "core/Tree.h"
 #include "geometry/Geometry.h"
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 #include "geometry/brep/BrepGeometry.h"
 #endif
 #include "geometry/linalg.h"
@@ -59,7 +59,7 @@ bool export_png(const std::shared_ptr<const Geometry>& root_geom, const ViewOpti
   // Choose PolySetRenderer for PolySet and Polygon2d, and for Manifold since we
   // know that all geometries are convertible to PolySet.
   if (RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
       std::dynamic_pointer_cast<const BrepGeometry>(root_geom) ||
 #endif
       std::dynamic_pointer_cast<const PolySet>(root_geom) ||

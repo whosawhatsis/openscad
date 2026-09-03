@@ -81,4 +81,9 @@ public:
 
 private:
   std::shared_ptr<void> shape_;
+  // Tessellation deep-copies the shape and re-meshes from scratch, so a redraw at unchanged
+  // settings would pay for it again. Keyed on both deflections; copies share the memo.
+  mutable std::shared_ptr<const BrepMeshData> mesh_;
+  mutable double meshLinearDeflection_{0.0};
+  mutable double meshAngularDeflection_{0.0};
 };

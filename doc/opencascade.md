@@ -1,6 +1,6 @@
 # Experimental OpenCASCADE backend
 
-Build with `ENABLE_OPENCSCADE=ON`, `EXPERIMENTAL=1`, and `SNAPSHOT=1` to enable
+Build with `ENABLE_OPENCASCADE=ON`, `EXPERIMENTAL=1`, and `SNAPSHOT=1` to enable
 the optional backend. Select OpenCASCADE as the 3D rendering backend in
 Preferences, or use `--backend=opencascade` on the command line. Builds without
 OpenCASCADE do not offer the option. The View menu's CAD Shaded option uses

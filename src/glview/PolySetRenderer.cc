@@ -59,7 +59,7 @@
 #ifdef ENABLE_MANIFOLD
 #include "geometry/manifold/ManifoldGeometry.h"
 #endif
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 #include "geometry/brep/BrepGeometry.h"
 #endif
 
@@ -83,7 +83,7 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
     this->polysets_.push_back(PolySetUtils::tessellate_faces(*ps));
   } else if (const auto poly = std::dynamic_pointer_cast<const Polygon2d>(geom)) {
     this->polygons_.emplace_back(poly, std::shared_ptr<const PolySet>(poly->tessellate()));
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   } else if (const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(geom)) {
     this->breps_.push_back(brep);
 #endif
@@ -110,7 +110,7 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
   }
 }
 
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 void PolySetRenderer::createBrepStates(const ShaderUtils::ShaderInfo *shaderinfo)
 {
   std::vector<BrepMeshData> meshes;
@@ -301,7 +301,7 @@ void PolySetRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
       createPolygonStates();
     }
   }
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   if (brep_surface_vertex_state_containers_.empty() && !breps_.empty()) createBrepStates(shaderinfo);
 #endif
 }
@@ -309,7 +309,7 @@ void PolySetRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
 void PolySetRenderer::draw(bool showedges, const ShaderUtils::ShaderInfo *shaderinfo) const
 {
   drawPolySets(showedges, shaderinfo);
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   GLint previousShadeModel;
   GL_CHECKD(glGetIntegerv(GL_SHADE_MODEL, &previousShadeModel));
   GL_CHECKD(glShadeModel(brep_smooth_shading_ ? GL_SMOOTH : GL_FLAT));
@@ -388,7 +388,7 @@ BoundingBox PolySetRenderer::getBoundingBox() const
   for (const auto& ps : this->polysets_) {
     bbox.extend(ps->getBoundingBox());
   }
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   for (const auto& brep : this->breps_) bbox.extend(brep->getBoundingBox());
 #endif
   for (const auto& [polygon, polyset] : this->polygons_) {

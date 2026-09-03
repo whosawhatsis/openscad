@@ -841,7 +841,7 @@ add_cmdline_test(echo         OPENSCAD SUFFIX echo FILES ${TEST_SCAD_DIR}/issues
 
 add_cmdline_test(dump           OPENSCAD FILES ${FEATURES_2D_FILES} ${FEATURES_3D_FILES} ${DEPRECATED_3D_FILES} ${MISC_FILES} SUFFIX csg ARGS)
 add_cmdline_test(dump-csg-fillet OPENSCAD FILES ${TEST_SCAD_DIR}/misc/csg-fillet.scad SUFFIX csg ARGS)
-if(ENABLE_OPENCSCADE)
+if(ENABLE_OPENCASCADE)
   add_test(NAME preview-png-brep-fillet
     COMMAND $<TARGET_FILE:OpenSCADExe> --backend=opencascade
       -o ${CMAKE_CURRENT_BINARY_DIR}/brep-fillet-preview.png

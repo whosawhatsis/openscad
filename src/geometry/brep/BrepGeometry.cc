@@ -121,7 +121,7 @@ BrepGeometry BrepGeometry::revolve(double angle, double start, int segments) con
 
 size_t BrepGeometry::memsize() const
 {
-  return sizeof(*this);
+  return sizeof(*this) + brepMemsize(shape_);
 }
 
 BrepGeometry BrepGeometry::taper(double height, double scaleX, double scaleY, double twist,
@@ -167,6 +167,7 @@ void BrepGeometry::transform(const Transform3d& matrix)
     for (int column = 0; column < 4; ++column) values[row * 4 + column] = matrix(row, column);
   }
   shape_ = brepTransform(shape_, values);
+  mesh_.reset();
 }
 
 BrepGeometry BrepGeometry::difference(const BrepGeometry& tool, double filletRadius,
@@ -217,5 +218,12 @@ std::unique_ptr<PolySet> BrepGeometry::toPolySet(double linearDeflection, double
 BrepMeshData BrepGeometry::toDisplayMesh(double linearDeflection, double angularDeflection) const
 {
   if (isEmpty()) return {};
-  return brepMesh(shape_, linearDeflection, angularDeflection);
+  if (mesh_ && meshLinearDeflection_ == linearDeflection && meshAngularDeflection_ == angularDeflection)
+    return *mesh_;
+  auto mesh =
+    std::make_shared<const BrepMeshData>(brepMesh(shape_, linearDeflection, angularDeflection));
+  mesh_ = mesh;
+  meshLinearDeflection_ = linearDeflection;
+  meshAngularDeflection_ = angularDeflection;
+  return *mesh;
 }

@@ -1,4 +1,4 @@
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 
 #include <algorithm>
 #include <cmath>
@@ -14,6 +14,7 @@
 #include "geometry/brep/BrepGeometry.h"
 #include "geometry/brep/BrepGeometryData.h"
 #include "geometry/GeometryEvaluator.h"
+#include "geometry/GeometryCache.h"
 #include "glview/RenderSettings.h"
 #include "core/CsgOpNode.h"
 #include "core/CurveDiscretizer.h"
@@ -2019,6 +2020,7 @@ TEST_CASE("B-Rep twisted extrusion follows the profile throughout its height", "
   auto extrusion = std::make_shared<LinearExtrudeNode>(&inst, CurveDiscretizer(6.0));
   extrusion->height = Vector3d(0, 0, 20);
   extrusion->twist = 360;
+  extrusion->has_twist = true;
   auto circle = std::make_shared<CircleNode>(
     &inst, CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
   circle->r = 0.4;
@@ -2042,6 +2044,7 @@ TEST_CASE("B-Rep twisted extrusion follows the profile throughout its height", "
   SECTION("negative multiple turns")
   {
     extrusion->twist = -720;
+    extrusion->has_twist = true;
   }
   SECTION("twist combined with one-axis collapse")
   {
@@ -2131,6 +2134,7 @@ TEST_CASE("B-Rep one-axis collapse retains a closed solid", "[brep]")
   SECTION("twisted collapse")
   {
     extrusion->twist = 90;
+    extrusion->has_twist = true;
   }
   const auto previousBackend = RenderSettings::inst()->backend3D;
   RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
@@ -2172,6 +2176,7 @@ TEST_CASE("Invalid B-Rep extrusion parameters do not silently become meshes", "[
   SECTION("excessive explicit slices")
   {
     extrusion->twist = 90;
+    extrusion->has_twist = true;
     extrusion->has_slices = true;
     extrusion->slices = 4097;
   }
@@ -2183,6 +2188,140 @@ TEST_CASE("Invalid B-Rep extrusion parameters do not silently become meshes", "[
   RenderSettings::inst()->backend3D = previousBackend;
   REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(result));
   REQUIRE(result->isEmpty());
+}
+
+TEST_CASE("B-Rep operations on a null shape do not dereference it", "[brep]")
+{
+  // Every unsupported evaluator branch yields BrepGeometry(nullptr), so the whole
+  // read-only surface has to tolerate one instead of dereferencing a null shared_ptr.
+  const BrepGeometry empty(nullptr);
+  CHECK(empty.isEmpty());
+  CHECK(empty.surfaceCount(BrepSurfaceType::Plane) == 0);
+  CHECK(empty.getBoundingBox().isEmpty());
+  CHECK(empty.toDisplayMesh(0.1, 0.2).triangles.empty());
+  CHECK(empty.toPolySet(0.1, 0.2)->isEmpty());
+  CHECK(empty.memsize() > 0);
+
+  BrepGeometry moved(nullptr);
+  auto placement = Transform3d::Identity();
+  placement.translate(Vector3d(1, 2, 3));
+  moved.transform(placement);
+  CHECK(moved.isEmpty());
+}
+
+TEST_CASE("OpenCASCADE failures surface as std::exception", "[brep]")
+{
+  // Standard_Failure derives from Standard_Transient, not std::exception, so an
+  // untranslated OCCT throw unwinds straight past every catch site in the evaluator.
+  CHECK_THROWS_AS(BrepGeometry::cube(0.0, 1.0, 1.0), std::exception);
+  CHECK_THROWS_AS(BrepGeometry::cylinder(0.0, 1.0), std::exception);
+  CHECK_THROWS_AS(BrepGeometry::sphere(-1.0), std::exception);
+  CHECK_THROWS_AS(BrepGeometry::cone(0.0, 0.0, 1.0), std::exception);
+  CHECK_THROWS_AS(BrepGeometry::prism({{0.0, 0.0}, {1.0, 0.0}}, 1.0), std::exception);
+  CHECK_THROWS_AS(BrepGeometry::cylinder(1.0, 1.0).toDisplayMesh(0.0, 0.0), std::exception);
+}
+
+TEST_CASE("BrepGeometry reports a size the geometry cache can budget", "[brep]")
+{
+  // GeometryCache sizes its LRU by memsize(); a constant makes every B-Rep look free.
+  const auto sphere = BrepGeometry::sphere(10.0);       // one face
+  const auto cube = BrepGeometry::cube(1.0, 1.0, 1.0);  // six faces
+  CHECK(sphere.memsize() > sizeof(BrepGeometry));
+  CHECK(cube.memsize() > sphere.memsize());
+  CHECK(BrepGeometry(nullptr).memsize() > 0);
+}
+
+TEST_CASE("B-Rep evaluation reuses cached subtrees", "[brep]")
+{
+  // Without per-child caching, createBrepGeometry rebuilds every descendant once per
+  // ancestor: quadratic in tree size on each F5/F6, and no reuse at all between edits.
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  ModuleInstantiation differenceInstantiation("difference");
+  ModuleInstantiation cubeInstantiation("cube");
+  ModuleInstantiation transformInstantiation("translate");
+  ModuleInstantiation cylinderInstantiation("cylinder");
+
+  auto difference = std::make_shared<CsgOpNode>(&differenceInstantiation, OpenSCADOperator::DIFFERENCE);
+  auto cube = std::make_shared<CubeNode>(&cubeInstantiation);
+  cube->x = cube->y = 20.0;
+  cube->z = 10.0;
+  auto transform = std::make_shared<TransformNode>(&transformInstantiation, "translate");
+  transform->matrix.translate(Vector3d(10.0, 10.0, -1.0));
+  auto cylinder = std::make_shared<CylinderNode>(
+    &cylinderInstantiation,
+    CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  cylinder->r1 = cylinder->r2 = 4.0;
+  cylinder->h = 12.0;
+  transform->children.push_back(cylinder);
+  difference->children.push_back(cube);
+  difference->children.push_back(transform);
+
+  Tree tree(difference);
+  GeometryCache::instance()->clear();
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*difference, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(result));
+
+  // Exact geometry is keyed separately from the mesh kernels' output for the same tree.
+  const auto key = [&tree](const AbstractNode& node) { return "occt:" + tree.getIdString(node); };
+  CHECK(GeometryCache::instance()->contains(key(*difference)));
+  CHECK(GeometryCache::instance()->contains(key(*cube)));
+  CHECK(GeometryCache::instance()->contains(key(*transform)));
+}
+
+TEST_CASE("B-Rep display meshes are memoized per deflection", "[brep]")
+{
+  // A memo keyed on anything less than both deflections would hand back a stale mesh.
+  const auto cylinder = BrepGeometry::cylinder(4.0, 10.0);
+  const auto coarse = cylinder.toDisplayMesh(1.0, 0.6);
+  const auto again = cylinder.toDisplayMesh(1.0, 0.6);
+  const auto fineLinear = cylinder.toDisplayMesh(0.01, 0.6);
+  const auto fineAngular = cylinder.toDisplayMesh(1.0, 0.05);
+
+  CHECK(again.triangles.size() == coarse.triangles.size());
+  CHECK(again.vertices == coarse.vertices);
+  CHECK(fineLinear.triangles.size() > coarse.triangles.size());
+  CHECK(fineAngular.triangles.size() > coarse.triangles.size());
+  // The memo must not have poisoned the original parameters either.
+  CHECK(cylinder.toDisplayMesh(1.0, 0.6).vertices == coarse.vertices);
+}
+
+TEST_CASE("Backends do not share cached geometry for the same tree", "[brep]")
+{
+  // The node dump keys the geometry cache, and it does not mention the render backend, so
+  // the same tree evaluated under two kernels would otherwise collide on one entry.
+  ModuleInstantiation differenceInstantiation("difference");
+  ModuleInstantiation cubeInstantiation("cube");
+  ModuleInstantiation cylinderInstantiation("cylinder");
+  auto difference = std::make_shared<CsgOpNode>(&differenceInstantiation, OpenSCADOperator::DIFFERENCE);
+  auto cube = std::make_shared<CubeNode>(&cubeInstantiation);
+  cube->x = cube->y = cube->z = 10.0;
+  auto cylinder = std::make_shared<CylinderNode>(
+    &cylinderInstantiation,
+    CurveDiscretizer([](const char *) -> std::optional<double> { return std::nullopt; }));
+  cylinder->r1 = cylinder->r2 = 2.0;
+  cylinder->h = 10.0;
+  difference->children = {cube, cylinder};
+
+  const auto previousBackend = RenderSettings::inst()->backend3D;
+  Tree tree(difference);
+  GeometryCache::instance()->clear();
+
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  GeometryEvaluator occtEvaluator(tree);
+  const auto exact = occtEvaluator.evaluateGeometry(*difference, true);
+  REQUIRE(std::dynamic_pointer_cast<const BrepGeometry>(exact));
+
+  RenderSettings::inst()->backend3D = RenderBackend3D::ManifoldBackend;
+  GeometryEvaluator meshEvaluator(tree);
+  const auto mesh = meshEvaluator.evaluateGeometry(*difference, true);
+  RenderSettings::inst()->backend3D = previousBackend;
+
+  REQUIRE(mesh);
+  REQUIRE_FALSE(mesh->isEmpty());
+  CHECK_FALSE(std::dynamic_pointer_cast<const BrepGeometry>(mesh));
 }
 
 #endif

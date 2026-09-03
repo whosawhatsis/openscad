@@ -15,7 +15,7 @@ class GeometryList;
 class GeometryVisitor;
 class Polygon2d;
 class PolySet;
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 class BrepGeometry;
 #endif
 #ifdef ENABLE_MANIFOLD
@@ -73,7 +73,7 @@ public:
 #ifdef ENABLE_MANIFOLD
   virtual void visit(const ManifoldGeometry& node) = 0;
 #endif
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   virtual void visit(const BrepGeometry&) {}
 #endif
   virtual ~GeometryVisitor() = default;

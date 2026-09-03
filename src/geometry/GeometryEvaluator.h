@@ -104,6 +104,16 @@ private:
     std::shared_ptr<const Geometry> const_pointer;
   };
 
+#ifdef ENABLE_OPENCASCADE
+  // Exact OCCT construction for the supported node subset. The public entry point memoizes
+  // subtrees through the geometry cache; the Uncached variant is the actual recursion.
+  std::unique_ptr<class BrepGeometry> createBrepGeometry(
+    const AbstractNode& node, struct BrepFilletDiagnostics *diagnostics = nullptr,
+    double extrusionHeight = 0.0);
+  std::unique_ptr<class BrepGeometry> createBrepGeometryUncached(
+    const AbstractNode& node, struct BrepFilletDiagnostics *diagnostics, double extrusionHeight);
+#endif
+  std::string cacheKey(const AbstractNode& node) const;
   void smartCacheInsert(const AbstractNode& node, const std::shared_ptr<const Geometry>& geom);
   std::shared_ptr<const Geometry> smartCacheGet(const AbstractNode& node, bool preferNef);
   bool isSmartCached(const AbstractNode& node);

@@ -241,7 +241,7 @@ SettingsEntryBool Settings::tlsSkipVerify("network", "tlsSkipVerify", false);
 SettingsEntryEnum<std::string> Settings::renderBackend3D("advanced", "renderBackend3D",
                                                          {{"CGAL", "cgal", "CGAL (old/slow)"},
                                                           {"Manifold", "manifold", "Manifold (new/fast)"}
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
                                                           ,
                                                           {"OpenCASCADE", "opencascade",
                                                            "OpenCASCADE (experimental B-Rep)"}

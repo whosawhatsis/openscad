@@ -110,7 +110,7 @@
 #include "geometry/Geometry.h"
 #include "geometry/GeometryCache.h"
 #include "geometry/GeometryEvaluator.h"
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 #include "geometry/brep/BrepGeometry.h"
 #endif
 #include "glview/PolySetRenderer.h"
@@ -512,7 +512,7 @@ void MainWindow::loadViewSettings()
   if (settings.value("view/showEdges").toBool()) {
     viewActionShowEdges->setChecked(true);
   }
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   viewActionCadShaded->setChecked(settings.value("view/cadShaded", true).toBool());
 #else
   viewActionCadShaded->setVisible(false);
@@ -1056,7 +1056,7 @@ void MainWindow::compileCSG()
     connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
 
     GeometryEvaluator geomevaluator(this->tree);
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
     if (useBackendPreview(RenderSettings::inst()->backend3D)) {
       if (!isClosing) progress_report_prep(this->rootNode, report_func, this);
       else return;
@@ -2061,7 +2061,7 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
     // Choose PolySetRenderer for PolySet and Polygon2d, and for Manifold since we
     // know that all geometries are convertible to PolySet.
     if (RenderSettings::inst()->backend3D == RenderBackend3D::ManifoldBackend ||
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
         std::dynamic_pointer_cast<const BrepGeometry>(this->rootGeom) ||
 #endif
         std::dynamic_pointer_cast<const PolySet>(this->rootGeom) ||
@@ -2071,7 +2071,7 @@ void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_ge
       this->geomRenderer = std::make_shared<CGALRenderer>(this->rootGeom);
     }
 #endif
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
     if (auto renderer = std::dynamic_pointer_cast<PolySetRenderer>(this->geomRenderer)) {
       renderer->setBrepSmoothShading(viewActionCadShaded->isChecked());
     }

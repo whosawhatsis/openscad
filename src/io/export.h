@@ -314,7 +314,7 @@ void export_3mf(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
                 const ExportInfo& exportInfo);
 void export_obj(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
 void export_off(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 bool export_step(const std::shared_ptr<const Geometry>& geom, const std::string& filename);
 bool export_iges(const std::shared_ptr<const Geometry>& geom, const std::string& filename);
 #endif

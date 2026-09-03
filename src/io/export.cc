@@ -96,7 +96,7 @@ Containers& containers()
     add_item(*containers, {FileFormat::PNG, "png", "png", "PNG"});
     add_item(*containers, {FileFormat::PDF, "pdf", "pdf", "PDF"});
     add_item(*containers, {FileFormat::POV, "pov", "pov", "POV"});
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
     add_item(*containers, {FileFormat::STEP, "step", "step", "STEP"});
     add_item(*containers, {FileFormat::IGES, "iges", "iges", "IGES"});
     containers->identifierToInfo["igs"] = containers->identifierToInfo["iges"];
@@ -172,9 +172,8 @@ bool is3D(FileFormat format)
 {
   return format == FileFormat::ASCII_STL || format == FileFormat::BINARY_STL ||
          format == FileFormat::OBJ || format == FileFormat::OFF || format == FileFormat::WRL ||
-         format == FileFormat::_3MF || format == FileFormat::NEFDBG ||
-         format == FileFormat::NEF3 || format == FileFormat::POV || format == FileFormat::STEP ||
-         format == FileFormat::IGES;
+         format == FileFormat::_3MF || format == FileFormat::NEFDBG || format == FileFormat::NEF3 ||
+         format == FileFormat::POV || format == FileFormat::STEP || format == FileFormat::IGES;
 }
 
 bool is2D(FileFormat format)
@@ -246,7 +245,7 @@ bool exportFileStdOut(const std::shared_ptr<const Geometry>& root_geom, const Ex
 bool exportFileByName(const std::shared_ptr<const Geometry>& root_geom, const std::string& filename,
                       const ExportInfo& exportInfo)
 {
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   if (exportInfo.format == FileFormat::STEP) return export_step(root_geom, filename);
   if (exportInfo.format == FileFormat::IGES) return export_iges(root_geom, filename);
 #endif

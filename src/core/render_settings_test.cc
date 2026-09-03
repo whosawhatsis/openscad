@@ -4,7 +4,7 @@
 
 TEST_CASE("OpenCASCADE backend availability follows the build", "[render-settings]")
 {
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   REQUIRE(renderBackend3DFromString("opencascade") == RenderBackend3D::OpenCASCADEBackend);
 #else
   REQUIRE_FALSE(renderBackend3DFromString("opencascade"));

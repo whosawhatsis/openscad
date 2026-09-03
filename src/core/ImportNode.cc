@@ -29,7 +29,7 @@
 #include "geometry/Geometry.h"
 #include "geometry/PolySet.h"
 #include "io/import.h"
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 #include "geometry/brep/BrepGeometry.h"
 #include "geometry/brep/BrepGeometryData.h"
 #include "glview/RenderSettings.h"
@@ -42,7 +42,7 @@
 
 #ifdef ENABLE_MANIFOLD
 #include "glview/RenderSettings.h"
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
 #include "geometry/brep/BrepGeometry.h"
 #endif
 #endif
@@ -210,7 +210,7 @@ std::unique_ptr<const Geometry> ImportNode::createGeometry() const
   std::unique_ptr<Geometry> g;
   std::vector<std::unique_ptr<PolySet>> parts;
   std::vector<std::unique_ptr<PolySet>> *separateParts = nullptr;
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   if (RenderSettings::inst()->backend3D == RenderBackend3D::OpenCASCADEBackend) separateParts = &parts;
 #endif
   auto loc = this->modinst->location();
@@ -233,7 +233,7 @@ std::unique_ptr<const Geometry> ImportNode::createGeometry() const
     g = optionally_center(import_obj(this->filename, loc), this->center);
     break;
   }
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   case ImportType::STEP:
   case ImportType::IGES: {
     try {
@@ -303,7 +303,7 @@ std::unique_ptr<const Geometry> ImportNode::createGeometry() const
     g = PolySet::createEmpty();
   }
 
-#ifdef ENABLE_OPENCSCADE
+#ifdef ENABLE_OPENCASCADE
   if (!parts.empty()) {
     try {
       std::vector<BrepGeometry> objects;
