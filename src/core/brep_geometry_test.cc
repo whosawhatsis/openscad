@@ -2324,4 +2324,110 @@ TEST_CASE("Backends do not share cached geometry for the same tree", "[brep]")
   CHECK_FALSE(std::dynamic_pointer_cast<const BrepGeometry>(mesh));
 }
 
+namespace {
+
+// Probe occupancy the way the other native-construction tests do: a small cube intersected
+// with the result is nonempty exactly when that point is inside the solid.
+bool brepContains(const BrepGeometry& solid, const Vector3d& point)
+{
+  auto probe = BrepGeometry::cube(0.02, 0.02, 0.02);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(point - Vector3d(0.01, 0.01, 0.01));
+  probe.transform(placement);
+  BrepFilletDiagnostics diagnostics;
+  return !BrepGeometry::boolean({solid, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty();
+}
+
+BrepGeometry sphereAt(double radius, const Vector3d& center)
+{
+  auto ball = BrepGeometry::sphere(radius);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(center);
+  ball.transform(placement);
+  return ball;
+}
+
+}  // namespace
+
+TEST_CASE("B-Rep hull spans three spheres exactly", "[brep]")
+{
+  // Three balls whose centres are necessarily coplanar. The centroid lies outside every
+  // pairwise envelope, so a construction that only bridges pairs leaves a hole there.
+  const Vector3d a(0, 0, 0), b(6, 0, 0), c(3, 5.196152422706632, 0);
+  const auto hull = BrepGeometry::hull({sphereAt(1, a), sphereAt(1, b), sphereAt(1, c)});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Sphere) >= 3);
+
+  const Vector3d centroid = (a + b + c) / 3.0;
+  CHECK(brepContains(hull, centroid));
+  CHECK(brepContains(hull, centroid + Vector3d(0, 0, 0.9)));
+  CHECK_FALSE(brepContains(hull, centroid + Vector3d(0, 0, 1.4)));
+  CHECK_FALSE(brepContains(hull, Vector3d(3, -1.5, 0)));
+
+  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(-1).margin(1e-5));
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(7).margin(1e-5));
+  CHECK(hull.getBoundingBox().min().z() == Catch::Approx(-1).margin(1e-5));
+  CHECK(hull.getBoundingBox().max().z() == Catch::Approx(1).margin(1e-5));
+}
+
+TEST_CASE("B-Rep hull spans three spheres of different radii", "[brep]")
+{
+  const auto hull = BrepGeometry::hull(
+    {sphereAt(2, Vector3d(0, 0, 0)), sphereAt(1, Vector3d(8, 0, 0)), sphereAt(0.5, Vector3d(4, 6, 0))});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(brepContains(hull, Vector3d(4, 2, 0)));
+  CHECK_FALSE(brepContains(hull, Vector3d(4, -3, 0)));
+  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(-2).margin(1e-5));
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(9).margin(1e-5));
+}
+
+TEST_CASE("B-Rep hull spans four spheres out of plane", "[brep]")
+{
+  const auto hull = BrepGeometry::hull({sphereAt(1, Vector3d(0, 0, 0)), sphereAt(1, Vector3d(6, 0, 0)),
+                                        sphereAt(1, Vector3d(3, 5.196152422706632, 0)),
+                                        sphereAt(1, Vector3d(3, 1.732050807568877, 4.898979485566356))});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Sphere) >= 4);
+  CHECK(brepContains(hull, Vector3d(3, 1.732050807568877, 1.224744871391589)));
+  CHECK_FALSE(brepContains(hull, Vector3d(3, 1.732050807568877, 7.0)));
+}
+
+TEST_CASE("B-Rep hull absorbs a contained sphere", "[brep]")
+{
+  const auto hull = BrepGeometry::hull(
+    {sphereAt(5, Vector3d(0, 0, 0)), sphereAt(1, Vector3d(1, 0, 0)), sphereAt(1, Vector3d(0, 1, 0))});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(5).margin(1e-5));
+  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(-5).margin(1e-5));
+}
+
+TEST_CASE("GeometryEvaluator hulls more than two spheres", "[brep]")
+{
+  ModuleInstantiation inst("hull");
+  const CurveDiscretizer smooth([](const char *) -> std::optional<double> { return std::nullopt; });
+  auto hull = std::make_shared<CgalAdvNode>(&inst, CgalAdvType::HULL);
+  for (const auto& offset : {Vector3d(0, 0, 0), Vector3d(6, 0, 0), Vector3d(3, 5, 0)}) {
+    auto ball = std::make_shared<SphereNode>(&inst, smooth);
+    ball->r = 1;
+    auto translate = std::make_shared<TransformNode>(&inst, "translate");
+    translate->matrix.translate(offset);
+    translate->children = {ball};
+    hull->children.push_back(translate);
+  }
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(hull);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*hull, true);
+  RenderSettings::inst()->backend3D = previous;
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->surfaceCount(BrepSurfaceType::Sphere) >= 3);
+  CHECK(brep->getBoundingBox().max().y() == Catch::Approx(6).margin(1e-5));
+}
+
 #endif

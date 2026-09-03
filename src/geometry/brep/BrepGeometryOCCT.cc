@@ -630,28 +630,122 @@ std::optional<gp_Cylinder> fullCylinder(const std::shared_ptr<void>& shape)
   return planes == 2 ? cylinder : std::nullopt;
 }
 
+// The convex hull of a ball is exactly representable, and so is the hull of any set of them.
+// Its boundary consists of spherical caps, ruled patches tangent to a pair, and flat facets
+// tangent to a triple, so
+//
+//     conv(U Bi) = U Bi  U  U(pairs) tangentEnvelope  U  conv(centres and tangent points)
+//
+// Bridging pairs alone is not enough: the region between three balls, near their centroid,
+// lies in no pairwise envelope. Nor are triples enough -- four balls at the corners of a
+// tetrahedron leave its centre outside every triple's slab, which is what the core polytope
+// covers. The core's own facets are the flat parts of the hull boundary, and everything
+// between it and that boundary is a cap or a pair envelope.
+std::optional<gp_Sphere> ballOf(const std::shared_ptr<void>& shape)
+{
+  if (brepIsEmpty(shape)) return {};
+  return fullSphere(shapeFrom(shape));
+}
+
+// The tangent envelope between two balls: a cylinder for equal radii, a cone otherwise.
+// Empty when one ball already contains the other and the pair contributes nothing.
+std::optional<TopoDS_Shape> tangentEnvelope(const gp_Sphere& first, const gp_Sphere& second)
+{
+  gp_Vec axis(first.Location(), second.Location());
+  const double distance = axis.Magnitude(), r1 = first.Radius(), r2 = second.Radius();
+  if (distance <= std::abs(r2 - r1) + Precision::Confusion()) return {};
+  axis.Normalize();
+  const double slope = (r2 - r1) / distance, radial = std::sqrt(1 - slope * slope);
+  const gp_Ax2 placement(first.Location().Translated(axis * (-slope * r1)), gp_Dir(axis));
+  const double height = distance * radial * radial;
+  if (height <= Precision::Confusion()) return {};
+  return r1 == r2 ? BRepPrimAPI_MakeCylinder(placement, r1, height).Shape()
+                  : BRepPrimAPI_MakeCone(placement, r1 * radial, r2 * radial, height).Shape();
+}
+
+// The six points where the two planes tangent to all three balls touch them. Empty when the
+// centres are collinear, or when no plane touches all three; the pairwise envelopes then
+// already cover everything the triple contributes.
+std::vector<gp_Pnt> triTangentPoints(const gp_Sphere& a, const gp_Sphere& b, const gp_Sphere& c)
+{
+  const gp_Vec u(a.Location(), b.Location()), v(a.Location(), c.Location());
+  const gp_Vec w = u.Crossed(v);
+  if (w.Magnitude() <= Precision::Confusion()) return {};  // collinear centres
+  // Solve n.u = r_a - r_b, n.v = r_a - r_c for the component of n in the plane of the centres.
+  const double uu = u.Dot(u), vv = v.Dot(v), uv = u.Dot(v);
+  const double determinant = uu * vv - uv * uv;
+  if (std::abs(determinant) <= Precision::Confusion()) return {};
+  const double du = a.Radius() - b.Radius(), dv = a.Radius() - c.Radius();
+  const double alpha = (du * vv - dv * uv) / determinant;
+  const double beta = (dv * uu - du * uv) / determinant;
+  const gp_Vec inPlane = u * alpha + v * beta;
+  const double remainder = 1.0 - inPlane.Dot(inPlane);
+  if (remainder <= Precision::Confusion()) return {};  // no plane touches all three
+  const gp_Vec offAxis = gp_Vec(gp_Dir(w)) * std::sqrt(remainder);
+
+  std::vector<gp_Pnt> tangents;
+  for (const gp_Vec& normal : {inPlane + offAxis, inPlane - offAxis})
+    for (const gp_Sphere& ball : {a, b, c})
+      tangents.emplace_back(ball.Location().XYZ() + (normal * ball.Radius()).XYZ());
+  return tangents;
+}
+
+std::shared_ptr<void> ballHull(std::vector<gp_Sphere> balls,
+                               const std::vector<std::shared_ptr<void>>& operands)
+{
+  // Drop balls swallowed by another one so they contribute no degenerate pieces.
+  std::vector<size_t> kept;
+  for (size_t i = 0; i < balls.size(); ++i) {
+    bool absorbed = false;
+    for (size_t j = 0; j < balls.size() && !absorbed; ++j) {
+      if (i == j) continue;
+      const double distance = balls[i].Location().Distance(balls[j].Location());
+      const bool inside = distance + balls[i].Radius() <= balls[j].Radius() + Precision::Confusion();
+      // Identical balls would otherwise absorb each other; keep the first.
+      absorbed = inside && (balls[j].Radius() > balls[i].Radius() + Precision::Confusion() || j < i);
+    }
+    if (!absorbed) kept.push_back(i);
+  }
+  if (kept.size() == 1) return operands[kept.front()];
+
+  std::vector<std::shared_ptr<void>> parts;
+  std::vector<gp_Pnt> core;
+  for (const size_t i : kept) {
+    parts.push_back(operands[i]);
+    core.push_back(balls[i].Location());
+  }
+  for (size_t i = 0; i < kept.size(); ++i) {
+    for (size_t j = i + 1; j < kept.size(); ++j) {
+      if (const auto envelope = tangentEnvelope(balls[kept[i]], balls[kept[j]]))
+        parts.push_back(std::make_shared<TopoDS_Shape>(*envelope));
+      for (size_t k = j + 1; k < kept.size(); ++k) {
+        const auto tangents = triTangentPoints(balls[kept[i]], balls[kept[j]], balls[kept[k]]);
+        core.insert(core.end(), tangents.begin(), tangents.end());
+      }
+    }
+  }
+  // Fewer than four independent points means the pair envelopes already span everything.
+  if (auto polytope = pointHull(core)) parts.push_back(std::move(polytope));
+  auto result = brepBoolean(parts, BrepOperation::Union, 0).shape;
+  if (brepIsEmpty(result) || !BRepCheck_Analyzer(shapeFrom(result)).IsValid())
+    throw std::runtime_error("B-Rep sphere hull is invalid");
+  return result;
+}
+
 }  // namespace
 
 std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operands)
 {
   try {
+    std::vector<gp_Sphere> balls;
+    for (const auto& operand : operands) {
+      const auto ball = ballOf(operand);
+      if (!ball) break;
+      balls.push_back(*ball);
+    }
+    if (!balls.empty() && balls.size() == operands.size()) return ballHull(std::move(balls), operands);
+
     if (operands.size() == 2 && !brepIsEmpty(operands[0]) && !brepIsEmpty(operands[1])) {
-      const auto first = fullSphere(shapeFrom(operands[0])), second = fullSphere(shapeFrom(operands[1]));
-      if (first && second) {
-        gp_Vec axis(first->Location(), second->Location());
-        const double distance = axis.Magnitude(), r1 = first->Radius(), r2 = second->Radius();
-        if (distance <= std::abs(r2 - r1) + Precision::Confusion()) return operands[r1 >= r2 ? 0 : 1];
-        axis.Normalize();
-        const double slope = (r2 - r1) / distance, radial = std::sqrt(1 - slope * slope);
-        const gp_Ax2 placement(first->Location().Translated(axis * (-slope * r1)), gp_Dir(axis));
-        const double height = distance * radial * radial;
-        TopoDS_Shape envelope =
-          r1 == r2 ? BRepPrimAPI_MakeCylinder(placement, r1, height).Shape()
-                   : BRepPrimAPI_MakeCone(placement, r1 * radial, r2 * radial, height).Shape();
-        return brepBoolean({operands[0], operands[1], std::make_shared<TopoDS_Shape>(envelope)},
-                           BrepOperation::Union, 0)
-          .shape;
-      }
       const auto c1 = fullCylinder(operands[0]), c2 = fullCylinder(operands[1]);
       if (c1 && c2) {
         const auto b1 = *verticalPrism(operands[0]), b2 = *verticalPrism(operands[1]);
@@ -824,6 +918,17 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
             BRepBuilderAPI_Transform(shapeFrom(bridge), placement, true).Shape());
           return brepBoolean({operands[0], operands[1], bridge}, BrepOperation::Union, 0).shape;
         }
+      }
+    }
+    // The polyhedral hull below reads authored vertices and never samples a surface, so a
+    // curved operand that reached this point is genuinely unsupported rather than mis-hulled.
+    for (const auto& operand : operands) {
+      if (brepIsEmpty(operand)) continue;
+      for (TopExp_Explorer faces(shapeFrom(operand), TopAbs_FACE); faces.More(); faces.Next()) {
+        if (BRepAdaptor_Surface(TopoDS::Face(faces.Current())).GetType() != GeomAbs_Plane)
+          throw std::runtime_error(
+            "B-Rep hull of curved solids currently supports any number of spheres, or two "
+            "cylinders sharing the Z axis direction; other curved operands are not yet supported");
       }
     }
     std::vector<gp_Pnt> points;

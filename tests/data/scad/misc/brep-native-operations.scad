@@ -14,3 +14,4 @@ translate([36,24,0]) import("../../3mf/brep-multipart.3mf");
 translate([0,36,0]) linear_extrude(3) offset(delta=1, chamfer=true) square(4);
 translate([12,36,0]) linear_extrude(3) offset(delta=1, chamfer=true) circle(4);
 translate([24,36,0]) linear_extrude(3) offset(delta=1, chamfer=true) circle(4, $fn=6);
+translate([36,36,0]) hull() { sphere(1); translate([6,0,0]) sphere(1); translate([3,5,0]) sphere(2); }
