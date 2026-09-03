@@ -104,6 +104,12 @@ void PolySet::transform(const Transform3d& mat)
 
   for (auto& v : this->vertices) v = mat * v;
 
+  // The anisotropy axis describes a direction on the surface, so it has to move
+  // with the surface. This is the one place every transform of a PolySet goes
+  // through, which is why it belongs here rather than in the transform node:
+  // resize(), mirroring and anything else that moves geometry gets it for free.
+  for (auto& f : this->finishes) f.transformAxis(mat);
+
   if (mirrored)
     for (auto& p : this->indices) {
       std::reverse(p.begin(), p.end());

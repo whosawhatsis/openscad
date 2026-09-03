@@ -353,6 +353,11 @@ void VBOBuilder::addShaderData()
     std::make_shared<AttributeData<GLubyte, 4, GL_UNSIGNED_BYTE>>());  // barycentric
   vertex_data->addAttributeData(
     std::make_shared<AttributeData<GLfloat, 4, GL_FLOAT>>());  // SurfaceFinish
+  // (axis.xyz, anisotropy). The fifth shading value would not fit the vec4
+  // above, and having paid for a second vec4 the axis rides along in the three
+  // floats that would otherwise be padding.
+  vertex_data->addAttributeData(
+    std::make_shared<AttributeData<GLfloat, 4, GL_FLOAT>>());  // anisotropy axis
 }
 
 void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t primitive_index,
@@ -396,6 +401,11 @@ void VBOBuilder::add_barycentric_attribute(size_t active_point_index, size_t pri
   addAttributeValues(*(vertex_data->attributes()[shader_attributes_index_ + MATERIAL_ATTRIB]),
                      material_finish_.roughness, material_finish_.metallic, material_finish_.reflectance,
                      material_finish_.emission);
+
+  addAttributeValues(*(vertex_data->attributes()[shader_attributes_index_ + MATERIAL_AXIS_ATTRIB]),
+                     static_cast<GLfloat>(material_finish_.axis.x()),
+                     static_cast<GLfloat>(material_finish_.axis.y()),
+                     static_cast<GLfloat>(material_finish_.axis.z()), material_finish_.anisotropy);
 }
 
 void VBOBuilder::create_triangle(const Color4f& color, const Vector3d& p0, const Vector3d& p1,

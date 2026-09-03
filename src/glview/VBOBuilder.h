@@ -19,7 +19,10 @@
 #include "Feature.h"
 #include "glview/VertexState.h"
 
-enum ShaderAttribIndex { BARYCENTRIC_ATTRIB, MATERIAL_ATTRIB };
+// Appended, never inserted: the renderer indexes the attribute vector by these
+// directly, so reordering silently shifts every interleaved offset after the
+// moved entry.
+enum ShaderAttribIndex { BARYCENTRIC_ATTRIB, MATERIAL_ATTRIB, MATERIAL_AXIS_ATTRIB };
 
 // Hash function for opengl vertex data.
 template <typename T>

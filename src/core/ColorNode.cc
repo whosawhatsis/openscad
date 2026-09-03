@@ -68,7 +68,7 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
                       // brilliance, reflection and crand were dropped when the attribute
                       // set was cut to what POV and Blender both express; leaving them
                       // declared here meant they parsed, warned nothing, and did nothing.
-                      {"bump", "metallic", "specular", "emission", "ior"});
+                      {"bump", "metallic", "anisotropy", "specular", "emission", "ior"});
   if (isMaterial && parameters["name"].type() == Value::Type::STRING) {
     const auto& name = parameters["name"].toString();
     if (Material::isValidName(name)) {
@@ -226,6 +226,30 @@ static std::shared_ptr<AbstractNode> builtin_color_impl(const ModuleInstantiatio
     *param.flag = true;
   }
 
+  // Anisotropy is deliberately not in the loop above: that loop enforces [0,1],
+  // and this is the one shading parameter whose range is [-1,1], because the
+  // sign carries the 90-degree rotation of the specular lobe rather than a
+  // magnitude. Folding it in would have silently clamped every "smeared across
+  // the layers" material to isotropic.
+  if (parameters["anisotropy"].isDefined()) {
+    const auto& value = parameters["anisotropy"];
+    if (value.type() != Value::Type::NUMBER) {
+      LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+          "%1$s() anisotropy must be a number between -1.0 and 1.0", moduleName);
+    } else {
+      double v = value.toDouble();
+      if (v < -1.0 || v > 1.0) {
+        LOG(message_group::Warning, inst->location(), parameters.documentRoot(),
+            "%1$s() anisotropy expects a number between -1.0 and 1.0. Value of %2$.1f is out of "
+            "range",
+            moduleName, v);
+        v = std::clamp(v, -1.0, 1.0);
+      }
+      node->anisotropy = v;
+      node->hasAnisotropy = true;
+    }
+  }
+
   // Surface parameters beyond roughness and metallic. Deliberately only the ones
   // POV-Ray and Blender's Principled BSDF both express, so a value written here
   // means the same thing in either renderer: specular, emission and ior.
@@ -316,6 +340,9 @@ std::string ColorNode::toString() const
   }
   if (hasMetallic) {
     attrs += STR(", metallic = ", this->metallic);
+  }
+  if (hasAnisotropy) {
+    attrs += STR(", anisotropy = ", this->anisotropy);
   }
   for (const auto& [name, value] : this->finishParams) {
     attrs += STR(", ", name, " = ", value);

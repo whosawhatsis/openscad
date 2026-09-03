@@ -1621,16 +1621,6 @@ file(GLOB_RECURSE TEST_SOURCES
   # Not GUI_TEST_SOURCES: the parts of glview that these cover are in CORE_SOURCES and build
   # headless, so their tests should run in a headless build too.
   "src/glview/*_test.cc"
-  "src/io/*_test.cc"
-  "src/glview/*_test.cc"
-  "src/io/*_test.cc"
-  "src/glview/*_test.cc"
-  "src/io/*_test.cc"
-  "src/glview/*_test.cc"
-  "src/io/*_test.cc"
-  "src/glview/*_test.cc"
-  "src/io/*_test.cc"
-  "src/glview/*_test.cc"
 )
 # Tests for sources that sit directly in src/, such as Feature.cc. Deliberately GLOB and not
 # GLOB_RECURSE: recursing from src/ would sweep up src/gui/*_test.cc and build the GUI tests into

@@ -5,6 +5,9 @@ varying vec3 vEyePosition;
 varying vec4 vColor;
 varying vec3 vBC;
 varying vec4 vMaterial;
+// Anisotropy, eye space: xyz is the surface direction the smear runs along -
+// the layer direction of a print - and w the signed strength in [-1,1].
+varying vec4 vMaterialAxis;
 uniform bool showEdges;
 
 // Screen-space reflections. The scene as drawn by a first pass, plus its depth,
@@ -40,6 +43,23 @@ float distributionGGX(float NdotH, float a)
   float a2 = a * a;
   float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
   return a2 / (PI * d * d);
+}
+
+// Anisotropic Trowbridge-Reitz, with a separate alpha along the tangent and the
+// bitangent. This is what makes a print read as a print: each deposited layer
+// is a rounded bead acting as a cylindrical lens, so reflections smear along
+// the build direction while staying crisp around it, the same signature a
+// lathed or brushed surface has.
+//
+// At at == ab this is algebraically identical to distributionGGX, because
+// T, B and N are orthonormal so TdotH^2 + BdotH^2 + NdotH^2 == 1. It is not
+// used in that case even so - see the call site.
+float distributionGGXAniso(float NdotH, float TdotH, float BdotH, float at, float ab)
+{
+  float t = TdotH / at;
+  float b = BdotH / ab;
+  float d = t * t + b * b + NdotH * NdotH;
+  return 1.0 / (PI * at * ab * d * d);
 }
 
 // Smith height-correlated visibility, which folds the 1/(4 NdotV NdotL)
@@ -224,6 +244,38 @@ void main(void)
   float reflectance = clamp(vMaterial.z, 0.0, 1.0);
   float emission = max(vMaterial.w, 0.0);
   float a = roughness * roughness;
+
+  // Anisotropy. The axis arrives as a direction in the surface, but nothing
+  // guarantees it lies exactly in the tangent plane after interpolation across
+  // a face, so project it and use what is left. Where the axis approaches the
+  // normal there is no direction on the surface to smear along - the top face
+  // of a print, where the visible texture comes from infill paths rather than
+  // from layers - so the strength fades out with the length of the projection
+  // instead of snapping to an arbitrary tangent.
+  float anisotropy = clamp(vMaterialAxis.w, -1.0, 1.0);
+  vec3 axisProjected = vMaterialAxis.xyz - normal * dot(normal, vMaterialAxis.xyz);
+  float axisLength = length(axisProjected);
+  anisotropy *= smoothstep(0.0, 0.15, axisLength);
+
+  // Split alpha into the two axes exactly as SurfaceFinish::alphaFor() does on
+  // the CPU: magnitude first, swap after, because k(-x) is not 1/k(x) and
+  // feeding the sign through would make negative anisotropy a differently
+  // shaped lobe rather than the same lobe turned 90 degrees.
+  float anisoMagnitude = abs(anisotropy);
+  float k = sqrt(1.0 - 0.9 * anisoMagnitude);
+  float alphaWide = a / k;
+  float alphaNarrow = a * k;
+  float alphaT = anisotropy < 0.0 ? alphaNarrow : alphaWide;
+  float alphaB = anisotropy < 0.0 ? alphaWide : alphaNarrow;
+
+  vec3 tangent = axisLength > 1e-4 ? axisProjected / axisLength : vec3(0.0);
+  vec3 bitangent = cross(normal, tangent);
+  // Below this the isotropic path runs instead, so that a model using no
+  // anisotropy renders bit-for-bit what it did before this existed. The two
+  // are algebraically equal at anisotropy 0, but not identical in floating
+  // point, and "every existing render shifted slightly" is not an acceptable
+  // cost for a feature nothing in that render uses.
+  bool anisotropic = anisoMagnitude > 1e-4;
   // A metal has no diffuse response and reflects its own color; a dielectric
   // keeps full diffuse over a dim, uncolored 4% reflection.
   vec3 albedo = vColor.rgb * (1.0 - metallic);
@@ -304,7 +356,16 @@ void main(void)
       vec3 radiance = gl_LightSource[i].diffuse.rgb * NdotL * 1.55;
       if (i == 0) radiance *= shadow;
 
-      specular += distributionGGX(NdotH, a) * visibilitySmith(NdotV, NdotL, a) * F * radiance;
+      // The visibility term stays isotropic, evaluated at the unsplit alpha.
+      // An anisotropic Smith term is the more correct pairing, but the
+      // difference is small next to the D lobe that carries the effect, and
+      // this keeps one less thing to get wrong; revisit if grazing angles look
+      // wrong on strongly anisotropic surfaces.
+      float distribution =
+        anisotropic ? distributionGGXAniso(NdotH, dot(tangent, halfway), dot(bitangent, halfway),
+                                           alphaT, alphaB)
+                    : distributionGGX(NdotH, a);
+      specular += distribution * visibilitySmith(NdotV, NdotL, a) * F * radiance;
       diffuse += (vec3(1.0) - F) * albedo * (1.0 / PI) * radiance;
     }
   }

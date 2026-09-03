@@ -142,6 +142,7 @@ set(STLEXPORTSANITYTEST_PY   "${CCSD}/stlexportsanitytest.py")
 set(MULTISTLEXPORTTEST_PY    "${CCSD}/multistlexporttest.py")
 set(MATERIALRENDERTEST_PY    "${CCSD}/materialrendertest.py")
 set(SMOOTHRENDERTEST_PY      "${CCSD}/smoothrendertest.py")
+set(ANISOTROPYRENDERTEST_PY  "${CCSD}/anisotropyrendertest.py")
 set(SHADOWRENDERTEST_PY      "${CCSD}/shadowrendertest.py")
 set(SHADEDTRANSPARENCYTEST_PY "${CCSD}/shadedtransparencytest.py")
 set(SSRRENDERTEST_PY         "${CCSD}/ssrrendertest.py")
@@ -1165,6 +1166,17 @@ add_cmdline_test(material-shading       EXPERIMENTAL SCRIPT ${MATERIALRENDERTEST
 add_cmdline_test(smooth-shading         EXPERIMENTAL SCRIPT ${SMOOTHRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/smooth-shading.scad ARGS ${OPENSCAD_EXE_ARG} --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 add_cmdline_test(smooth-shading-boolean EXPERIMENTAL SCRIPT ${SMOOTHRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/smooth-shading-boolean.scad ARGS ${OPENSCAD_EXE_ARG} --render --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 add_cmdline_test(material-shading-render EXPERIMENTAL SCRIPT ${MATERIALRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --render --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
+# --render (F6) is required, not incidental: only the rendered path bakes
+# transforms into the PolySet, which is where the anisotropy axis is
+# transformed. F5 preview applies transforms as GL matrices instead, so the
+# axis rides the modelview and the material()-above-transform case cannot be
+# distinguished there. See the feature page for that limitation.
+add_cmdline_test(anisotropy-shading      EXPERIMENTAL SCRIPT ${ANISOTROPYRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-anisotropy-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --render --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
+# The same relationships in F5 preview. Preview reaches the shader by a wholly
+# different route -- CSGTreeEvaluator leaves whose matrices create_surface()
+# bakes into the vertices -- so the axis has to be handled there too, and this
+# is what proves the two paths agree.
+add_cmdline_test(anisotropy-shading-preview EXPERIMENTAL SCRIPT ${ANISOTROPYRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/material-anisotropy-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --view=shaded --camera=0,0,0,60,0,30,120 --imgsize=256,256)
 add_cmdline_test(ssr-shading            EXPERIMENTAL SCRIPT ${SSRRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/ssr-shading.scad ARGS ${OPENSCAD_EXE_ARG} --enable=multi-material --render --view=shaded --camera=0,0,6,72,0,25,260 --imgsize=256,256)
 add_cmdline_test(self-shadow           EXPERIMENTAL SCRIPT ${SHADOWRENDERTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/self-shadow.scad ARGS ${OPENSCAD_EXE_ARG} --render --view=shaded --camera=0,0,0,62,0,32,150 --imgsize=400,400)
 
@@ -1388,6 +1400,17 @@ list(APPEND EXPERIMENTAL_MATERIAL_BUMP_FILES
   ${TEST_SCAD_DIR}/misc/material-bump-tests.scad
 )
 add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_BUMP_FILES} ARGS --enable=multi-material)
+
+#
+# Feature 64: anisotropic (layer-lenticular) roughness on material() and color().
+# The dump is the geometry cache key, so this pins that the sign survives, that
+# out-of-range values reach it clamped, and that an unset anisotropy emits
+# nothing at all.
+#
+list(APPEND EXPERIMENTAL_MATERIAL_ANISOTROPY_FILES
+  ${TEST_SCAD_DIR}/misc/material-anisotropy-tests.scad
+)
+add_cmdline_test(dump           EXPERIMENTAL OPENSCAD SUFFIX csg  FILES ${EXPERIMENTAL_MATERIAL_ANISOTROPY_FILES} ARGS --enable=multi-material)
 
 #
 # Feature 15: parameters that were dropped must warn, not be swallowed.
