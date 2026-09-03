@@ -527,22 +527,25 @@ void GLView::paintGL()
     // Phong emits premultiplied material RGB plus an unattenuated reflected
     // highlight, so its RGB must not be multiplied by alpha a second time.
     if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    // Only the two modes this branch adds draw edges the new way. Ordinary
+    // "Show Edges" keeps the renderer-drawn wireframe it has on master: it is
+    // the default edge view for every existing model, and its exact output is
+    // pinned by eight upstream regression tests. Routing it through the
+    // screen-space feature-edge pipeline changed all of them, which is how this
+    // reached the integration branch unnoticed.
     const bool featureEdges =
-      (showedges || analysis_mode == AnalysisMode::Canny || analysis_mode == AnalysisMode::Wireframe);
+      (analysis_mode == AnalysisMode::Canny || analysis_mode == AnalysisMode::Wireframe);
     if (!featureEdges) feature_edge_error.clear();
-    if (analysis_mode != AnalysisMode::Canny && analysis_mode != AnalysisMode::Wireframe) {
-      if (featureEdges && analysis_mode == AnalysisMode::Shaded) {
-        glUseProgram(phong_shader->resource.shader_program);
-        glUniform1i(phong_shader->uniforms.at("showEdges"), GL_FALSE);
-        glUseProgram(0);
-      }
-      this->renderer->draw(featureEdges ? false : active_showedges, active_shader);
+    if (!featureEdges) {
+      this->renderer->draw(active_showedges, active_shader);
     }
     if (featureEdges) {
       try {
-        drawFeatureEdges(
-          *this, analysis_mode == AnalysisMode::Canny,
-          analysis_mode != AnalysisMode::Canny && analysis_mode != AnalysisMode::Wireframe);
+        // overlay is always false now: it existed only to composite feature
+        // edges over an ordinary shaded render, which is exactly the case this
+        // no longer handles. The shader uniform is left in place rather than
+        // ripped out in a bugfix.
+        drawFeatureEdges(*this, analysis_mode == AnalysisMode::Canny, false);
         feature_edge_error.clear();
       } catch (const std::exception& error) {
         if (feature_edge_error != error.what()) LOG(message_group::Error, "%1$s", error.what());
