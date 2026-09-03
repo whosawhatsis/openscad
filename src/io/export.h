@@ -31,7 +31,6 @@ enum class FileFormat {
   OBJ,
   OFF,
   WRL,
-  AMF,
   _3MF,
   DXF,
   SVG,
@@ -320,7 +319,6 @@ bool export_step(const std::shared_ptr<const Geometry>& geom, const std::string&
 bool export_iges(const std::shared_ptr<const Geometry>& geom, const std::string& filename);
 #endif
 void export_wrl(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
-void export_amf(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
 void export_dxf(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
 void export_svg(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);

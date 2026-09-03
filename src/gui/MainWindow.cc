@@ -121,7 +121,7 @@
 #include "glview/preview/CSGTreeNormalizer.h"
 #include "glview/preview/ThrownTogetherRenderer.h"
 #include "gui/AboutDialog.h"
-#include "gui/CGALWorker.h"
+#include "gui/GeometryWorker.h"
 #include "gui/ColorList.h"
 #include "gui/Dock.h"
 #include "gui/ai/AIDock.h"
@@ -620,7 +620,7 @@ void MainWindow::updateReorderMode(bool reorderMode)
 
 MainWindow::~MainWindow()
 {
-  delete this->cgalworker;
+  delete this->geometryWorker;
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -2031,7 +2031,7 @@ void MainWindow::cgalRender()
   if (!isClosing) progress_report_prep(this->rootNode, report_func, this);
   else return;
 
-  this->cgalworker->start(this->tree);
+  this->geometryWorker->start(this->tree);
 }
 
 void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_geom)
@@ -3537,8 +3537,8 @@ void MainWindow::setupCoreSubsystems()
   renderCompleteSoundEffect = new QSoundEffect(this);
   renderCompleteSoundEffect->setSource(QUrl("qrc:/sounds/complete.wav"));
 
-  this->cgalworker = new CGALWorker();
-  connect(this->cgalworker, &CGALWorker::done, this, &MainWindow::actionRenderDone);
+  this->geometryWorker = new GeometryWorker();
+  connect(this->geometryWorker, &GeometryWorker::done, this, &MainWindow::actionRenderDone);
 
   autoReloadTimer = new QTimer(this);
   autoReloadTimer->setSingleShot(false);
@@ -3936,7 +3936,6 @@ void MainWindow::setupMenusAndActions()
   exportMap[FileFormat::OFF] = this->fileActionExportOFF;
   exportMap[FileFormat::WRL] = this->fileActionExportWRL;
   exportMap[FileFormat::POV] = this->fileActionExportPOV;
-  exportMap[FileFormat::AMF] = this->fileActionExportAMF;
   exportMap[FileFormat::DXF] = this->fileActionExportDXF;
   exportMap[FileFormat::SVG] = this->fileActionExportSVG;
   exportMap[FileFormat::PDF] = this->fileActionExportPDF;

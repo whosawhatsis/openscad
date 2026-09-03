@@ -618,9 +618,9 @@ TEST_CASE("B-Rep multipart import does not combine objects with a mesh kernel", 
   PlatformUtils::registerApplicationPath(
     std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().string());
   ModuleInstantiation inst("import");
-  ImportNode node(&inst, ImportType::AMF, CurveDiscretizer(6.0));
+  ImportNode node(&inst, ImportType::_3MF, CurveDiscretizer(6.0));
   node.filename = Filename((std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
-                            "tests/data/amf/brep-multipart.amf")
+                            "tests/data/3mf/brep-multipart.3mf")
                              .string());
   node.center = false;
   node.convexity = 1;
@@ -632,6 +632,8 @@ TEST_CASE("B-Rep multipart import does not combine objects with a mesh kernel", 
   REQUIRE(brep);
   REQUIRE_FALSE(brep->isEmpty());
   CHECK(brep->getBoundingBox().max().x() == Catch::Approx(4).margin(1e-5));
+  // Two separated unit cubes: a mesh-kernel union would not keep all twelve planes distinct.
+  CHECK(brep->surfaceCount(BrepSurfaceType::Plane) == 12);
 }
 
 TEST_CASE("B-Rep offset preserves circular profiles and holes", "[brep]")

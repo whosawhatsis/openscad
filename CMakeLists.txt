@@ -1059,6 +1059,7 @@ set(CORE_SOURCES
   src/core/TransformNode.cc
   src/core/Tree.cc
   src/core/UndefType.cc
+  src/core/UnicodeIdentifier.cc
   src/core/UserModule.cc
   src/core/Value.cc
   src/core/builtin_functions.cc
@@ -1106,7 +1107,6 @@ set(CORE_SOURCES
   src/io/DxfData.cc
   src/io/dxfdim.cc
   src/io/export.cc
-  src/io/export_amf.cc
   src/io/export_dxf.cc
   src/io/export_obj.cc
   src/io/export_off.cc
@@ -1118,7 +1118,6 @@ set(CORE_SOURCES
   src/io/export_param.cc
   src/io/export_wrl.cc
   src/io/fileutils.cc
-  src/io/import_amf.cc
   src/io/import_json.cc
   src/io/import_obj.cc
   src/io/import_off.cc
@@ -1320,7 +1319,7 @@ set(GUI_SOURCES
   ${GUI_SOURCES}
   src/openscad_gui.cc
   src/gui/AutoUpdater.cc
-  src/gui/CGALWorker.cc
+  src/gui/GeometryWorker.cc
   src/gui/ViewportControl.cc
   src/gui/Console.cc
   src/gui/Dock.cc
@@ -1400,7 +1399,7 @@ set(GUI_HEADERS
     src/gui/Animate.h
     src/gui/AppleEvents.h
     src/gui/AutoUpdater.h
-    src/gui/CGALWorker.h
+    src/gui/GeometryWorker.h
     src/gui/Console.h
     src/gui/Dock.h
     src/gui/Editor.h
@@ -1602,6 +1601,7 @@ endif()
 file(GLOB_RECURSE TEST_SOURCES
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
+  "src/io/*_test.cc"
 )
 file(GLOB_RECURSE GUI_TEST_SOURCES
   "src/gui/*_test.cc"
@@ -1823,6 +1823,8 @@ if(ENABLE_TESTS)
       add_executable(OpenSCADUnitTests ${TEST_SOURCES} ${GUI_TEST_SOURCES})
     endif()
     target_link_libraries(OpenSCADUnitTests PRIVATE Catch2::Catch2WithMain OpenSCADLibInternal svg)
+    target_compile_definitions(OpenSCADUnitTests PRIVATE
+      OPENSCAD_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
     include(CTest)
     include(Catch)
     catch_discover_tests(OpenSCADUnitTests ADD_TAGS_AS_LABELS)
