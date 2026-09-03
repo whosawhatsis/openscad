@@ -811,9 +811,9 @@ private:
     // bodies sharing a colour but differing in finish collapse into one Blender
     // material, so the first one written won and the second silently rendered
     // with the wrong shading.
-    const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a(), finish.roughness,
-                                     finish.metallic, finish.reflectance, finish.emission,
-                                     finish.anisotropy);
+    const auto key =
+      std::make_tuple(color.r(), color.g(), color.b(), color.a(), finish.roughness, finish.metallic,
+                      finish.reflectance, finish.emission, finish.anisotropy);
     const auto found = materials_.find(key);
     if (found != materials_.end()) return found->second;
     if (materials_.size() == MAX_BLEND_MATERIALS) {
@@ -909,9 +909,9 @@ private:
         }
       }
       if (!color.isValid()) color = defaultColor_;
-      const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a(), finish.roughness,
-                                       finish.metallic, finish.reflectance, finish.emission,
-                                       finish.anisotropy);
+      const auto key =
+        std::make_tuple(color.r(), color.g(), color.b(), color.a(), finish.roughness, finish.metallic,
+                        finish.reflectance, finish.emission, finish.anisotropy);
       auto [found, inserted] = materialIndices.emplace(key, materialSlots.size());
       if (inserted) materialSlots.push_back(materialAddress(color, finish));
       faceMaterials.push_back(found->second);
