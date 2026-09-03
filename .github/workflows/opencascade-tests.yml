@@ -1,0 +1,62 @@
+name: OpenCASCADE B-Rep Tests
+
+# The OpenCASCADE backend is off by default, so no other workflow compiles a line of it.
+# Homebrew is used because the backend requires OCCT >= 7.9, which is newer than the
+# libocct packages in the Ubuntu images the other Linux jobs run on.
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build_and_test:
+    runs-on: macos-15-intel
+    name: OpenCASCADE B-Rep backend
+    timeout-minutes: 90
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        submodules: 'recursive'
+    - name: Workaround for https://github.com/actions/runner-images/issues/9966
+      run: |
+        brew unlink python3
+        brew link --overwrite python3
+    - name: Install Homebrew packages
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: 1
+      run: |
+        export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
+        ./scripts/macosx-build-homebrew.sh qt6
+        brew install opencascade
+    - name: Build OpenSCAD with the B-Rep backend
+      run: |
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_UNITY_BUILD=OFF \
+          -DEXPERIMENTAL=ON -DSNAPSHOT=ON -DUSE_CCACHE=OFF -DUSE_BUILTIN_OPENCSG=ON \
+          -DENABLE_OPENCASCADE=ON -DENABLE_TESTS=ON
+        cmake --build build -j$(($(sysctl -n hw.ncpu) * 3 / 2))
+    - name: Run unit tests
+      run: ./build/OpenSCADUnitTests
+    - name: Run Test Suite
+      # pdfexporttest is excluded for the same Cairo/Quartz font reason as macos-tests.yml.
+      run: |
+        cd build
+        ctest -j$(($(sysctl -n hw.ncpu) * 3 / 2)) -E pdfexporttest
+    - name: Verify the backend still builds when it is switched off
+      run: |
+        cmake -S . -B build-no-occt -DCMAKE_BUILD_TYPE=Release -DCMAKE_UNITY_BUILD=OFF \
+          -DEXPERIMENTAL=ON -DSNAPSHOT=ON -DUSE_CCACHE=OFF -DUSE_BUILTIN_OPENCSG=ON \
+          -DENABLE_OPENCASCADE=OFF -DENABLE_TESTS=ON -DHEADLESS=ON
+        cmake --build build-no-occt --target OpenSCADUnitTests -j$(($(sysctl -n hw.ncpu) * 3 / 2))
+        ./build-no-occt/OpenSCADUnitTests
+    - name: Upload Test Result Report
+      uses: actions/upload-artifact@v7
+      if: ${{ always() }}
+      with:
+        name: Test Result Report (OpenCASCADE)
+        path: |
+          build/Testing/Temporary/*_report.html
+          build/Testing/Temporary/LastTest.log
