@@ -795,9 +795,25 @@ private:
     }
   }
 
-  uint64_t materialAddress(const Color4f& color)
+  //! Blender's Principled BSDF is the only material model any of this project's
+  //! export targets exposes that can take a finish at all: POV-Ray has no
+  //! anisotropic term and USD's UsdPreviewSurface has no anisotropy input. What
+  //! Blender has no socket for -- the folded dielectric reflectance beyond
+  //! Specular IOR Level, and the anisotropy AXIS -- is dropped silently.
+  //!
+  //! The axis is the significant loss. Blender derives the anisotropy direction
+  //! from the mesh tangent, which it takes from UV maps, and OpenSCAD exports
+  //! none; carrying it would mean generating a UV map that encodes it. So the
+  //! strength survives and the direction does not.
+  uint64_t materialAddress(const Color4f& color, const SurfaceFinish& finish)
   {
-    const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a());
+    // Keyed on the finish as well as the colour. Keying on colour alone let two
+    // bodies sharing a colour but differing in finish collapse into one Blender
+    // material, so the first one written won and the second silently rendered
+    // with the wrong shading.
+    const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a(), finish.roughness,
+                                     finish.metallic, finish.reflectance, finish.emission,
+                                     finish.anisotropy);
     const auto found = materials_.find(key);
     if (found != materials_.end()) return found->second;
     if (materials_.size() == MAX_BLEND_MATERIALS) {
@@ -829,6 +845,32 @@ private:
                       sizeof(rgba));
         } else if (std::string_view(socketName) == "Alpha") {
           writeScalar<float>(value.data, dna_->fieldOffset(value.dna, "value"), color.a());
+        } else if (std::string_view(socketName) == "Roughness") {
+          // A negative roughness is this project's "the model set none"
+          // sentinel, so leave Blender's own default in place for it.
+          if (finish.roughness >= 0.0f) {
+            writeScalar<float>(value.data, dna_->fieldOffset(value.dna, "value"), finish.roughness);
+          }
+        } else if (std::string_view(socketName) == "Metallic") {
+          writeScalar<float>(value.data, dna_->fieldOffset(value.dna, "value"), finish.metallic);
+        } else if (std::string_view(socketName) == "Anisotropic") {
+          // Blender takes an unsigned strength plus a rotation where this
+          // project uses one signed number, so the sign moves to the rotation
+          // socket below.
+          writeScalar<float>(value.data, dna_->fieldOffset(value.dna, "value"),
+                             std::fabs(finish.anisotropy));
+        } else if (std::string_view(socketName) == "Anisotropic Rotation") {
+          // 0.25 of a full turn is the 90 degrees that a negative anisotropy
+          // means: the same lobe, across the layers instead of along them.
+          writeScalar<float>(value.data, dna_->fieldOffset(value.dna, "value"),
+                             finish.anisotropy < 0.0f ? 0.25f : 0.0f);
+        } else if (std::string_view(socketName) == "Specular IOR Level") {
+          // Blender's level is F0 / 0.08, so its 0.5 default is the 0.04 F0 of
+          // an ior 1.5 dielectric - the same default this project folds to.
+          writeScalar<float>(value.data, dna_->fieldOffset(value.dna, "value"),
+                             std::clamp(finish.reflectance / 0.08f, 0.0f, 1.0f));
+        } else if (std::string_view(socketName) == "Emission Strength") {
+          writeScalar<float>(value.data, dna_->fieldOffset(value.dna, "value"), finish.emission);
         }
       }
     }
@@ -846,10 +888,12 @@ private:
     const auto& faces = polyset ? polyset->indices : emptyFaces;
 
     std::vector<uint64_t> materialSlots;
-    std::map<std::tuple<float, float, float, float>, int32_t> materialIndices;
+    std::map<std::tuple<float, float, float, float, float, float, float, float, float>, int32_t>
+      materialIndices;
     std::vector<int32_t> faceMaterials;
     for (size_t face = 0; face < faces.size(); ++face) {
       Color4f color = defaultColor_;
+      SurfaceFinish finish;
       if (overrideColor && overrideColor->isValid()) {
         color = *overrideColor;
       } else if (polyset && face < polyset->color_indices.size()) {
@@ -857,15 +901,23 @@ private:
         if (index >= 0 && static_cast<size_t>(index) < polyset->colors.size()) {
           color = polyset->colors[index];
         }
+        // The finish channel is parallel to colors and indexed by the same
+        // color_indices, so a face's shading comes from the same lookup its
+        // colour does and the two cannot fall out of step.
+        if (index >= 0 && static_cast<size_t>(index) < polyset->finishes.size()) {
+          finish = polyset->finishes[index];
+        }
       }
       if (!color.isValid()) color = defaultColor_;
-      const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a());
+      const auto key = std::make_tuple(color.r(), color.g(), color.b(), color.a(), finish.roughness,
+                                       finish.metallic, finish.reflectance, finish.emission,
+                                       finish.anisotropy);
       auto [found, inserted] = materialIndices.emplace(key, materialSlots.size());
-      if (inserted) materialSlots.push_back(materialAddress(color));
+      if (inserted) materialSlots.push_back(materialAddress(color, finish));
       faceMaterials.push_back(found->second);
     }
     if (materialSlots.empty()) {
-      materialSlots.push_back(materialAddress(Color4f(0.8f, 0.8f, 0.8f, 1.0f)));
+      materialSlots.push_back(materialAddress(Color4f(0.8f, 0.8f, 0.8f, 1.0f), SurfaceFinish{}));
     }
     const uint64_t materialArray = readScalar<uint64_t>(mesh.data, dna_->fieldOffset(mesh.dna, "mat"));
     if (!materialArray) throw std::runtime_error("Blender mesh has no material array");
@@ -1023,7 +1075,8 @@ private:
   std::vector<uint8_t> bytes_;
   std::vector<Block> blocks_;
   std::unordered_map<uint64_t, size_t> indexByAddress_;
-  std::map<std::tuple<float, float, float, float>, uint64_t> materials_;
+  std::map<std::tuple<float, float, float, float, float, float, float, float, float>, uint64_t>
+    materials_;
   Color4f defaultColor_;
   // Unset: each mesh uses the angle its own geometry recorded, so a model with a
   // coarse $fa and one with a fine $fa in the same export each get their own.

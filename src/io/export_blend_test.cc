@@ -243,3 +243,104 @@ TEST_CASE("BLEND export takes the smooth angle from the geometry", "[export][ble
   // the viewport and another in Blender.
   REQUIRE(sharp.str() != smooth.str());
 }
+
+namespace {
+
+//! A triangle painted one colour and one finish, which is what a
+//! material() { ... } subtree produces by the time it reaches an exporter.
+std::shared_ptr<const PolySet> finishedTriangle(const Color4f& color, const SurfaceFinish& finish)
+{
+  auto mesh = std::make_shared<PolySet>(3);
+  mesh->vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+  mesh->indices = {{0, 1, 2}};
+  mesh->setColor(color);
+  mesh->setFinish(finish);
+  return mesh;
+}
+
+bool containsFloat(const std::string& blend, float value)
+{
+  return blend.find(std::string(reinterpret_cast<const char *>(&value), sizeof(value))) !=
+         std::string::npos;
+}
+
+std::string exportOne(const std::shared_ptr<const PolySet>& mesh)
+{
+  PlatformUtils::registerApplicationPath(
+    fs::path(__FILE__).parent_path().parent_path().parent_path().string());
+  const std::vector<UsdAnimationFrame> frames{{.geometry = mesh}};
+  std::ostringstream output;
+  export_blend_animation(frames, 24, output);
+  return output.str();
+}
+
+}  // namespace
+
+TEST_CASE("BLEND export carries the material finish onto the Principled BSDF",
+          "[export][blend][material]")
+{
+  // Blender is the only export target in this project that can express any of
+  // this, so a finish that reaches .blend is a finish the user can actually
+  // render. Values are chosen not to collide with defaults or with each other.
+  SurfaceFinish finish;
+  finish.roughness = 0.28125f;
+  finish.metallic = 0.65625f;
+  finish.emission = 0.40625f;
+  const std::string blend = exportOne(finishedTriangle(Color4f(0.5f, 0.25f, 0.125f, 1.0f), finish));
+
+  CHECK(containsFloat(blend, 0.28125f));
+  CHECK(containsFloat(blend, 0.65625f));
+  CHECK(containsFloat(blend, 0.40625f));
+}
+
+TEST_CASE("BLEND export writes anisotropy as strength plus rotation",
+          "[export][blend][material][anisotropy]")
+{
+  // Blender spells anisotropy as an unsigned strength plus a rotation, where
+  // this project spells it as one signed number. Positive is strength with no
+  // rotation; negative is the same strength turned 90 degrees, which Blender
+  // writes as 0.25 of a full turn.
+  SurfaceFinish along;
+  along.roughness = 0.3f;
+  along.anisotropy = 0.8125f;
+  const std::string positive = exportOne(finishedTriangle(Color4f(1, 0, 0, 1), along));
+  CHECK(containsFloat(positive, 0.8125f));
+  CHECK_FALSE(containsFloat(positive, 0.25f));
+
+  SurfaceFinish across = along;
+  across.anisotropy = -0.8125f;
+  const std::string negative = exportOne(finishedTriangle(Color4f(1, 0, 0, 1), across));
+  // The magnitude is what Blender's Anisotropic socket takes, so both files
+  // carry the same strength and differ only in the rotation.
+  CHECK(containsFloat(negative, 0.8125f));
+  CHECK(containsFloat(negative, 0.25f));
+}
+
+TEST_CASE("BLEND export separates materials that differ only in finish",
+          "[export][blend][material]")
+{
+  // The material cache was keyed on colour alone, so two bodies sharing a
+  // colour but differing in finish collapsed into one Blender material and the
+  // second silently rendered with the first one's shading. Same class of bug as
+  // a geometry cache key that omits a field.
+  const Color4f shared(0.5f, 0.5f, 0.5f, 1.0f);
+  SurfaceFinish matte;
+  matte.roughness = 0.90625f;
+  SurfaceFinish glossy;
+  glossy.roughness = 0.09375f;
+
+  auto mesh = std::make_shared<PolySet>(3);
+  mesh->vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {2, 0, 0}, {3, 0, 0}, {2, 1, 0}};
+  mesh->indices = {{0, 1, 2}, {3, 4, 5}};
+  mesh->colors = {shared, shared};
+  mesh->color_indices = {0, 1};
+  mesh->finishes = {matte, glossy};
+
+  const std::string blend = exportOne(mesh);
+
+  // Both finishes present means two distinct materials were emitted rather than
+  // one reused for both faces.
+  CHECK(containsFloat(blend, 0.90625f));
+  CHECK(containsFloat(blend, 0.09375f));
+  CHECK(blend.find("OpenSCAD Material 0002") != std::string::npos);
+}
