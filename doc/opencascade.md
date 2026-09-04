@@ -76,22 +76,44 @@ curved-operand Minkowski sums, DXF spline entities and INSERT
 arrays/forward block references, nonuniformly transformed strokes, and negative extrusion scales
 remain unsupported.
 
-**Some hulls are approximate.** Operand sets that fit neither the ball nor the disk
-construction -- a sphere mixed with a cylinder, cylinders whose axes are not parallel, tori,
-revolutions, spline surfaces -- have every operand tessellated to its vertices and hulled as
-a polyhedron, at a chord tolerance of a two-hundredth of the operand's bounding diagonal,
-coarsened further if that would produce more points than the hull can process. The result is
-inscribed in the true hull, so it is slightly small, and it exports as facets rather than
-analytic surfaces. Mixing an exact operand with a tessellated one is deliberately not done:
-one sphere among a few hundred mesh vertices puts the construction's cubic tangent-plane
-pass into the millions of points, for a result no better than tessellating throughout.
+**Some hulls are approximate, and say so.** Operand sets that fit neither the ball nor the
+disk construction -- a sphere mixed with a cylinder, cylinders whose axes are not parallel,
+and every smooth 2D curve that is not a circle: SVG Bezier and rational-conic profiles, DXF
+splines, text outlines, and nonuniformly scaled circles, all of which extrude to Bezier or
+B-spline faces -- have every operand tessellated to its vertices and hulled as a polyhedron.
+The result is inscribed in the true hull, so it is slightly small, and it exports as facets
+rather than analytic surfaces. A warning names the hull when this happens, because otherwise
+the result is indistinguishable from exact geometry.
+
+The tessellation follows `$fa`/`$fs`, derived the same way as at the viewport and mesh-export
+boundary, so an approximate hull refines when the model asks for finer facets. It is
+coarsened past what was asked for if that would produce more points than the incremental
+point hull can process, so refinement saturates on complex profiles.
+
+Mixing an exact operand with a tessellated one is deliberately not done: one sphere among a
+few hundred mesh vertices puts the construction's cubic tangent-plane pass into the millions
+of points, for a result no better than tessellating throughout.
 
 Closing the remaining gaps means a third generator kind, or a bridge between the two that
 exist. The ruled patch between a *disk and a ball* is the missing piece for hulling a
 cylinder with a sphere; non-parallel cylinder axes need tangency between circles in
 different planes, where the equal-angle correspondence that makes the disk construction work
-no longer holds. Surfaces that are neither planar, spherical, nor circular-sectioned would
-still tessellate. Native profile
+no longer holds.
+
+**Smooth 2D curves other than circles are the largest gap, and the hardest.** The disk
+construction works because a circle's parameter angle *is* its support direction, so the
+ruled patch between two disks is the loft that corresponds them angle for angle. For any
+other curve those two parametrisations differ, and a loft between the curves as authored is
+not the hull patch; corresponding them by support direction means rebuilding the curves,
+which is exactly the exactness the construction is trying to preserve.
+
+The tractable route is to restrict to profiles sharing their planes -- the common case, since
+`hull()` of 2D shapes and of equal-height prisms both land there -- where the hull is a *2D*
+convex hull extruded, with a boundary of arcs of the original curves joined by bitangent
+segments. That needs a bitangent between two arbitrary curves, which OpenCASCADE offers only
+as `Geom2dGcc_Lin2d2Tan`, an iterative solver requiring a seed: a missed bitangent is a
+silently wrong hull rather than a failure, so it needs a seeding strategy that can be argued
+to be exhaustive. That is the piece of work, and it is why this is still a tessellated case. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail
 OCCT construction or validity checks can still reject degenerate imported contours.

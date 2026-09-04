@@ -49,7 +49,10 @@ public:
                                       bool chamfer = false) const;
   [[nodiscard]] BrepGeometry cutProjection(double height) const;
   [[nodiscard]] BrepGeometry shadowProjection(double height) const;
-  static BrepGeometry hull(const std::vector<BrepGeometry>& operands);
+  // Facet settings apply only when an operand has no exact construction and must be
+  // tessellated; approximated then reports that the result is not exact geometry.
+  static BrepGeometry hull(const std::vector<BrepGeometry>& operands, double fa = 12.0, double fs = 2.0,
+                           bool *approximated = nullptr);
   static BrepGeometry minkowski(const std::vector<BrepGeometry>& operands);
   // Map the z=0 profile faces to XZ, then revolve about Z; angles are in radians.
   // Zero segments means a smooth revolution; positive counts create chordal sweep segments.

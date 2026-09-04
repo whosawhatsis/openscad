@@ -932,17 +932,23 @@ std::shared_ptr<void> diskHull(const std::vector<HullSection>& sections)
 // Operands with no exact construction contribute the vertices of a tessellation instead, so
 // hull() always produces something rather than failing. The result is a faceted solid that
 // is inscribed in the true hull; doc/opencascade.md records this as an approximation.
-std::vector<HullBall> tessellatedBalls(const std::shared_ptr<void>& shape)
+std::vector<HullBall> tessellatedBalls(const std::shared_ptr<void>& shape, double fa, double fs)
 {
   const auto bounds = brepBounds(shape);
   const double diagonal =
     std::hypot(std::hypot(bounds[3] - bounds[0], bounds[4] - bounds[1]), bounds[5] - bounds[2]);
+  // Derived from $fa/$fs the same way the viewport and mesh-export boundary derives them, so
+  // an approximate hull refines when the model asks for finer facets.
+  const double radius = std::max(diagonal / 2.0, 0.01);
+  const double halfSegment = std::min(fs / 2.0, radius);
+  const double chord = std::max(radius - std::sqrt(radius * radius - halfSegment * halfSegment), 1e-4);
+  const double angular = std::max(fa * M_PI / 180.0, 1e-3);
   // The point hull is incremental and rescans its faces per vertex, so it is the tessellation
-  // tolerance that decides whether this finishes at all. A two-hundredth of the diagonal is
-  // well inside a printable tolerance; coarsen further rather than hand it an unbounded mesh.
+  // tolerance that decides whether this finishes at all. Coarsen past what was asked for
+  // rather than hand it an unbounded mesh.
   std::vector<gp_Pnt> points;
-  for (double deflection = std::max(diagonal / 200.0, Precision::Confusion());; deflection *= 2.0) {
-    const auto mesh = brepMesh(shape, deflection, 0.35);
+  for (double deflection = std::max(chord, Precision::Confusion());; deflection *= 2.0) {
+    const auto mesh = brepMesh(shape, deflection, angular);
     points.clear();
     points.reserve(mesh.vertices.size());
     for (const auto& vertex : mesh.vertices) points.emplace_back(vertex[0], vertex[1], vertex[2]);
@@ -1084,8 +1090,10 @@ std::shared_ptr<void> ballHull(const std::vector<HullBall>& balls)
 
 }  // namespace
 
-std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operands)
+std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operands, double fa, double fs,
+                               bool *approximated)
 {
+  if (approximated) *approximated = false;
   try {
     std::vector<HullBall> balls;
     bool reducible = !operands.empty();
@@ -1121,10 +1129,11 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
     // while others are tessellated is deliberately not done: mixing one sphere with a few
     // hundred mesh vertices puts the cubic triple pass into the millions of points, for a
     // result no better than this one.
+    if (approximated) *approximated = true;
     std::vector<HullBall> generators;
     for (const auto& operand : operands) {
       if (brepIsEmpty(operand)) continue;
-      const auto part = tessellatedBalls(operand);
+      const auto part = tessellatedBalls(operand, fa, fs);
       generators.insert(generators.end(), part.begin(), part.end());
     }
     if (generators.empty()) return {};

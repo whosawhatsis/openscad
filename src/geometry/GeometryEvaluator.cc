@@ -335,8 +335,17 @@ std::unique_ptr<BrepGeometry> GeometryEvaluator::createBrepGeometryUncached(
     }
     if (nativeAdvanced) {
       try {
-        auto result = advanced->type == CgalAdvType::HULL ? BrepGeometry::hull(operands)
-                                                          : BrepGeometry::minkowski(operands);
+        bool approximated = false;
+        auto result = advanced->type == CgalAdvType::HULL
+                        ? BrepGeometry::hull(operands, advanced->fa, advanced->fs, &approximated)
+                        : BrepGeometry::minkowski(operands);
+        if (approximated) {
+          // Silence here would be the worst outcome: the result looks like every other exact
+          // B-Rep, but it is a faceted solid inscribed in the true hull.
+          LOG(message_group::Warning, node.modinst->location(), this->tree.getDocumentPath(),
+              "hull is approximate: an operand has no exact construction, so all of them were "
+              "tessellated at the facet settings in scope");
+        }
         if (extrusionHeight > 0 && advanced->type == CgalAdvType::MINKOWSKI && !operands.empty()) {
           result = result.cutProjection(extrusionHeight);
         }

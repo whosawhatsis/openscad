@@ -100,11 +100,12 @@ BrepGeometry BrepGeometry::shadowProjection(double height) const
   return BrepGeometry(brepShadowProjection(shape_, height));
 }
 
-BrepGeometry BrepGeometry::hull(const std::vector<BrepGeometry>& operands)
+BrepGeometry BrepGeometry::hull(const std::vector<BrepGeometry>& operands, double fa, double fs,
+                                bool *approximated)
 {
   std::vector<std::shared_ptr<void>> shapes;
   for (const auto& operand : operands) shapes.push_back(operand.opaqueShape());
-  return BrepGeometry(brepHull(shapes));
+  return BrepGeometry(brepHull(shapes, fa, fs, approximated));
 }
 
 BrepGeometry BrepGeometry::minkowski(const std::vector<BrepGeometry>& operands)

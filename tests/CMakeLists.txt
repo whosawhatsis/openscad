@@ -893,6 +893,23 @@ if(ENABLE_OPENCASCADE)
       ${TEST_SCAD_DIR}/misc/brep-hull-facets.scad)
   set_tests_properties(export-stl-brep-hull-facets PROPERTIES
     PASS_REGULAR_EXPRESSION "Triangles: +[0-9][0-9][0-9][0-9]" FAIL_REGULAR_EXPRESSION "ERROR:")
+  # A hull that has to tessellate a curved profile must still refine with $fa/$fs, and must
+  # say that it did so rather than quietly handing back an approximation.
+  add_test(NAME export-stl-brep-hull-curve-facets
+    COMMAND $<TARGET_FILE:OpenSCADExe> --backend=opencascade --render
+      -o ${CMAKE_CURRENT_BINARY_DIR}/brep-hull-curve-facets.stl
+      ${TEST_SCAD_DIR}/misc/brep-hull-curve-facets.scad)
+  # The same hull is 236 triangles at the default facet settings, so anything from 400 up
+  # can only come from the settings in the file reaching the tessellation.
+  set_tests_properties(export-stl-brep-hull-curve-facets PROPERTIES
+    PASS_REGULAR_EXPRESSION "Triangles: +([4-9][0-9][0-9]|[0-9][0-9][0-9][0-9])"
+    FAIL_REGULAR_EXPRESSION "ERROR:")
+  add_test(NAME warn-brep-hull-approximate
+    COMMAND $<TARGET_FILE:OpenSCADExe> --backend=opencascade --render
+      -o ${CMAKE_CURRENT_BINARY_DIR}/brep-hull-curve-warn.stl
+      ${TEST_SCAD_DIR}/misc/brep-hull-curve-facets.scad)
+  set_tests_properties(warn-brep-hull-approximate PROPERTIES
+    PASS_REGULAR_EXPRESSION "WARNING:.*hull.*approximate")
   add_test(NAME export-step-brep
     COMMAND ${CMAKE_COMMAND} -DOPENSCAD=$<TARGET_FILE:OpenSCADExe>
       -DINPUT=${TEST_SCAD_DIR}/misc/brep-step-export.scad
