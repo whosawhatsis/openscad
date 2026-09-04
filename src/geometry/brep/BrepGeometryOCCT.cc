@@ -652,6 +652,10 @@ struct HullBall {
   double radius{0};
 };
 
+// ponytail: the triple pass is cubic and only runs when a sphere is present; raise this or
+// reduce the vertices further if real models hit it.
+constexpr size_t hullGeneratorLimit = 512;
+
 // Empty for an operand this construction cannot represent exactly, which today means any
 // face that is neither planar nor a whole sphere, or any edge that is not a straight line.
 std::optional<std::vector<HullBall>> hullBalls(const std::shared_ptr<void>& shape)
@@ -670,6 +674,35 @@ std::optional<std::vector<HullBall>> hullBalls(const std::shared_ptr<void>& shap
     unique.insert({p.X(), p.Y(), p.Z()});
   }
   for (const auto& p : unique) balls.push_back({gp_Pnt(p[0], p[1], p[2]), 0.0});
+  return balls;
+}
+
+// Operands with no exact construction contribute the vertices of a tessellation instead, so
+// hull() always produces something rather than failing. The result is a faceted solid that
+// is inscribed in the true hull; doc/opencascade.md records this as an approximation.
+std::vector<HullBall> tessellatedBalls(const std::shared_ptr<void>& shape)
+{
+  const auto bounds = brepBounds(shape);
+  const double diagonal =
+    std::hypot(std::hypot(bounds[3] - bounds[0], bounds[4] - bounds[1]), bounds[5] - bounds[2]);
+  const auto mesh = brepMesh(shape, std::max(diagonal / 1000.0, Precision::Confusion()), 0.1);
+  std::vector<gp_Pnt> points;
+  points.reserve(mesh.vertices.size());
+  for (const auto& vertex : mesh.vertices) points.emplace_back(vertex[0], vertex[1], vertex[2]);
+
+  std::vector<HullBall> balls;
+  // Only extreme vertices can affect a hull, and dropping the rest keeps the triple pass small.
+  if (const auto polytope = pointHull(points)) {
+    std::set<std::array<double, 3>> unique;
+    for (TopExp_Explorer vertices(shapeFrom(polytope), TopAbs_VERTEX); vertices.More();
+         vertices.Next()) {
+      const auto p = BRep_Tool::Pnt(TopoDS::Vertex(vertices.Current()));
+      unique.insert({p.X(), p.Y(), p.Z()});
+    }
+    for (const auto& p : unique) balls.push_back({gp_Pnt(p[0], p[1], p[2]), 0.0});
+    return balls;
+  }
+  for (const auto& point : points) balls.push_back({point, 0.0});
   return balls;
 }
 
@@ -977,9 +1010,26 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
         }
       }
     }
-    throw std::runtime_error(
-      "B-Rep hull supports spheres and planar-faced solids in any combination, and two "
-      "cylinders sharing the Z axis direction; other curved operands are not yet supported");
+    // Nothing exact fits the whole operand set, so reduce what cannot be done exactly to its
+    // tessellated vertices and hull that. Spheres stay exact unless keeping them would push
+    // the cubic triple pass past its limit, in which case everything curved is tessellated.
+    const auto reduce = [&operands](bool exactCurved) {
+      std::vector<HullBall> generators;
+      for (const auto& operand : operands) {
+        if (brepIsEmpty(operand)) continue;
+        const auto exact = exactCurved ? hullBalls(operand) : std::optional<std::vector<HullBall>>{};
+        const auto part = exact ? *exact : tessellatedBalls(operand);
+        generators.insert(generators.end(), part.begin(), part.end());
+      }
+      return generators;
+    };
+    auto generators = reduce(true);
+    const bool curved = std::any_of(generators.begin(), generators.end(), [](const HullBall& ball) {
+      return ball.radius > Precision::Confusion();
+    });
+    if (curved && generators.size() > hullGeneratorLimit) generators = reduce(false);
+    if (generators.empty()) return {};
+    return ballHull(generators);
   } catch (const Standard_Failure& error) {
     throw std::runtime_error(error.GetMessageString());
   }

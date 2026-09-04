@@ -41,10 +41,17 @@ IGES import/export follows the same retained-BREP and backend-aware tessellation
 - Round, miter, and chamfer offsets of supported profiles, and both cut and shadow
   projections used as extrusion profiles. Shadow projection uses OCCT silhouettes
   and native region classification, not a rendered image or triangle mesh.
-- Polyhedral hulls; smooth hulls of two spheres, two parallel vertical cylinders
-  with matching cap heights, separated coaxial cylinders, equal-radius cylinders translated in 3D
-  with unequal heights, or equal-height translated cylinders with unequal radii (including extruded
-  two-circle hulls).
+- Hulls of any operands. Spheres and planar-faced solids -- cubes, polyhedra, imported
+  meshes, extruded polygons -- mix freely in any number and are exact: a vertex is treated
+  as a sphere of radius zero, so both reduce to the same construction, which unions the
+  balls, their pairwise tangent envelopes, and the convex hull of the centres together with
+  every tri-tangent point. Two vertical cylinders are exact through separate constructions:
+  parallel with matching cap heights, separated coaxial, equal radii translated in 3D with
+  unequal heights, or equal heights translated with unequal radii (including extruded
+  two-circle hulls). **Any other operand -- a cone, a torus, a revolution, a spline surface,
+  or three or more cylinders -- is reduced to the vertices of a tessellation before hulling**,
+  so `hull()` always produces a result rather than failing. That result is a planar-faced
+  solid inscribed in the true hull, not exact geometry; see *Current limitations*.
 - Minkowski sums of polyhedra, including nonconvex operands; polyhedron/sphere rounding;
   sphere/sphere sums; vertical constant-section prisms with a vertical cylinder
   (including planar circle offsets). Operands must fit a supported path at each
@@ -61,14 +68,31 @@ IGES import/export follows the same retained-BREP and backend-aware tessellation
 
 ## Current limitations
 
-This is not yet a replacement for every CGAL/Manifold operation. General curved
-hulls, general curved-operand Minkowski sums, DXF spline entities and INSERT
+This is not yet a replacement for every CGAL/Manifold operation. General
+curved-operand Minkowski sums, DXF spline entities and INSERT
 arrays/forward block references, nonuniformly transformed strokes, and negative extrusion scales
-remain unsupported. Native profile
+remain unsupported.
+
+**Hulls of curved operands other than spheres are approximate.** Cones, tori, revolutions,
+spline surfaces, and any set of three or more cylinders are tessellated to their vertices
+and hulled as a polyhedron, at a chord tolerance of a thousandth of the operand's bounding
+diagonal. The result is inscribed in the true hull, so it is slightly small, and it exports
+as facets rather than analytic surfaces. This is a deliberate stopgap: it keeps `hull()`
+working on any model instead of failing on unsupported combinations.
+
+The way out is a second generator kind. The exact path today reduces every operand to
+*balls*, which is why spheres and vertices need no per-combination code. A cylinder is the
+hull of two disks and a cone is the hull of a disk and a point, so adding a **disk
+generator** alongside the ball generator would make cylinders and cones exact for any number
+of operands and in any mix with spheres and meshes, and would delete the pairwise cylinder
+constructions listed above -- the last combination-specific paths in the hull. The piece
+that does not yet exist is the ruled patch between a disk and a ball or another disk, which
+is what `BRepOffsetAPI_ThruSections` already builds for the existing unequal-radius case.
+Surfaces that are neither planar, spherical, nor circular-sectioned would still tessellate. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail
 OCCT construction or validity checks can still reject degenerate imported contours.
-Unsupported paths report errors instead
+Outside `hull()`, unsupported paths report errors instead
 of deliberately tessellating the input and handing the operation to a mesh kernel.
 
 There is no arbitrary face/edge selection interface for fillets.

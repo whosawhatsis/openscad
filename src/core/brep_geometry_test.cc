@@ -2500,4 +2500,56 @@ TEST_CASE("B-Rep hull takes several primitives at once", "[brep]")
   CHECK_FALSE(brepContains(hull, Vector3d(11, 9, 0)));
 }
 
+TEST_CASE("B-Rep hull falls back to a tessellation for operands it cannot do exactly", "[brep]")
+{
+  // A cone has no exact hull construction yet. Rather than failing, it contributes the
+  // vertices of a tessellation, so the result is a faceted approximation from inside.
+  auto cone = BrepGeometry::cone(2, 1, 4);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(Vector3d(10, 0, 0));
+  cone.transform(placement);
+  const auto hull = BrepGeometry::hull({BrepGeometry::cube(2, 2, 2), cone});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);  // still a B-Rep, just a planar one
+  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(0).margin(1e-5));
+  // Inscribed, so never beyond the exact bound of 12, and close to it.
+  CHECK(hull.getBoundingBox().max().x() <= 12 + 1e-9);
+  CHECK(hull.getBoundingBox().max().x() > 11.9);
+  CHECK(brepContains(hull, Vector3d(6, 0.5, 1)));
+  CHECK_FALSE(brepContains(hull, Vector3d(6, 4, 1)));
+}
+
+TEST_CASE("B-Rep hull takes three cylinders through the tessellated path", "[brep]")
+{
+  // Two cylinders have exact constructions; three do not, and used to be an error.
+  auto second = BrepGeometry::cylinder(1, 4);
+  Transform3d right = Transform3d::Identity();
+  right.translate(Vector3d(8, 0, 0));
+  second.transform(right);
+  auto third = BrepGeometry::cylinder(1, 4);
+  Transform3d back = Transform3d::Identity();
+  back.translate(Vector3d(4, 7, 0));
+  third.transform(back);
+  const auto hull = BrepGeometry::hull({BrepGeometry::cylinder(1, 4), second, third});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.getBoundingBox().max().x() <= 9 + 1e-9);
+  CHECK(hull.getBoundingBox().max().x() > 8.9);
+  CHECK(hull.getBoundingBox().max().z() == Catch::Approx(4).margin(1e-5));
+  CHECK(brepContains(hull, Vector3d(4, 2, 2)));
+  CHECK_FALSE(brepContains(hull, Vector3d(4, -2, 2)));
+}
+
+TEST_CASE("B-Rep hull of two cylinders stays exact", "[brep]")
+{
+  // The tessellated fallback must not swallow the constructions that are exact today.
+  auto second = BrepGeometry::cylinder(1, 4);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(Vector3d(8, 0, 0));
+  second.transform(placement);
+  const auto hull = BrepGeometry::hull({BrepGeometry::cylinder(1, 4), second});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.surfaceCount(BrepSurfaceType::Cylinder) >= 2);
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(9).margin(1e-5));
+}
+
 #endif
