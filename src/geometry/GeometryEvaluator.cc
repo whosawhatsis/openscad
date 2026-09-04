@@ -375,6 +375,9 @@ std::pair<double, double> brepFacetSettings(const AbstractNode& node, const Brep
   if (const auto *csg = dynamic_cast<const CsgOpNode *>(&node)) {
     fa = csg->fa;
     fs = csg->fs;
+  } else if (const auto *advanced = dynamic_cast<const CgalAdvNode *>(&node)) {
+    fa = advanced->fa;
+    fs = advanced->fs;
   } else if (const auto *cylinder = dynamic_cast<const CylinderNode *>(&node)) {
     fa = cylinder->discretizer.getFa();
     fs = cylinder->discretizer.getFs();
@@ -387,9 +390,10 @@ std::pair<double, double> brepFacetSettings(const AbstractNode& node, const Brep
   } else if (const auto *revolution = dynamic_cast<const RotateExtrudeNode *>(&node)) {
     fa = revolution->discretizer.getFa();
     fs = revolution->discretizer.getFs();
-  } else if (const auto *transform = dynamic_cast<const TransformNode *>(&node);
-             transform && transform->children.size() == 1) {
-    return brepFacetSettings(*transform->children.front(), geometry);
+  } else if (node.children.size() == 1) {
+    // Wrappers carry no settings of their own, and the root of a file is one of them: the
+    // node whose settings matter is below a RootNode or a GroupNode as often as a transform.
+    return brepFacetSettings(*node.children.front(), geometry);
   }
 
   const double radius = std::max(geometry.getBoundingBox().diagonal().norm() / 2.0, 0.01);

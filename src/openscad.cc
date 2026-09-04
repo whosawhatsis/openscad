@@ -489,8 +489,12 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       // FIXME: Consider adding MANIFOLD as a valid --render argument and ViewOption, to be able to
       // distinguish from CGAL
 
+      // Under OpenCASCADE the geometry is meshed at this boundary, which is right for the
+      // mesh formats and wrong for the ones that write the exact surfaces: STEP and IGES are
+      // handed the retained B-Rep or they write nothing at all.
       const bool allownef = RenderSettings::inst()->backend3D != RenderBackend3D::OpenCASCADEBackend ||
-                            export_format == FileFormat::PNG;
+                            export_format == FileFormat::PNG || export_format == FileFormat::STEP ||
+                            export_format == FileFormat::IGES;
       root_geom = geomevaluator.evaluateGeometry(*tree.root(), allownef);
       if (!root_geom) root_geom = std::make_shared<PolySet>(3);
       if (cmd.viewOptions.renderer == RenderType::BACKEND_SPECIFIC && root_geom->getDimension() == 3) {

@@ -885,6 +885,25 @@ if(ENABLE_OPENCASCADE)
       ${TEST_SCAD_DIR}/misc/brep-native-operations.scad)
   set_tests_properties(export-stl-brep-native-operations PROPERTIES
     PASS_REGULAR_EXPRESSION "Triangles: +[1-9]" FAIL_REGULAR_EXPRESSION "ERROR:")
+  # The default facet settings give this hull a three-digit triangle count, so a four-digit
+  # one is only reachable if the $fa/$fs in scope actually reach the tessellation.
+  add_test(NAME export-stl-brep-hull-facets
+    COMMAND $<TARGET_FILE:OpenSCADExe> --backend=opencascade --render
+      -o ${CMAKE_CURRENT_BINARY_DIR}/brep-hull-facets.stl
+      ${TEST_SCAD_DIR}/misc/brep-hull-facets.scad)
+  set_tests_properties(export-stl-brep-hull-facets PROPERTIES
+    PASS_REGULAR_EXPRESSION "Triangles: +[0-9][0-9][0-9][0-9]" FAIL_REGULAR_EXPRESSION "ERROR:")
+  add_test(NAME export-step-brep
+    COMMAND ${CMAKE_COMMAND} -DOPENSCAD=$<TARGET_FILE:OpenSCADExe>
+      -DINPUT=${TEST_SCAD_DIR}/misc/brep-step-export.scad
+      -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/brep-step-export.step
+      -DMARKER=CYLINDRICAL_SURFACE
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/ExchangeExportTest.cmake)
+  add_test(NAME export-iges-brep
+    COMMAND ${CMAKE_COMMAND} -DOPENSCAD=$<TARGET_FILE:OpenSCADExe>
+      -DINPUT=${TEST_SCAD_DIR}/misc/brep-step-export.scad
+      -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/brep-iges-export.iges
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/ExchangeExportTest.cmake)
 endif()
 if(EXAMPLES_DIR)
   add_cmdline_test(dump-examples  OPENSCAD FILES ${EXAMPLE_FILES} SUFFIX csg ARGS)

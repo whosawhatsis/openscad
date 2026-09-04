@@ -35,6 +35,7 @@
 #include "core/Builtins.h"
 #include "core/Children.h"
 #include "core/ModuleInstantiation.h"
+#include "core/CurveDiscretizer.h"
 #include "core/Parameters.h"
 #include "core/module.h"
 using namespace boost::assign;  // bring 'operator+=()' into scope
@@ -42,9 +43,10 @@ using namespace boost::assign;  // bring 'operator+=()' into scope
 static std::shared_ptr<AbstractNode> builtin_minkowski(const ModuleInstantiation *inst,
                                                        Arguments arguments, const Children& children)
 {
-  auto node = std::make_shared<CgalAdvNode>(inst, CgalAdvType::MINKOWSKI);
-
   Parameters parameters = Parameters::parse(std::move(arguments), inst->location(), {"convexity"});
+  const CurveDiscretizer discretizer(parameters, inst->location());
+  auto node = std::make_shared<CgalAdvNode>(inst, CgalAdvType::MINKOWSKI, discretizer.getFa(),
+                                            discretizer.getFs());
   node->convexity = static_cast<int>(parameters["convexity"].toDouble());
 
   return children.instantiate(node);
@@ -53,9 +55,10 @@ static std::shared_ptr<AbstractNode> builtin_minkowski(const ModuleInstantiation
 static std::shared_ptr<AbstractNode> builtin_hull(const ModuleInstantiation *inst, Arguments arguments,
                                                   const Children& children)
 {
-  auto node = std::make_shared<CgalAdvNode>(inst, CgalAdvType::HULL);
-
   Parameters parameters = Parameters::parse(std::move(arguments), inst->location(), {});
+  const CurveDiscretizer discretizer(parameters, inst->location());
+  auto node =
+    std::make_shared<CgalAdvNode>(inst, CgalAdvType::HULL, discretizer.getFa(), discretizer.getFs());
   node->convexity = 0;
 
   return children.instantiate(node);
