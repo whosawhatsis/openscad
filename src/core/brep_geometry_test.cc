@@ -2430,4 +2430,74 @@ TEST_CASE("GeometryEvaluator hulls more than two spheres", "[brep]")
   CHECK(brep->getBoundingBox().max().y() == Catch::Approx(6).margin(1e-5));
 }
 
+TEST_CASE("B-Rep hull mixes planar solids with spheres", "[brep]")
+{
+  // A vertex is a ball of radius zero, so a cube and a sphere are the same kind of operand
+  // and need no combination-specific path.
+  const auto hull = BrepGeometry::hull({BrepGeometry::cube(2, 2, 2), sphereAt(1, Vector3d(8, 1, 1))});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Sphere) >= 1);
+  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(0).margin(1e-5));
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(9).margin(1e-5));
+  CHECK(brepContains(hull, Vector3d(5, 1, 1)));
+  CHECK_FALSE(brepContains(hull, Vector3d(5, 1, 3.5)));
+}
+
+TEST_CASE("B-Rep hull mixes an imported mesh with a sphere", "[brep]")
+{
+  // The mesh arrives as an arbitrary planar-faced solid, not a primitive the hull knows.
+  PlatformUtils::registerApplicationPath(
+    std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().string());
+  const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+  ModuleInstantiation inst("hull");
+  const CurveDiscretizer smooth([](const char *) -> std::optional<double> { return std::nullopt; });
+
+  auto imported = std::make_shared<ImportNode>(&inst, ImportType::OFF, CurveDiscretizer(6.0));
+  imported->filename = Filename((root / "tests/data/off/brep-tetrahedron.off").string());
+  imported->center = false;
+  imported->convexity = 1;
+  auto ball = std::make_shared<SphereNode>(&inst, smooth);
+  ball->r = 1;
+  auto translate = std::make_shared<TransformNode>(&inst, "translate");
+  // Clear of the tetrahedron, which reaches z = 10 on its own.
+  translate->matrix.translate(Vector3d(0, 0, 16));
+  translate->children = {ball};
+  auto hull = std::make_shared<CgalAdvNode>(&inst, CgalAdvType::HULL);
+  hull->children = {imported, translate};
+
+  const auto previous = RenderSettings::inst()->backend3D;
+  RenderSettings::inst()->backend3D = RenderBackend3D::OpenCASCADEBackend;
+  Tree tree(hull);
+  GeometryEvaluator evaluator(tree);
+  const auto result = evaluator.evaluateGeometry(*hull, true);
+  RenderSettings::inst()->backend3D = previous;
+
+  const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
+  REQUIRE(brep);
+  REQUIRE_FALSE(brep->isEmpty());
+  CHECK(brep->numFacets() == 0);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Sphere) >= 1);
+  CHECK(brep->getBoundingBox().max().z() == Catch::Approx(17).margin(1e-5));
+  CHECK(brep->getBoundingBox().max().x() == Catch::Approx(10).margin(1e-5));
+}
+
+TEST_CASE("B-Rep hull takes several primitives at once", "[brep]")
+{
+  auto second = BrepGeometry::cube(1, 1, 1);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(Vector3d(0, 9, 0));
+  second.transform(placement);
+  const auto hull =
+    BrepGeometry::hull({BrepGeometry::cube(2, 2, 2), second, sphereAt(1.5, Vector3d(9, 0, 0)),
+                        sphereAt(0.5, Vector3d(9, 9, 0))});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Sphere) >= 2);
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(10.5).margin(1e-5));
+  CHECK(hull.getBoundingBox().min().y() == Catch::Approx(-1.5).margin(1e-5));
+  CHECK(brepContains(hull, Vector3d(5, 5, 0.5)));
+  CHECK_FALSE(brepContains(hull, Vector3d(11, 9, 0)));
+}
+
 #endif

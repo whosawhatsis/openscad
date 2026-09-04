@@ -82,6 +82,7 @@
 #include <GeomAPI_ExtremaCurveCurve.hxx>
 #include <TColgp_Array2OfPnt.hxx>
 #include <TColStd_Array2OfReal.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <algorithm>
 #include <map>
 #include <set>
@@ -630,8 +631,12 @@ std::optional<gp_Cylinder> fullCylinder(const std::shared_ptr<void>& shape)
   return planes == 2 ? cylinder : std::nullopt;
 }
 
-// The convex hull of a ball is exactly representable, and so is the hull of any set of them.
-// Its boundary consists of spherical caps, ruled patches tangent to a pair, and flat facets
+// A vertex is a ball of radius zero. That one identity is what lets hull() take any mix of
+// operands without a path per combination: a sphere reduces to one ball, and any solid whose
+// faces are planar -- a cube, a polyhedron, an imported mesh, an extruded polygon -- reduces
+// to its vertices. Both then go through the same construction below.
+//
+// The hull's boundary is spherical caps, ruled patches tangent to a pair, and flat facets
 // tangent to a triple, so
 //
 //     conv(U Bi) = U Bi  U  U(pairs) tangentEnvelope  U  conv(centres and tangent points)
@@ -640,23 +645,47 @@ std::optional<gp_Cylinder> fullCylinder(const std::shared_ptr<void>& shape)
 // lies in no pairwise envelope. Nor are triples enough -- four balls at the corners of a
 // tetrahedron leave its centre outside every triple's slab, which is what the core polytope
 // covers. The core's own facets are the flat parts of the hull boundary, and everything
-// between it and that boundary is a cap or a pair envelope.
-std::optional<gp_Sphere> ballOf(const std::shared_ptr<void>& shape)
+// between it and that boundary is a cap or a pair envelope. With every radius zero the whole
+// construction collapses to the convex hull of the vertices, which is the polyhedral case.
+struct HullBall {
+  gp_Pnt center;
+  double radius{0};
+};
+
+// Empty for an operand this construction cannot represent exactly, which today means any
+// face that is neither planar nor a whole sphere, or any edge that is not a straight line.
+std::optional<std::vector<HullBall>> hullBalls(const std::shared_ptr<void>& shape)
 {
-  if (brepIsEmpty(shape)) return {};
-  return fullSphere(shapeFrom(shape));
+  std::vector<HullBall> balls;
+  if (brepIsEmpty(shape)) return balls;
+  if (const auto sphere = fullSphere(shapeFrom(shape)))
+    return std::vector<HullBall>{{sphere->Location(), sphere->Radius()}};
+  for (TopExp_Explorer faces(shapeFrom(shape), TopAbs_FACE); faces.More(); faces.Next())
+    if (BRepAdaptor_Surface(TopoDS::Face(faces.Current())).GetType() != GeomAbs_Plane) return {};
+  for (TopExp_Explorer edges(shapeFrom(shape), TopAbs_EDGE); edges.More(); edges.Next())
+    if (BRepAdaptor_Curve(TopoDS::Edge(edges.Current())).GetType() != GeomAbs_Line) return {};
+  std::set<std::array<double, 3>> unique;
+  for (TopExp_Explorer vertices(shapeFrom(shape), TopAbs_VERTEX); vertices.More(); vertices.Next()) {
+    const auto p = BRep_Tool::Pnt(TopoDS::Vertex(vertices.Current()));
+    unique.insert({p.X(), p.Y(), p.Z()});
+  }
+  for (const auto& p : unique) balls.push_back({gp_Pnt(p[0], p[1], p[2]), 0.0});
+  return balls;
 }
 
-// The tangent envelope between two balls: a cylinder for equal radii, a cone otherwise.
-// Empty when one ball already contains the other and the pair contributes nothing.
-std::optional<TopoDS_Shape> tangentEnvelope(const gp_Sphere& first, const gp_Sphere& second)
+// The tangent envelope between two balls: a cylinder for equal radii, a cone otherwise, and
+// a cone to an apex when one of them is a vertex. Empty when one ball already contains the
+// other, and when both are vertices -- the core polytope spans those.
+std::optional<TopoDS_Shape> tangentEnvelope(const HullBall& first, const HullBall& second)
 {
-  gp_Vec axis(first.Location(), second.Location());
-  const double distance = axis.Magnitude(), r1 = first.Radius(), r2 = second.Radius();
+  const double r1 = first.radius, r2 = second.radius;
+  if (r1 <= Precision::Confusion() && r2 <= Precision::Confusion()) return {};
+  gp_Vec axis(first.center, second.center);
+  const double distance = axis.Magnitude();
   if (distance <= std::abs(r2 - r1) + Precision::Confusion()) return {};
   axis.Normalize();
   const double slope = (r2 - r1) / distance, radial = std::sqrt(1 - slope * slope);
-  const gp_Ax2 placement(first.Location().Translated(axis * (-slope * r1)), gp_Dir(axis));
+  const gp_Ax2 placement(first.center.Translated(axis * (-slope * r1)), gp_Dir(axis));
   const double height = distance * radial * radial;
   if (height <= Precision::Confusion()) return {};
   return r1 == r2 ? BRepPrimAPI_MakeCylinder(placement, r1, height).Shape()
@@ -666,16 +695,16 @@ std::optional<TopoDS_Shape> tangentEnvelope(const gp_Sphere& first, const gp_Sph
 // The six points where the two planes tangent to all three balls touch them. Empty when the
 // centres are collinear, or when no plane touches all three; the pairwise envelopes then
 // already cover everything the triple contributes.
-std::vector<gp_Pnt> triTangentPoints(const gp_Sphere& a, const gp_Sphere& b, const gp_Sphere& c)
+std::vector<gp_Pnt> triTangentPoints(const HullBall& a, const HullBall& b, const HullBall& c)
 {
-  const gp_Vec u(a.Location(), b.Location()), v(a.Location(), c.Location());
+  const gp_Vec u(a.center, b.center), v(a.center, c.center);
   const gp_Vec w = u.Crossed(v);
   if (w.Magnitude() <= Precision::Confusion()) return {};  // collinear centres
   // Solve n.u = r_a - r_b, n.v = r_a - r_c for the component of n in the plane of the centres.
   const double uu = u.Dot(u), vv = v.Dot(v), uv = u.Dot(v);
   const double determinant = uu * vv - uv * uv;
   if (std::abs(determinant) <= Precision::Confusion()) return {};
-  const double du = a.Radius() - b.Radius(), dv = a.Radius() - c.Radius();
+  const double du = a.radius - b.radius, dv = a.radius - c.radius;
   const double alpha = (du * vv - dv * uv) / determinant;
   const double beta = (dv * uu - du * uv) / determinant;
   const gp_Vec inPlane = u * alpha + v * beta;
@@ -685,13 +714,12 @@ std::vector<gp_Pnt> triTangentPoints(const gp_Sphere& a, const gp_Sphere& b, con
 
   std::vector<gp_Pnt> tangents;
   for (const gp_Vec& normal : {inPlane + offAxis, inPlane - offAxis})
-    for (const gp_Sphere& ball : {a, b, c})
-      tangents.emplace_back(ball.Location().XYZ() + (normal * ball.Radius()).XYZ());
+    for (const HullBall& ball : {a, b, c})
+      tangents.emplace_back(ball.center.XYZ() + (normal * ball.radius).XYZ());
   return tangents;
 }
 
-std::shared_ptr<void> ballHull(std::vector<gp_Sphere> balls,
-                               const std::vector<std::shared_ptr<void>>& operands)
+std::shared_ptr<void> ballHull(const std::vector<HullBall>& balls)
 {
   // Drop balls swallowed by another one so they contribute no degenerate pieces.
   std::vector<size_t> kept;
@@ -699,36 +727,61 @@ std::shared_ptr<void> ballHull(std::vector<gp_Sphere> balls,
     bool absorbed = false;
     for (size_t j = 0; j < balls.size() && !absorbed; ++j) {
       if (i == j) continue;
-      const double distance = balls[i].Location().Distance(balls[j].Location());
-      const bool inside = distance + balls[i].Radius() <= balls[j].Radius() + Precision::Confusion();
-      // Identical balls would otherwise absorb each other; keep the first.
-      absorbed = inside && (balls[j].Radius() > balls[i].Radius() + Precision::Confusion() || j < i);
+      const double distance = balls[i].center.Distance(balls[j].center);
+      const bool inside = distance + balls[i].radius <= balls[j].radius + Precision::Confusion();
+      // Coincident equals would otherwise absorb each other; keep the first.
+      absorbed = inside && (balls[j].radius > balls[i].radius + Precision::Confusion() || j < i);
     }
     if (!absorbed) kept.push_back(i);
   }
-  if (kept.size() == 1) return operands[kept.front()];
+  if (kept.empty()) return {};
+  if (kept.size() == 1) {
+    const auto& only = balls[kept.front()];
+    if (only.radius <= Precision::Confusion()) return {};  // a single point has no volume
+    return std::make_shared<TopoDS_Shape>(BRepPrimAPI_MakeSphere(only.center, only.radius).Shape());
+  }
+  const bool curved = std::any_of(kept.begin(), kept.end(),
+                                  [&](size_t i) { return balls[i].radius > Precision::Confusion(); });
+  // ponytail: the triple pass is cubic and only runs when a sphere is present; raise this or
+  // pre-reduce the vertices to their own hull if real models hit it.
+  if (curved && kept.size() > 512)
+    throw std::runtime_error(
+      "B-Rep hull of a sphere with more than 512 other hull points is "
+      "not yet supported");
 
-  std::vector<std::shared_ptr<void>> parts;
   std::vector<gp_Pnt> core;
+  std::vector<std::shared_ptr<void>> envelopes, caps;
   for (const size_t i : kept) {
-    parts.push_back(operands[i]);
-    core.push_back(balls[i].Location());
+    core.push_back(balls[i].center);
+    if (balls[i].radius > Precision::Confusion())
+      caps.push_back(std::make_shared<TopoDS_Shape>(
+        BRepPrimAPI_MakeSphere(balls[i].center, balls[i].radius).Shape()));
   }
   for (size_t i = 0; i < kept.size(); ++i) {
     for (size_t j = i + 1; j < kept.size(); ++j) {
       if (const auto envelope = tangentEnvelope(balls[kept[i]], balls[kept[j]]))
-        parts.push_back(std::make_shared<TopoDS_Shape>(*envelope));
+        envelopes.push_back(std::make_shared<TopoDS_Shape>(*envelope));
+      if (!curved) continue;  // vertex-only triples contribute their centres, already in core
       for (size_t k = j + 1; k < kept.size(); ++k) {
         const auto tangents = triTangentPoints(balls[kept[i]], balls[kept[j]], balls[kept[k]]);
         core.insert(core.end(), tangents.begin(), tangents.end());
       }
     }
   }
+  // Order matters, and not only for tidiness. Each envelope is tangent to the ball it springs
+  // from, and fusing a tangent solid into a small accumulator makes OpenCASCADE discard one of
+  // them outright -- a cube hulled with a sphere silently lost the sphere. Starting from the
+  // core polytope and adding the caps last keeps every fuse a transversal overlap.
+  std::vector<std::shared_ptr<void>> parts;
   // Fewer than four independent points means the pair envelopes already span everything.
   if (auto polytope = pointHull(core)) parts.push_back(std::move(polytope));
+  parts.insert(parts.end(), envelopes.begin(), envelopes.end());
+  parts.insert(parts.end(), caps.begin(), caps.end());
+  if (parts.empty()) return {};
+  if (parts.size() == 1) return parts.front();
   auto result = brepBoolean(parts, BrepOperation::Union, 0).shape;
   if (brepIsEmpty(result) || !BRepCheck_Analyzer(shapeFrom(result)).IsValid())
-    throw std::runtime_error("B-Rep sphere hull is invalid");
+    throw std::runtime_error("B-Rep hull is invalid");
   return result;
 }
 
@@ -737,13 +790,17 @@ std::shared_ptr<void> ballHull(std::vector<gp_Sphere> balls,
 std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operands)
 {
   try {
-    std::vector<gp_Sphere> balls;
+    std::vector<HullBall> balls;
+    bool reducible = !operands.empty();
     for (const auto& operand : operands) {
-      const auto ball = ballOf(operand);
-      if (!ball) break;
-      balls.push_back(*ball);
+      const auto part = hullBalls(operand);
+      if (!part) {
+        reducible = false;
+        break;
+      }
+      balls.insert(balls.end(), part->begin(), part->end());
     }
-    if (!balls.empty() && balls.size() == operands.size()) return ballHull(std::move(balls), operands);
+    if (reducible) return ballHull(balls);
 
     if (operands.size() == 2 && !brepIsEmpty(operands[0]) && !brepIsEmpty(operands[1])) {
       const auto c1 = fullCylinder(operands[0]), c2 = fullCylinder(operands[1]);
@@ -920,24 +977,9 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
         }
       }
     }
-    // The polyhedral hull below reads authored vertices and never samples a surface, so a
-    // curved operand that reached this point is genuinely unsupported rather than mis-hulled.
-    for (const auto& operand : operands) {
-      if (brepIsEmpty(operand)) continue;
-      for (TopExp_Explorer faces(shapeFrom(operand), TopAbs_FACE); faces.More(); faces.Next()) {
-        if (BRepAdaptor_Surface(TopoDS::Face(faces.Current())).GetType() != GeomAbs_Plane)
-          throw std::runtime_error(
-            "B-Rep hull of curved solids currently supports any number of spheres, or two "
-            "cylinders sharing the Z axis direction; other curved operands are not yet supported");
-      }
-    }
-    std::vector<gp_Pnt> points;
-    for (const auto& operand : operands) {
-      if (brepIsEmpty(operand)) continue;
-      const auto vertices = polyhedralVertices(shapeFrom(operand), false);
-      points.insert(points.end(), vertices.begin(), vertices.end());
-    }
-    return pointHull(points);
+    throw std::runtime_error(
+      "B-Rep hull supports spheres and planar-faced solids in any combination, and two "
+      "cylinders sharing the Z axis direction; other curved operands are not yet supported");
   } catch (const Standard_Failure& error) {
     throw std::runtime_error(error.GetMessageString());
   }
