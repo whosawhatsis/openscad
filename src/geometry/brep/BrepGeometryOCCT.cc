@@ -655,6 +655,7 @@ struct HullBall {
 // ponytail: the triple pass is cubic and only runs when a sphere is present; raise this or
 // reduce the vertices further if real models hit it.
 constexpr size_t hullGeneratorLimit = 512;
+constexpr size_t hullTessellationLimit = 2000;
 
 // Empty for an operand this construction cannot represent exactly, which today means any
 // face that is neither planar nor a whole sphere, or any edge that is not a straight line.
@@ -677,6 +678,257 @@ std::optional<std::vector<HullBall>> hullBalls(const std::shared_ptr<void>& shap
   return balls;
 }
 
+// Cylinders and cones do not reduce to balls, but they do reduce to *disks*: a cylinder is
+// the hull of its two rim circles, and a cone is the hull of a rim circle and its apex. A
+// vertex is a disk of radius zero, so planar solids join the same model, exactly as they do
+// for balls.
+//
+// The construction works because every disk here shares one normal. A supporting plane with
+// normal m touches disk i at c_i + r_i * h, where h is m's unit component in the disks'
+// common plane -- the *same* h for every disk. So the contact point depends only on one
+// angle, and both the pair and triple tangency conditions collapse to
+//
+//     A cos(theta) + B sin(theta) + C = 0
+//
+// whose contact points are the vertices of every flat facet of the hull. The rest of the
+// boundary is the operands' own faces and the ruled patches between disk pairs, and a ruled
+// patch between two disks is always inside the hull because its rulings are chords of it.
+struct HullDisk {
+  gp_Pnt center;
+  double radius{0};
+};
+
+struct HullSection {
+  std::shared_ptr<void> shape;
+  std::vector<HullDisk> disks;  // centres in the frame whose Z is the shared axis
+};
+
+// Angles where a supporting plane touches, i.e. the roots of A cos(t) + B sin(t) + C = 0.
+std::vector<double> tangentAngles(double a, double b, double c)
+{
+  const double radius = std::hypot(a, b);
+  if (radius <= Precision::Confusion()) return {};  // degenerate: every angle or none
+  const double ratio = -c / radius;
+  if (std::abs(ratio) > 1.0) return {};  // no plane touches both
+  const double phase = std::atan2(b, a);
+  const double offset = std::acos(std::clamp(ratio, -1.0, 1.0));
+  return {phase + offset, phase - offset};
+}
+
+// A circle in the shared plane at the disk's height, parametrised from +X so that two of
+// them correspond angle for angle, which is what makes the loft between them the hull patch.
+TopoDS_Wire diskWire(const HullDisk& disk)
+{
+  return BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(
+                                   gp_Ax2(disk.center, gp_Dir(0, 0, 1), gp_Dir(1, 0, 0)), disk.radius)))
+    .Wire();
+}
+
+// The ruled solid spanning two disks, analytic when they are coaxial. Empty when the pair
+// spans no volume: two points, or two disks in one plane, both of which the core polytope
+// covers.
+std::optional<TopoDS_Shape> diskBridge(const HullDisk& first, const HullDisk& second)
+{
+  const double height = second.center.Z() - first.center.Z();
+  if (std::abs(height) <= Precision::Confusion()) return {};
+  const HullDisk& lower = height > 0 ? first : second;
+  const HullDisk& upper = height > 0 ? second : first;
+  if (lower.radius <= Precision::Confusion() && upper.radius <= Precision::Confusion()) return {};
+
+  const double offset =
+    std::hypot(upper.center.X() - lower.center.X(), upper.center.Y() - lower.center.Y());
+  if (offset <= Precision::Confusion()) {
+    // Coaxial, so OpenCASCADE has an analytic primitive for it and no loft is needed.
+    const gp_Ax2 placement(lower.center, gp_Dir(0, 0, 1));
+    const double span = upper.center.Z() - lower.center.Z();
+    if (std::abs(lower.radius - upper.radius) <= Precision::Confusion())
+      return BRepPrimAPI_MakeCylinder(placement, lower.radius, span).Shape();
+    return BRepPrimAPI_MakeCone(placement, lower.radius, upper.radius, span).Shape();
+  }
+
+  BRepOffsetAPI_ThruSections loft(true, true, Precision::Confusion());
+  loft.CheckCompatibility(false);
+  for (const HullDisk& disk : {lower, upper}) {
+    if (disk.radius <= Precision::Confusion())
+      loft.AddVertex(BRepBuilderAPI_MakeVertex(disk.center).Vertex());
+    else loft.AddWire(diskWire(disk));
+  }
+  loft.Build();
+  if (!loft.IsDone()) throw std::runtime_error("B-Rep hull ruled patch failed");
+  TopoDS_Shape shape = loft.Shape();
+  // Lofting to a vertex can come back as a shell rather than a solid, and a shell in the
+  // operand list makes the fuse fail outright rather than reporting anything useful.
+  if (shape.ShapeType() == TopAbs_SHELL) shape = BRepBuilderAPI_MakeSolid(TopoDS::Shell(shape)).Solid();
+  if (shape.ShapeType() != TopAbs_SOLID) throw std::runtime_error("B-Rep hull patch is not a solid");
+  auto solid = TopoDS::Solid(shape);
+  if (!BRepLib::OrientClosedSolid(solid)) throw std::runtime_error("B-Rep hull patch is open");
+  if (!BRepCheck_Analyzer(solid).IsValid()) throw std::runtime_error("B-Rep hull patch is invalid");
+  return solid;
+}
+
+// The one direction every cylinder and cone axis must share for the disk construction to
+// apply. Empty when an operand has a surface it cannot represent -- a sphere, a torus, a
+// spline -- or an edge that is neither a line nor a circle.
+std::optional<gp_Dir> sharedDiskAxis(const std::vector<std::shared_ptr<void>>& operands)
+{
+  std::optional<gp_Dir> axis;
+  for (const auto& operand : operands) {
+    if (brepIsEmpty(operand)) continue;
+    for (TopExp_Explorer faces(shapeFrom(operand), TopAbs_FACE); faces.More(); faces.Next()) {
+      const BRepAdaptor_Surface surface(TopoDS::Face(faces.Current()));
+      gp_Dir direction;
+      if (surface.GetType() == GeomAbs_Plane) continue;
+      else if (surface.GetType() == GeomAbs_Cylinder) direction = surface.Cylinder().Axis().Direction();
+      else if (surface.GetType() == GeomAbs_Cone) direction = surface.Cone().Axis().Direction();
+      else return {};
+      if (!axis) axis = direction;
+      else if (!axis->IsParallel(direction, Precision::Angular())) return {};
+    }
+    for (TopExp_Explorer edges(shapeFrom(operand), TopAbs_EDGE); edges.More(); edges.Next()) {
+      const auto type = BRepAdaptor_Curve(TopoDS::Edge(edges.Current())).GetType();
+      if (type != GeomAbs_Line && type != GeomAbs_Circle) return {};
+    }
+  }
+  return axis;
+}
+
+// Each operand, moved into the frame whose Z is the shared axis, with its rim circles as
+// disks and its remaining vertices as disks of radius zero.
+std::vector<HullSection> diskSections(const std::vector<std::shared_ptr<void>>& operands,
+                                      const gp_Trsf& toLocal)
+{
+  std::vector<HullSection> sections;
+  for (const auto& operand : operands) {
+    if (brepIsEmpty(operand)) continue;
+    HullSection section;
+    section.shape = std::make_shared<TopoDS_Shape>(
+      BRepBuilderAPI_Transform(shapeFrom(operand), toLocal, true).Shape());
+    std::set<std::array<double, 4>> seen;
+    for (TopExp_Explorer edges(shapeFrom(section.shape), TopAbs_EDGE); edges.More(); edges.Next()) {
+      const BRepAdaptor_Curve curve(TopoDS::Edge(edges.Current()));
+      if (curve.GetType() != GeomAbs_Circle) continue;
+      const auto circle = curve.Circle();
+      const auto center = circle.Location();
+      if (seen.insert({center.X(), center.Y(), center.Z(), circle.Radius()}).second)
+        section.disks.push_back({center, circle.Radius()});
+    }
+    const size_t rims = section.disks.size();
+    std::set<std::array<double, 3>> corners;
+    for (TopExp_Explorer vertices(shapeFrom(section.shape), TopAbs_VERTEX); vertices.More();
+         vertices.Next()) {
+      const auto point = BRep_Tool::Pnt(TopoDS::Vertex(vertices.Current()));
+      // A vertex sitting on a rim is already represented by that disk.
+      bool onRim = false;
+      for (size_t i = 0; i < rims && !onRim; ++i) {
+        const auto& disk = section.disks[i];
+        onRim = std::abs(point.Z() - disk.center.Z()) <= Precision::Confusion() &&
+                std::abs(std::hypot(point.X() - disk.center.X(), point.Y() - disk.center.Y()) -
+                         disk.radius) <= Precision::Confusion();
+      }
+      if (!onRim && corners.insert({point.X(), point.Y(), point.Z()}).second)
+        section.disks.push_back({point, 0.0});
+    }
+    sections.push_back(std::move(section));
+  }
+  return sections;
+}
+
+std::shared_ptr<void> diskHull(const std::vector<HullSection>& sections)
+{
+  std::vector<HullDisk> disks;
+  std::vector<size_t> owner;
+  for (size_t index = 0; index < sections.size(); ++index) {
+    for (const auto& disk : sections[index].disks) {
+      disks.push_back(disk);
+      owner.push_back(index);
+    }
+  }
+
+  const auto contact = [&disks](size_t index, double angle) {
+    return gp_Pnt(disks[index].center.X() + disks[index].radius * std::cos(angle),
+                  disks[index].center.Y() + disks[index].radius * std::sin(angle),
+                  disks[index].center.Z());
+  };
+  // Support of a disk for the plane normal (q cos t, q sin t, w).
+  const auto support = [&disks](size_t index, double angle, double flat, double rise) {
+    return flat * (disks[index].center.X() * std::cos(angle) +
+                   disks[index].center.Y() * std::sin(angle) + disks[index].radius) +
+           rise * disks[index].center.Z();
+  };
+
+  std::vector<gp_Pnt> core;
+  // Only planes that support the whole set carry hull geometry. Keeping the rest would bury
+  // the fuse in redundant tangent solids, which is both slow and a source of invalid results.
+  const auto record = [&](double angle, double flat, double rise, const std::vector<size_t>& touched) {
+    const double reference = support(touched.front(), angle, flat, rise);
+    for (size_t index = 0; index < disks.size(); ++index)
+      if (support(index, angle, flat, rise) > reference + 1e-9) return;
+    for (const size_t index : touched) core.push_back(contact(index, angle));
+  };
+
+  for (size_t i = 0; i < disks.size(); ++i) {
+    for (size_t j = i + 1; j < disks.size(); ++j) {
+      // Planes perpendicular to the disks, touching this pair.
+      for (const double angle :
+           tangentAngles(disks[i].center.X() - disks[j].center.X(),
+                         disks[i].center.Y() - disks[j].center.Y(), disks[i].radius - disks[j].radius))
+        record(angle, 1.0, 0.0, {i, j});
+      for (size_t k = j + 1; k < disks.size(); ++k) {
+        // Oblique planes touching all three. Eliminating the plane's tilt between the two
+        // equal-support conditions leaves the same one-angle equation.
+        const double zij = disks[i].center.Z() - disks[j].center.Z();
+        const double zik = disks[i].center.Z() - disks[k].center.Z();
+        const double dx = disks[i].center.X() - disks[j].center.X();
+        const double ex = disks[i].center.X() - disks[k].center.X();
+        const double dy = disks[i].center.Y() - disks[j].center.Y();
+        const double ey = disks[i].center.Y() - disks[k].center.Y();
+        const double dr = disks[i].radius - disks[j].radius;
+        const double er = disks[i].radius - disks[k].radius;
+        for (const double angle :
+             tangentAngles(dx * zik - ex * zij, dy * zik - ey * zij, dr * zik - er * zij)) {
+          // Recover the tilt from the pair condition: flat * Gij + rise * Zij = 0.
+          double flat = -zij;
+          double rise = dx * std::cos(angle) + dy * std::sin(angle) + dr;
+          const double norm = std::hypot(flat, rise);
+          if (norm <= Precision::Confusion()) continue;
+          flat /= norm;
+          rise /= norm;
+          if (flat < 0) {
+            flat = -flat;
+            rise = -rise;
+            record(angle + M_PI, flat, rise, {i, j, k});
+            continue;
+          }
+          record(angle, flat, rise, {i, j, k});
+        }
+      }
+    }
+  }
+
+  // Same order rule as the ball hull: start from the core polytope so that every later fuse
+  // grows a large accumulator, and add the tangent curved pieces last.
+  std::vector<std::shared_ptr<void>> parts;
+  if (auto polytope = pointHull(core)) parts.push_back(std::move(polytope));
+  for (const auto& section : sections)
+    if (!brepIsEmpty(section.shape)) parts.push_back(section.shape);
+  // Every ruled patch between two disks is a set of chords of the hull, so it is always a
+  // subset of the result and needs no support test. Coaxial disks in particular have only
+  // *tilted* common tangent planes, which the perpendicular pair equation above cannot see,
+  // so gating bridges on that equation would drop the cone joining two coaxial cylinders.
+  for (size_t first = 0; first < disks.size(); ++first)
+    for (size_t second = first + 1; second < disks.size(); ++second)
+      if (owner[first] != owner[second])
+        if (const auto bridge = diskBridge(disks[first], disks[second]))
+          parts.push_back(std::make_shared<TopoDS_Shape>(*bridge));
+
+  if (parts.empty()) return {};
+  if (parts.size() == 1) return parts.front();
+  auto result = brepBoolean(parts, BrepOperation::Union, 0).shape;
+  if (brepIsEmpty(result) || !BRepCheck_Analyzer(shapeFrom(result)).IsValid())
+    throw std::runtime_error("B-Rep hull is invalid");
+  return result;
+}
+
 // Operands with no exact construction contribute the vertices of a tessellation instead, so
 // hull() always produces something rather than failing. The result is a faceted solid that
 // is inscribed in the true hull; doc/opencascade.md records this as an approximation.
@@ -685,10 +937,17 @@ std::vector<HullBall> tessellatedBalls(const std::shared_ptr<void>& shape)
   const auto bounds = brepBounds(shape);
   const double diagonal =
     std::hypot(std::hypot(bounds[3] - bounds[0], bounds[4] - bounds[1]), bounds[5] - bounds[2]);
-  const auto mesh = brepMesh(shape, std::max(diagonal / 1000.0, Precision::Confusion()), 0.1);
+  // The point hull is incremental and rescans its faces per vertex, so it is the tessellation
+  // tolerance that decides whether this finishes at all. A two-hundredth of the diagonal is
+  // well inside a printable tolerance; coarsen further rather than hand it an unbounded mesh.
   std::vector<gp_Pnt> points;
-  points.reserve(mesh.vertices.size());
-  for (const auto& vertex : mesh.vertices) points.emplace_back(vertex[0], vertex[1], vertex[2]);
+  for (double deflection = std::max(diagonal / 200.0, Precision::Confusion());; deflection *= 2.0) {
+    const auto mesh = brepMesh(shape, deflection, 0.35);
+    points.clear();
+    points.reserve(mesh.vertices.size());
+    for (const auto& vertex : mesh.vertices) points.emplace_back(vertex[0], vertex[1], vertex[2]);
+    if (points.size() <= hullTessellationLimit || deflection > diagonal) break;
+  }
 
   std::vector<HullBall> balls;
   // Only extreme vertices can affect a hull, and dropping the rest keeps the triple pass small.
@@ -796,6 +1055,11 @@ std::shared_ptr<void> ballHull(const std::vector<HullBall>& balls)
         envelopes.push_back(std::make_shared<TopoDS_Shape>(*envelope));
       if (!curved) continue;  // vertex-only triples contribute their centres, already in core
       for (size_t k = j + 1; k < kept.size(); ++k) {
+        // Same reason, per triple: three vertices tangent-touch at themselves.
+        if (balls[kept[i]].radius <= Precision::Confusion() &&
+            balls[kept[j]].radius <= Precision::Confusion() &&
+            balls[kept[k]].radius <= Precision::Confusion())
+          continue;
         const auto tangents = triTangentPoints(balls[kept[i]], balls[kept[j]], balls[kept[k]]);
         core.insert(core.end(), tangents.begin(), tangents.end());
       }
@@ -835,199 +1099,34 @@ std::shared_ptr<void> brepHull(const std::vector<std::shared_ptr<void>>& operand
     }
     if (reducible) return ballHull(balls);
 
-    if (operands.size() == 2 && !brepIsEmpty(operands[0]) && !brepIsEmpty(operands[1])) {
-      const auto c1 = fullCylinder(operands[0]), c2 = fullCylinder(operands[1]);
-      if (c1 && c2) {
-        const auto b1 = *verticalPrism(operands[0]), b2 = *verticalPrism(operands[1]);
-        const double centerDistance =
-          std::hypot(c2->Location().X() - c1->Location().X(), c2->Location().Y() - c1->Location().Y());
-        const double h1 = b1[5] - b1[2], h2 = b2[5] - b2[2];
-        if (centerDistance > Precision::Confusion() &&
-            std::abs(c1->Radius() - c2->Radius()) > Precision::Confusion() &&
-            std::abs(h1 - h2) <= Precision::Confusion() &&
-            std::abs(b1[2] - b2[2]) > Precision::Confusion()) {
-          const auto capWire = [](const gp_Cylinder& cylinder, double z) {
-            const gp_Pnt center(cylinder.Location().X(), cylinder.Location().Y(), z);
-            return BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(
-                                             gp_Ax2(center, gp_Dir(0, 0, 1)), cylinder.Radius())))
-              .Wire();
-          };
-          BRepOffsetAPI_ThruSections bottomHull(true, true, Precision::Confusion());
-          bottomHull.CheckCompatibility(false);
-          bottomHull.AddWire(capWire(*c1, b1[2]));
-          bottomHull.AddWire(capWire(*c2, b2[2]));
-          bottomHull.Build();
-          if (!bottomHull.IsDone()) throw std::runtime_error("Translated cylinder hull loft failed");
-          auto loftSolid = TopoDS::Solid(bottomHull.Shape());
-          if (!BRepLib::OrientClosedSolid(loftSolid) || !BRepCheck_Analyzer(loftSolid).IsValid())
-            throw std::runtime_error("Translated cylinder hull loft is invalid");
-          std::vector<std::shared_ptr<void>> swept{std::make_shared<TopoDS_Shape>(loftSolid)};
-          for (TopExp_Explorer faces(loftSolid, TopAbs_FACE); faces.More(); faces.Next()) {
-            BRepPrimAPI_MakePrism prism(faces.Current(), gp_Vec(0, 0, h1));
-            if (!prism.IsDone()) throw std::runtime_error("Translated cylinder hull extrusion failed");
-            auto prismSolid = TopoDS::Solid(prism.Shape());
-            if (!BRepLib::OrientClosedSolid(prismSolid) || !BRepCheck_Analyzer(prismSolid).IsValid())
-              throw std::runtime_error("Translated cylinder hull face extrusion is invalid");
-            swept.push_back(std::make_shared<TopoDS_Shape>(prismSolid));
-          }
-          TopoDS_Shape fused = shapeFrom(swept.front());
-          for (auto part = std::next(swept.begin()); part != swept.end(); ++part) {
-            BRepAlgoAPI_Fuse fuse(fused, shapeFrom(*part));
-            fuse.SetFuzzyValue(Precision::Confusion());
-            fuse.SetGlue(BOPAlgo_GlueShift);
-            fuse.Build();
-            if (!fuse.IsDone()) throw std::runtime_error("Translated cylinder hull fusion failed");
-            fused = fuse.Shape();
-          }
-          auto result = std::make_shared<TopoDS_Shape>(std::move(fused));
-          if (brepIsEmpty(result)) {
-            int solids = 0;
-            for (TopExp_Explorer explorer(shapeFrom(result), TopAbs_SOLID); explorer.More();
-                 explorer.Next())
-              ++solids;
-            throw std::runtime_error("Translated unequal-cylinder hull fused empty (shape " +
-                                     std::to_string(shapeFrom(result).ShapeType()) + ", solids " +
-                                     std::to_string(solids) + ")");
-          }
-          if (!BRepCheck_Analyzer(shapeFrom(result)).IsValid())
-            throw std::runtime_error("Translated unequal-cylinder hull is invalid");
-          return result;
-        }
-        if (centerDistance > Precision::Confusion() &&
-            std::abs(c1->Radius() - c2->Radius()) <= Precision::Confusion() &&
-            std::abs(h1 - h2) > Precision::Confusion()) {
-          const auto capFace = [](const std::shared_ptr<void>& shape, double z) {
-            for (TopExp_Explorer faces(shapeFrom(shape), TopAbs_FACE); faces.More(); faces.Next()) {
-              const auto face = TopoDS::Face(faces.Current());
-              const BRepAdaptor_Surface surface(face);
-              if (surface.GetType() == GeomAbs_Plane &&
-                  std::abs(surface.Plane().Location().Z() - z) <= Precision::Confusion())
-                return face;
-            }
-            throw std::runtime_error("Translated cylinder hull cap not found");
-          };
-          std::vector<std::shared_ptr<void>> swept = operands;
-          for (const auto& [z1, z2] : {std::pair{b1[2], b2[2]}, std::pair{b1[5], b2[5]}}) {
-            BRepPrimAPI_MakePrism prism(capFace(operands[0], z1),
-                                        gp_Vec(c2->Location().X() - c1->Location().X(),
-                                               c2->Location().Y() - c1->Location().Y(), z2 - z1));
-            if (!prism.IsDone()) throw std::runtime_error("Translated cylinder hull cap sweep failed");
-            swept.push_back(std::make_shared<TopoDS_Shape>(prism.Shape()));
-          }
-          const double dx = c2->Location().X() - c1->Location().X();
-          const double dy = c2->Location().Y() - c1->Location().Y();
-          const double nx = -dy * c1->Radius() / centerDistance;
-          const double ny = dx * c1->Radius() / centerDistance;
-          std::vector<gp_Pnt> core;
-          for (const auto& [cylinder, bounds] : {std::pair{*c1, b1}, std::pair{*c2, b2}}) {
-            for (const double z : {bounds[2], bounds[5]}) {
-              core.emplace_back(cylinder.Location().X() + nx, cylinder.Location().Y() + ny, z);
-              core.emplace_back(cylinder.Location().X() - nx, cylinder.Location().Y() - ny, z);
-            }
-          }
-          swept.push_back(pointHull(core));
-          auto result = brepBoolean(swept, BrepOperation::Union, 0).shape;
-          if (brepIsEmpty(result) || !BRepCheck_Analyzer(shapeFrom(result)).IsValid())
-            throw std::runtime_error("Translated unequal-height cylinder hull is invalid");
-          return result;
-        }
-        if (std::abs(c1->Radius() - c2->Radius()) <= Precision::Confusion() &&
-            std::abs(h1 - h2) <= Precision::Confusion() &&
-            std::abs(b1[2] - b2[2]) > Precision::Confusion()) {
-          const gp_Vec displacement(c1->Location(), c2->Location());
-          if (displacement.Magnitude() > Precision::Confusion()) {
-            std::vector<std::shared_ptr<void>> swept{operands[0], operands[1]};
-            for (TopExp_Explorer faces(shapeFrom(operands[0]), TopAbs_FACE); faces.More();
-                 faces.Next()) {
-              BRepPrimAPI_MakePrism prism(faces.Current(), displacement);
-              if (!prism.IsDone()) throw std::runtime_error("Translated cylinder hull sweep failed");
-              swept.push_back(std::make_shared<TopoDS_Shape>(prism.Shape()));
-            }
-            const double dx = c2->Location().X() - c1->Location().X();
-            const double dy = c2->Location().Y() - c1->Location().Y();
-            const double horizontal = std::hypot(dx, dy);
-            if (horizontal > Precision::Confusion()) {
-              const double nx = -dy * c1->Radius() / horizontal;
-              const double ny = dx * c1->Radius() / horizontal;
-              std::vector<gp_Pnt> core;
-              for (const auto& [cylinder, bounds] : {std::pair{*c1, b1}, std::pair{*c2, b2}}) {
-                for (const double z : {bounds[2], bounds[5]}) {
-                  core.emplace_back(cylinder.Location().X() + nx, cylinder.Location().Y() + ny, z);
-                  core.emplace_back(cylinder.Location().X() - nx, cylinder.Location().Y() - ny, z);
-                }
-              }
-              swept.push_back(pointHull(core));
-            }
-            auto result = brepBoolean(swept, BrepOperation::Union, 0).shape;
-            if (!BRepCheck_Analyzer(shapeFrom(result)).IsValid())
-              throw std::runtime_error("Translated cylinder hull is invalid");
-            return result;
-          }
-        }
-        if (centerDistance <= Precision::Confusion() &&
-            (b1[5] <= b2[2] + Precision::Confusion() || b2[5] <= b1[2] + Precision::Confusion())) {
-          const bool firstIsLower = b1[5] <= b2[2] + Precision::Confusion();
-          const auto& lowerBounds = firstIsLower ? b1 : b2;
-          const auto& upperBounds = firstIsLower ? b2 : b1;
-          const auto& lowerCylinder = firstIsLower ? *c1 : *c2;
-          const auto& upperCylinder = firstIsLower ? *c2 : *c1;
-          const double bridgeHeight = upperBounds[2] - lowerBounds[5];
-          if (bridgeHeight <= Precision::Confusion())
-            return brepBoolean(operands, BrepOperation::Union, 0).shape;
-          const gp_Ax2 placement(
-            gp_Pnt(lowerCylinder.Location().X(), lowerCylinder.Location().Y(), lowerBounds[5]),
-            gp_Dir(0, 0, 1));
-          TopoDS_Shape envelope =
-            std::abs(lowerCylinder.Radius() - upperCylinder.Radius()) <= Precision::Confusion()
-              ? BRepPrimAPI_MakeCylinder(placement, lowerCylinder.Radius(), bridgeHeight).Shape()
-              : BRepPrimAPI_MakeCone(placement, lowerCylinder.Radius(), upperCylinder.Radius(),
-                                     bridgeHeight)
-                  .Shape();
-          return brepBoolean({operands[0], operands[1], std::make_shared<TopoDS_Shape>(envelope)},
-                             BrepOperation::Union, 0)
-            .shape;
-        }
-        if (std::abs(b1[2] - b2[2]) <= Precision::Confusion() &&
-            std::abs(b1[5] - b2[5]) <= Precision::Confusion()) {
-          const double dx = c2->Location().X() - c1->Location().X(),
-                       dy = c2->Location().Y() - c1->Location().Y();
-          const double distance = std::hypot(dx, dy), r1 = c1->Radius(), r2 = c2->Radius();
-          if (distance <= std::abs(r2 - r1) + Precision::Confusion()) return operands[r1 >= r2 ? 0 : 1];
-          const double k = (r1 - r2) / distance, t = std::sqrt(1 - k * k);
-          const std::array<double, 2> n1{(k * dx - t * dy) / distance, (k * dy + t * dx) / distance};
-          const std::array<double, 2> n2{(k * dx + t * dy) / distance, (k * dy - t * dx) / distance};
-          auto bridge =
-            brepMakePrism({{c1->Location().X() + r1 * n1[0], c1->Location().Y() + r1 * n1[1]},
-                           {c2->Location().X() + r2 * n1[0], c2->Location().Y() + r2 * n1[1]},
-                           {c2->Location().X() + r2 * n2[0], c2->Location().Y() + r2 * n2[1]},
-                           {c1->Location().X() + r1 * n2[0], c1->Location().Y() + r1 * n2[1]}},
-                          b1[5] - b1[2]);
-          gp_Trsf placement;
-          placement.SetTranslation(gp_Vec(0, 0, b1[2]));
-          bridge = std::make_shared<TopoDS_Shape>(
-            BRepBuilderAPI_Transform(shapeFrom(bridge), placement, true).Shape());
-          return brepBoolean({operands[0], operands[1], bridge}, BrepOperation::Union, 0).shape;
-        }
+    // Cylinders and cones, in any number and mixed with planar solids, as long as their axes
+    // are parallel. This replaced six pairwise constructions that between them covered only
+    // two operands at a time.
+    if (const auto axis = sharedDiskAxis(operands)) {
+      gp_Trsf toLocal;
+      toLocal.SetTransformation(gp_Ax3(gp_Pnt(0, 0, 0), *axis));
+      try {
+        if (auto local = diskHull(diskSections(operands, toLocal)))
+          return std::make_shared<TopoDS_Shape>(
+            BRepBuilderAPI_Transform(shapeFrom(local), toLocal.Inverted(), true).Shape());
+      } catch (const std::exception&) {
+        // A safety net, not an expected path: no arrangement in the tests needs it. If some
+        // model does defeat OpenCASCADE's fuse, degrading to the tessellated path below
+        // beats failing, and the exactness that is expected to hold is pinned by tests.
       }
     }
-    // Nothing exact fits the whole operand set, so reduce what cannot be done exactly to its
-    // tessellated vertices and hull that. Spheres stay exact unless keeping them would push
-    // the cubic triple pass past its limit, in which case everything curved is tessellated.
-    const auto reduce = [&operands](bool exactCurved) {
-      std::vector<HullBall> generators;
-      for (const auto& operand : operands) {
-        if (brepIsEmpty(operand)) continue;
-        const auto exact = exactCurved ? hullBalls(operand) : std::optional<std::vector<HullBall>>{};
-        const auto part = exact ? *exact : tessellatedBalls(operand);
-        generators.insert(generators.end(), part.begin(), part.end());
-      }
-      return generators;
-    };
-    auto generators = reduce(true);
-    const bool curved = std::any_of(generators.begin(), generators.end(), [](const HullBall& ball) {
-      return ball.radius > Precision::Confusion();
-    });
-    if (curved && generators.size() > hullGeneratorLimit) generators = reduce(false);
+
+    // Nothing exact fits the whole operand set, so every operand contributes the vertices of
+    // a tessellation and the hull is computed as a polyhedron. Keeping some operands exact
+    // while others are tessellated is deliberately not done: mixing one sphere with a few
+    // hundred mesh vertices puts the cubic triple pass into the millions of points, for a
+    // result no better than this one.
+    std::vector<HullBall> generators;
+    for (const auto& operand : operands) {
+      if (brepIsEmpty(operand)) continue;
+      const auto part = tessellatedBalls(operand);
+      generators.insert(generators.end(), part.begin(), part.end());
+    }
     if (generators.empty()) return {};
     return ballHull(generators);
   } catch (const Standard_Failure& error) {

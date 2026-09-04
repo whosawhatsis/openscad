@@ -17,3 +17,4 @@ translate([24,36,0]) linear_extrude(3) offset(delta=1, chamfer=true) circle(4, $
 translate([36,36,0]) hull() { sphere(1); translate([6,0,0]) sphere(1); translate([3,5,0]) sphere(2); }
 translate([0,48,0]) hull() { cube(2); translate([8,1,1]) sphere(1); translate([1,8,1]) sphere(2); }
 translate([12,48,0]) hull() { cube(2); translate([8,1,0]) cylinder(r1=2, r2=1, h=4); }
+translate([24,48,0]) hull() { cylinder(r=1, h=4); translate([7,0,0]) cylinder(r1=2, r2=1, h=6); translate([3,6,0]) cube(2); }

@@ -41,17 +41,20 @@ IGES import/export follows the same retained-BREP and backend-aware tessellation
 - Round, miter, and chamfer offsets of supported profiles, and both cut and shadow
   projections used as extrusion profiles. Shadow projection uses OCCT silhouettes
   and native region classification, not a rendered image or triangle mesh.
-- Hulls of any operands. Spheres and planar-faced solids -- cubes, polyhedra, imported
-  meshes, extruded polygons -- mix freely in any number and are exact: a vertex is treated
-  as a sphere of radius zero, so both reduce to the same construction, which unions the
-  balls, their pairwise tangent envelopes, and the convex hull of the centres together with
-  every tri-tangent point. Two vertical cylinders are exact through separate constructions:
-  parallel with matching cap heights, separated coaxial, equal radii translated in 3D with
-  unequal heights, or equal heights translated with unequal radii (including extruded
-  two-circle hulls). **Any other operand -- a cone, a torus, a revolution, a spline surface,
-  or three or more cylinders -- is reduced to the vertices of a tessellation before hulling**,
-  so `hull()` always produces a result rather than failing. That result is a planar-faced
-  solid inscribed in the true hull, not exact geometry; see *Current limitations*.
+- Hulls of any operands, exact through one of two constructions and tessellated otherwise.
+  Both work by reducing every operand to generators of one kind and then unioning the
+  operands, the ruled patches spanning generator pairs, and a core polytope whose vertices
+  are the contact points of the planes that support the whole set.
+  - **Balls.** Spheres and planar-faced solids -- cubes, polyhedra, imported meshes,
+    extruded polygons -- mix freely in any number, because a vertex is a ball of radius zero.
+  - **Disks.** Cylinders and cones mix with planar-faced solids in any number, provided
+    their axes are parallel, because a cylinder is the hull of its two rim circles and a cone
+    is the hull of a rim circle and its apex; a vertex is a disk of radius zero. The
+    construction runs in the frame of the shared axis, so that axis need not be Z.
+  - Anything else -- a sphere mixed with a cylinder, a torus, a revolution, a spline surface
+    -- has every operand reduced to the vertices of a tessellation before hulling, so
+    `hull()` always produces a result rather than failing. That result is a planar-faced
+    solid inscribed in the true hull, not exact geometry; see *Current limitations*.
 - Minkowski sums of polyhedra, including nonconvex operands; polyhedron/sphere rounding;
   sphere/sphere sums; vertical constant-section prisms with a vertical cylinder
   (including planar circle offsets). Operands must fit a supported path at each
@@ -73,22 +76,22 @@ curved-operand Minkowski sums, DXF spline entities and INSERT
 arrays/forward block references, nonuniformly transformed strokes, and negative extrusion scales
 remain unsupported.
 
-**Hulls of curved operands other than spheres are approximate.** Cones, tori, revolutions,
-spline surfaces, and any set of three or more cylinders are tessellated to their vertices
-and hulled as a polyhedron, at a chord tolerance of a thousandth of the operand's bounding
-diagonal. The result is inscribed in the true hull, so it is slightly small, and it exports
-as facets rather than analytic surfaces. This is a deliberate stopgap: it keeps `hull()`
-working on any model instead of failing on unsupported combinations.
+**Some hulls are approximate.** Operand sets that fit neither the ball nor the disk
+construction -- a sphere mixed with a cylinder, cylinders whose axes are not parallel, tori,
+revolutions, spline surfaces -- have every operand tessellated to its vertices and hulled as
+a polyhedron, at a chord tolerance of a two-hundredth of the operand's bounding diagonal,
+coarsened further if that would produce more points than the hull can process. The result is
+inscribed in the true hull, so it is slightly small, and it exports as facets rather than
+analytic surfaces. Mixing an exact operand with a tessellated one is deliberately not done:
+one sphere among a few hundred mesh vertices puts the construction's cubic tangent-plane
+pass into the millions of points, for a result no better than tessellating throughout.
 
-The way out is a second generator kind. The exact path today reduces every operand to
-*balls*, which is why spheres and vertices need no per-combination code. A cylinder is the
-hull of two disks and a cone is the hull of a disk and a point, so adding a **disk
-generator** alongside the ball generator would make cylinders and cones exact for any number
-of operands and in any mix with spheres and meshes, and would delete the pairwise cylinder
-constructions listed above -- the last combination-specific paths in the hull. The piece
-that does not yet exist is the ruled patch between a disk and a ball or another disk, which
-is what `BRepOffsetAPI_ThruSections` already builds for the existing unequal-radius case.
-Surfaces that are neither planar, spherical, nor circular-sectioned would still tessellate. Native profile
+Closing the remaining gaps means a third generator kind, or a bridge between the two that
+exist. The ruled patch between a *disk and a ball* is the missing piece for hulling a
+cylinder with a sphere; non-parallel cylinder axes need tangency between circles in
+different planes, where the equal-angle correspondence that makes the disk construction work
+no longer holds. Surfaces that are neither planar, spherical, nor circular-sectioned would
+still tessellate. Native profile
 operations are currently consumed through extrusion; standalone 2D evaluation
 still uses the existing polygon pipeline. Complex offsets/projections can fail
 OCCT construction or validity checks can still reject degenerate imported contours.

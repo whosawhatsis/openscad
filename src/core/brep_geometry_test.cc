@@ -1421,10 +1421,21 @@ TEST_CASE("B-Rep hull of separated coaxial cylinders keeps the tangent envelope 
   const auto brep = std::dynamic_pointer_cast<const BrepGeometry>(result);
   REQUIRE(brep);
   REQUIRE_FALSE(brep->isEmpty());
-  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) >= 2);
+  CHECK(brep->surfaceCount(BrepSurfaceType::Cylinder) == 1);
   CHECK(brep->surfaceCount(BrepSurfaceType::Cone) == 1);
   CHECK(brep->getBoundingBox().min().z() == Catch::Approx(0).margin(1e-5));
   CHECK(brep->getBoundingBox().max().z() == Catch::Approx(6).margin(1e-5));
+  // The hull's profile is the 2D hull of the two rectangles, so above z = 2 it tapers all
+  // the way from r = 2 to the *far* rim at z = 6, giving r = 1.25 at z = 5. The superseded
+  // pairwise construction bridged only to the near rim at z = 4 and then followed the upper
+  // cylinder, which left this region outside the solid.
+  BrepFilletDiagnostics diagnostics;
+  auto probe = BrepGeometry::cube(0.02, 0.02, 0.02);
+  Transform3d at = Transform3d::Identity();
+  at.translate(Vector3d(1.2, -0.01, 4.99));
+  probe.transform(at);
+  CHECK_FALSE(
+    BrepGeometry::boolean({*brep, probe}, BrepOperation::Intersection, 0, diagnostics).isEmpty());
 }
 
 TEST_CASE("B-Rep hull of translated cylinders keeps the swept envelope smooth", "[brep]")
@@ -2502,21 +2513,17 @@ TEST_CASE("B-Rep hull takes several primitives at once", "[brep]")
 
 TEST_CASE("B-Rep hull falls back to a tessellation for operands it cannot do exactly", "[brep]")
 {
-  // A cone has no exact hull construction yet. Rather than failing, it contributes the
-  // vertices of a tessellation, so the result is a faceted approximation from inside.
-  auto cone = BrepGeometry::cone(2, 1, 4);
-  Transform3d placement = Transform3d::Identity();
-  placement.translate(Vector3d(10, 0, 0));
-  cone.transform(placement);
-  const auto hull = BrepGeometry::hull({BrepGeometry::cube(2, 2, 2), cone});
+  // A sphere mixed with a cylinder fits neither exact construction: the ball path needs every
+  // operand to be a ball, and the disk path cannot represent a spherical surface. Rather than
+  // failing, both contribute tessellated vertices and the result is inscribed in the true hull.
+  const auto hull = BrepGeometry::hull({BrepGeometry::cylinder(1, 4), sphereAt(2, Vector3d(10, 0, 2))});
   REQUIRE_FALSE(hull.isEmpty());
   CHECK(hull.numFacets() == 0);  // still a B-Rep, just a planar one
-  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(0).margin(1e-5));
   // Inscribed, so never beyond the exact bound of 12, and close to it.
   CHECK(hull.getBoundingBox().max().x() <= 12 + 1e-9);
   CHECK(hull.getBoundingBox().max().x() > 11.9);
-  CHECK(brepContains(hull, Vector3d(6, 0.5, 1)));
-  CHECK_FALSE(brepContains(hull, Vector3d(6, 4, 1)));
+  CHECK(brepContains(hull, Vector3d(5, 0, 2)));
+  CHECK_FALSE(brepContains(hull, Vector3d(5, 4, 2)));
 }
 
 TEST_CASE("B-Rep hull takes three cylinders through the tessellated path", "[brep]")
@@ -2550,6 +2557,98 @@ TEST_CASE("B-Rep hull of two cylinders stays exact", "[brep]")
   REQUIRE_FALSE(hull.isEmpty());
   CHECK(hull.surfaceCount(BrepSurfaceType::Cylinder) >= 2);
   CHECK(hull.getBoundingBox().max().x() == Catch::Approx(9).margin(1e-5));
+}
+
+namespace {
+
+BrepGeometry movedCylinder(double radius, double height, const Vector3d& offset)
+{
+  auto shape = BrepGeometry::cylinder(radius, height);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(offset);
+  shape.transform(placement);
+  return shape;
+}
+
+}  // namespace
+
+TEST_CASE("B-Rep hull spans three cylinders exactly", "[brep]")
+{
+  // Three is not two, and used to fall through to the tessellated path.
+  const auto hull =
+    BrepGeometry::hull({movedCylinder(1, 4, Vector3d(0, 0, 0)), movedCylinder(1, 4, Vector3d(8, 0, 0)),
+                        movedCylinder(1, 4, Vector3d(4, 7, 0))});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Cylinder) >= 3);
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(9).margin(1e-5));
+  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(-1).margin(1e-5));
+  CHECK(hull.getBoundingBox().max().z() == Catch::Approx(4).margin(1e-5));
+  CHECK(brepContains(hull, Vector3d(4, 2, 2)));
+  CHECK_FALSE(brepContains(hull, Vector3d(4, -2, 2)));
+}
+
+TEST_CASE("B-Rep hull spans a cylinder and a planar solid exactly", "[brep]")
+{
+  const auto hull =
+    BrepGeometry::hull({BrepGeometry::cube(2, 2, 4), movedCylinder(1, 4, Vector3d(9, 1, 0))});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Cylinder) >= 1);
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(10).margin(1e-5));
+  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(0).margin(1e-5));
+  CHECK(brepContains(hull, Vector3d(5, 1, 2)));
+  CHECK_FALSE(brepContains(hull, Vector3d(5, 4, 2)));
+}
+
+TEST_CASE("B-Rep hull spans a cone exactly", "[brep]")
+{
+  auto cone = BrepGeometry::cone(2, 0.0001, 4);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(Vector3d(9, 0, 0));
+  cone.transform(placement);
+  const auto hull = BrepGeometry::hull({movedCylinder(2, 4, Vector3d(0, 0, 0)), cone});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Cone) >= 1);
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(11).margin(1e-5));
+  CHECK(hull.getBoundingBox().max().z() == Catch::Approx(4).margin(1e-5));
+}
+
+TEST_CASE("B-Rep hull spans cylinders whose common axis is not Z", "[brep]")
+{
+  // The construction works in the frame of the shared axis, whatever it is.
+  auto first = BrepGeometry::cylinder(1, 4);
+  Transform3d lay = Transform3d::Identity();
+  lay.rotate(Eigen::AngleAxisd(M_PI / 2, Vector3d(0, 1, 0)));
+  first.transform(lay);
+  auto second = BrepGeometry::cylinder(1, 4);
+  Transform3d away = Transform3d::Identity();
+  away.translate(Vector3d(0, 8, 0));
+  away.rotate(Eigen::AngleAxisd(M_PI / 2, Vector3d(0, 1, 0)));
+  second.transform(away);
+  const auto hull = BrepGeometry::hull({first, second});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Cylinder) >= 2);
+  CHECK(hull.getBoundingBox().max().y() == Catch::Approx(9).margin(1e-5));
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(4).margin(1e-5));
+  CHECK(brepContains(hull, Vector3d(2, 4, 0)));
+}
+
+TEST_CASE("B-Rep hull spans a cone and a planar solid exactly", "[brep]")
+{
+  auto cone = BrepGeometry::cone(2, 1, 4);
+  Transform3d placement = Transform3d::Identity();
+  placement.translate(Vector3d(10, 0, 0));
+  cone.transform(placement);
+  const auto hull = BrepGeometry::hull({BrepGeometry::cube(2, 2, 2), cone});
+  REQUIRE_FALSE(hull.isEmpty());
+  CHECK(hull.numFacets() == 0);
+  CHECK(hull.surfaceCount(BrepSurfaceType::Cone) >= 1);
+  CHECK(hull.getBoundingBox().max().x() == Catch::Approx(12).margin(1e-5));
+  CHECK(hull.getBoundingBox().min().x() == Catch::Approx(0).margin(1e-5));
+  CHECK(brepContains(hull, Vector3d(6, 0, 1)));
 }
 
 #endif
