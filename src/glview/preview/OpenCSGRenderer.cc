@@ -60,11 +60,12 @@ struct OpenCSGVBOCacheKey {
   bool highlight_mode;
   bool background_mode;
   const ShaderUtils::ShaderInfo *shaderinfo;
+  const ColorScheme *colorscheme;
 
   bool operator==(const OpenCSGVBOCacheKey& o) const
   {
     if (highlight_mode != o.highlight_mode || background_mode != o.background_mode ||
-        shaderinfo != o.shaderinfo || items.size() != o.items.size()) {
+        shaderinfo != o.shaderinfo || colorscheme != o.colorscheme || items.size() != o.items.size()) {
       return false;
     }
     for (size_t i = 0; i < items.size(); ++i) {
@@ -194,6 +195,13 @@ void OpenCSGRenderer::clearCache()
 #ifdef ENABLE_OPENCSG
   OpenCSGRendererCache::clear();
 #endif
+}
+
+void OpenCSGRenderer::setColorScheme(const ColorScheme& cs)
+{
+  if (colorscheme_ == &cs) return;
+  Renderer::setColorScheme(cs);
+  vertex_state_containers_.clear();
 }
 
 void OpenCSGRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
@@ -428,6 +436,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
     key.highlight_mode = highlight_mode;
     key.background_mode = background_mode;
     key.shaderinfo = shaderinfo;
+    key.colorscheme = colorscheme_;
     for (const auto& csgobj : product.intersections) {
       if (csgobj.leaf->polyset) {
         OpenCSGVBOCacheKey::Item item;
