@@ -3,7 +3,11 @@
 #include <QString>
 #include <QStringList>
 #include <QTest>
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QImage>
 
+#include "core/Settings.h"
 #include "platform/PlatformUtils.h"
 
 void TestMainWindow::checkOpenTabPropagateToWindow()
@@ -69,5 +73,51 @@ void TestMainWindow::checkChangingColorSchemeRecolorsPreparedPreview()
 
   QVERIFY2(cornfield != starnight,
            "Changing schemes left the prepared preview colored by the previous scheme");
+#endif
+}
+
+void TestMainWindow::checkCachedPreviewDistinguishesMaterialFromUncoloredGeometry()
+{
+#ifdef ENABLE_OPENCSG
+  restoreWindowInitialState();
+  window->show();
+  QVERIFY(QTest::qWaitForWindowExposed(window));
+  window->qglview->setColorScheme("Cornfield");
+
+  const auto previous = Settings::SettingsMaterials::materialColors.value();
+  Settings::SettingsMaterials::materialColors.setValue("PLA=#ffff00ff");
+
+  const auto preview = [this](const QString& source) -> QImage {
+    bool compiled = false;
+    QObject::connect(
+      window, &MainWindow::compilationDone, window, [&compiled](SourceFile *) { compiled = true; },
+      Qt::SingleShotConnection);
+    window->activeEditor->setPlainText(source);
+    window->designActionPreview->trigger();
+    QElapsedTimer timer;
+    timer.start();
+    while (!compiled && timer.elapsed() < 10000) {
+      QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    if (!compiled) return {};
+    window->qglview->repaint();
+    return window->qglview->grabFramebuffer().copy();
+  };
+
+  const QImage material = preview("material(\"PLA\") cube(100, center = true);");
+  const QImage uncolored = preview("cube(100, center = true);");
+  Settings::SettingsMaterials::materialColors.setValue(previous);
+
+  QVERIFY(!material.isNull());
+  QVERIFY(!uncolored.isNull());
+  const QPoint center(uncolored.width() / 2, uncolored.height() / 2);
+  QVERIFY2(material.pixelColor(center) != uncolored.pixelColor(center),
+           "the cached PLA preview colored otherwise uncolored geometry");
+
+  window->qglview->zoom(120, true);
+  window->qglview->repaint();
+  const QImage moved = window->qglview->grabFramebuffer().copy();
+  QVERIFY2(uncolored.pixelColor(center) == moved.pixelColor(center),
+           "moving the camera changed an uncolored object to a cached material color");
 #endif
 }
