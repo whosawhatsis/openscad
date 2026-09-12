@@ -54,6 +54,7 @@ struct OpenCSGVBOCacheKey {
     std::shared_ptr<const PolySet> polyset;
     double matrix[16];
     float color[4];
+    std::string material_name;
     bool is_intersection;
   };
   std::vector<Item> items;
@@ -71,7 +72,8 @@ struct OpenCSGVBOCacheKey {
     for (size_t i = 0; i < items.size(); ++i) {
       const auto& a = items[i];
       const auto& b = o.items[i];
-      if (a.polyset != b.polyset || a.is_intersection != b.is_intersection || a.color[0] != b.color[0] ||
+      if (a.polyset != b.polyset || a.material_name != b.material_name ||
+          a.is_intersection != b.is_intersection || a.color[0] != b.color[0] ||
           a.color[1] != b.color[1] || a.color[2] != b.color[2] || a.color[3] != b.color[3]) {
         return false;
       }
@@ -446,6 +448,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         item.color[1] = csgobj.leaf->color.g();
         item.color[2] = csgobj.leaf->color.b();
         item.color[3] = csgobj.leaf->color.a();
+        item.material_name = csgobj.leaf->materialName;
         item.is_intersection = true;
         key.items.push_back(item);
       }
@@ -459,6 +462,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         item.color[1] = csgobj.leaf->color.g();
         item.color[2] = csgobj.leaf->color.b();
         item.color[3] = csgobj.leaf->color.a();
+        item.material_name = csgobj.leaf->materialName;
         item.is_intersection = false;
         key.items.push_back(item);
       }

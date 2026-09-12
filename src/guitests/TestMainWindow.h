@@ -7,6 +7,7 @@ class TestMainWindow : public UXTest
   Q_OBJECT;
 private slots:
   void checkChangingColorSchemeRecolorsPreparedPreview();
+  void checkCachedPreviewDistinguishesMaterialFromUncoloredGeometry();
   //! A window with process isolation on must still produce geometry -- from its worker process
   //! rather than its own thread, but by the same route and into the same place.
   void checkIsolatedRenderProducesGeometry();
