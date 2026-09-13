@@ -1867,6 +1867,11 @@ void MainWindow::actionReloadRenderPreview()
 
 void MainWindow::csgReloadRender()
 {
+  // Auto-reload previews too, so it goes to the worker exactly as csgRender does.
+  if (this->rootNode && this->computeWorker) {
+    startIsolatedPreview();
+    return;
+  }
   if (this->rootNode) compileCSG();
 
   selectPreviewViewMode();
