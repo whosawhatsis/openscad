@@ -131,6 +131,30 @@ TEST_CASE("The real binary serves a preview over its channel", "[gui][ComputeWor
   }
 }
 
+TEST_CASE("A worker preview evaluates with $preview true", "[gui][ComputeWorkerIntegration]")
+{
+  // A model that arranges itself differently for preview would otherwise show one layout in the
+  // window and swap to the other on the next camera-driven re-preview.
+  auto worker = startRealWorker();
+  std::map<std::string, std::string> payloads;
+  const auto answer =
+    exchange(*worker,
+             {{"command", "preview"},
+              {"requestId", 4},
+              {"input", writeModel("if ($preview) cube(1);", "openscad-worker-preview-var")},
+              {"output", "preview.json"}},
+             payloads);
+  // A failed assert() does not fail the request, so the check is on the geometry instead: with
+  // $preview false this model is empty.
+  REQUIRE(answer.value("ok", false));
+  REQUIRE(payloads.count("preview.json") == 1);
+  INFO(payloads["preview.json"]);
+  // An empty model still yields one product, with no leaves.
+  const auto products = json::parse(payloads["preview.json"]).value("products", json::array());
+  REQUIRE(products.size() == 1);
+  CHECK_FALSE(products[0].value("intersections", json::array()).empty());
+}
+
 TEST_CASE("The real binary reports a bad request and stays up", "[gui][ComputeWorkerIntegration]")
 {
   auto worker = startRealWorker();
