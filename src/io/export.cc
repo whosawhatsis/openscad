@@ -163,7 +163,9 @@ const std::string& toSuffix(FileFormat format)
 bool canPreview(FileFormat format)
 {
   return (format == FileFormat::AST || format == FileFormat::CSG || format == FileFormat::PARAM ||
-          format == FileFormat::ECHO || format == FileFormat::TERM || format == FileFormat::PNG);
+          format == FileFormat::ECHO || format == FileFormat::TERM || format == FileFormat::PNG ||
+          // A compute worker's preview: the window composites it, so the model sees $preview.
+          format == FileFormat::IPC_PRODUCTS);
 }
 
 bool is3D(FileFormat format)
