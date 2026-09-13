@@ -83,8 +83,10 @@ MainWindow *runInOwnWindow(const QString& source, const bool preview)
   window->activeEditor->setPlainText(source);
 
   bool compiled = false;
-  QObject::connect(window, &MainWindow::compilationDone, window,
-                   [&compiled](SourceFile *) { compiled = true; });
+  // Disconnected before returning: the window outlives this frame, and a later compile on it would
+  // otherwise write through a reference to a local that no longer exists.
+  const auto connection = QObject::connect(window, &MainWindow::compilationDone, window,
+                                           [&compiled](SourceFile *) { compiled = true; });
 
   if (preview) window->designActionPreview->trigger();
   else window->designActionRender->trigger();
@@ -97,6 +99,7 @@ MainWindow *runInOwnWindow(const QString& source, const bool preview)
   while (!compiled && timer.elapsed() < 60000) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
   }
+  QObject::disconnect(connection);
 
   // Deliberately not destroyed. A MainWindow registers itself with application-wide state and is
   // the target of queued connections; tearing one down inside a running test process crashes in
@@ -109,14 +112,15 @@ MainWindow *runInOwnWindow(const QString& source, const bool preview)
 void renderAgain(MainWindow *window)
 {
   bool compiled = false;
-  QObject::connect(window, &MainWindow::compilationDone, window,
-                   [&compiled](SourceFile *) { compiled = true; });
+  const auto connection = QObject::connect(window, &MainWindow::compilationDone, window,
+                                           [&compiled](SourceFile *) { compiled = true; });
   window->designActionRender->trigger();
   QElapsedTimer timer;
   timer.start();
   while (!compiled && timer.elapsed() < 60000) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
   }
+  QObject::disconnect(connection);
   QVERIFY2(compiled, "the second render never finished");
 }
 
@@ -165,10 +169,14 @@ void TestMainWindow::checkIsolatedAutoReloadPreviewUsesWorker()
 
   Feature::enable_feature("process-isolation");
   auto *window = new MainWindow{QStringList{}};  // leaked for the reason runInOwnWindow gives
+  // Unlike runInOwnWindow's windows this one has a real file, so the auto-reload timer compileEnded
+  // starts would keep previewing it for the rest of the run -- into a lambda whose captured local
+  // is long gone. Both are stopped before this returns.
+  window->designActionAutoReload->setChecked(false);
   window->activeEditor->filepath = path;
   bool compiled = false;
-  QObject::connect(window, &MainWindow::compilationDone, window,
-                   [&compiled](SourceFile *) { compiled = true; });
+  const auto connection = QObject::connect(window, &MainWindow::compilationDone, window,
+                                           [&compiled](SourceFile *) { compiled = true; });
 
   window->actionReloadRenderPreview();
   QElapsedTimer timer;
@@ -176,6 +184,8 @@ void TestMainWindow::checkIsolatedAutoReloadPreviewUsesWorker()
   while (!compiled && timer.elapsed() < 60000) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
   }
+  QObject::disconnect(connection);
+  window->designActionAutoReload->setChecked(false);
   Feature::enable_feature("process-isolation", false);
 
   QVERIFY2(compiled, "the auto-reload preview never finished");
