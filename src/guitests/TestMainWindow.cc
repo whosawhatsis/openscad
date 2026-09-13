@@ -1,8 +1,10 @@
 #include "TestMainWindow.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFile>
 #include <QString>
 #include <QStringList>
 #include <QTest>
@@ -147,6 +149,37 @@ void TestMainWindow::checkIsolatedPreviewProducesProducts()
   QCOMPARE(products->size(), size_t{1});
   // Products alone would also be there if the window had quietly previewed in-process, which is
   // exactly what it did before this was wired -- so the test has to say where they came from.
+  QCOMPARE(window->isolatedPreviewsForTest(), 1);
+}
+
+void TestMainWindow::checkIsolatedAutoReloadPreviewUsesWorker()
+{
+  // Auto-reload ends in csgReloadRender, not csgRender. If only F5's continuation knows about the
+  // worker, every save-triggered preview quietly runs in this process: blocking the window and
+  // evaluating a model the worker never saw.
+  const QString path = QDir::temp().filePath(QStringLiteral("openscad-isolated-autoreload.scad"));
+  QFile file(path);
+  QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+  file.write("cube([10, 10, 10]);");
+  file.close();
+
+  Feature::enable_feature("process-isolation");
+  auto *window = new MainWindow{QStringList{}};  // leaked for the reason runInOwnWindow gives
+  window->activeEditor->filepath = path;
+  bool compiled = false;
+  QObject::connect(window, &MainWindow::compilationDone, window,
+                   [&compiled](SourceFile *) { compiled = true; });
+
+  window->actionReloadRenderPreview();
+  QElapsedTimer timer;
+  timer.start();
+  while (!compiled && timer.elapsed() < 60000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  Feature::enable_feature("process-isolation", false);
+
+  QVERIFY2(compiled, "the auto-reload preview never finished");
+  QVERIFY2(window->previewProductsForTest() != nullptr, "the auto-reload preview produced nothing");
   QCOMPARE(window->isolatedPreviewsForTest(), 1);
 }
 
