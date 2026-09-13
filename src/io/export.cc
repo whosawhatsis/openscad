@@ -182,7 +182,8 @@ bool canPreview(FileFormat format)
           format == FileFormat::DEPTHMAP || format == FileFormat::NORMALMAP_PNG ||
           format == FileFormat::CANNYMAP_PNG || format == FileFormat::COORDINATEMAP_PNG ||
           format == FileFormat::FLATMAP_PNG || format == FileFormat::CHROMATIC_PNG ||
-          isAnimation(format));
+          // A compute worker's preview: the window composites it, so the model sees $preview.
+          format == FileFormat::IPC_PRODUCTS || isAnimation(format));
 }
 
 bool isAnimation(FileFormat format)
