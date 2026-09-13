@@ -22,6 +22,8 @@
 #include "geometry/Polygon2d.h"
 #include "geometry/linalg.h"
 #include "geometry/manifold/manifoldutils.h"
+#include "glview/ColorMap.h"
+#include "glview/RenderSettings.h"
 #include "utils/printutils.h"
 #ifdef ENABLE_CGAL
 #include "geometry/cgal/cgalutils.h"
@@ -145,9 +147,27 @@ std::shared_ptr<PolySet> ManifoldGeometry::toPolySet() const
   std::map<Color4f, int32_t> colorToIndex;
   std::map<uint32_t, int32_t> originalIDToColorIndex;
 
+  // Everything but a compute worker needs real colors: exporters, the CLI renderer and further CSG
+  // all read a negative index as "no color". The worker instead sends tags, so the window can
+  // resolve them against whatever scheme it is showing.
+  const ColorScheme *colorScheme = nullptr;
+  if (!PolySet::emitSchemeColorTags) {
+    colorScheme = ColorMap::instance().findColorScheme(RenderSettings::inst()->colorscheme);
+  }
+  int32_t faceFrontColorIndex = -1;
+  int32_t faceBackColorIndex = -1;
+  auto schemeColorIndex = [&](int32_t& cached, RenderColor rc) -> int32_t {
+    if (cached < 0) {
+      cached = ps->colors.size();
+      ps->colors.push_back(ColorMap::getColor(*colorScheme, rc));
+    }
+    return cached;
+  };
+
   auto getColorIndex = [&](uint32_t originalID) -> int32_t {
     if (subtractedIDs_.find(originalID) != subtractedIDs_.end()) {
-      return PolySet::COLOR_INDEX_CUTOUT;
+      return colorScheme ? schemeColorIndex(faceBackColorIndex, RenderColor::CGAL_FACE_BACK_COLOR)
+                         : PolySet::COLOR_INDEX_CUTOUT;
     }
     auto colorIndexIt = originalIDToColorIndex.find(originalID);
     if (colorIndexIt != originalIDToColorIndex.end()) {
@@ -155,7 +175,8 @@ std::shared_ptr<PolySet> ManifoldGeometry::toPolySet() const
     }
     auto colorIt = originalIDToColor_.find(originalID);
     if (colorIt == originalIDToColor_.end()) {
-      return PolySet::COLOR_INDEX_DEFAULT;
+      return colorScheme ? schemeColorIndex(faceFrontColorIndex, RenderColor::CGAL_FACE_FRONT_COLOR)
+                         : PolySet::COLOR_INDEX_DEFAULT;
     }
     const auto& color = colorIt->second;
 
