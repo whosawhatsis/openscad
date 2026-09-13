@@ -444,6 +444,7 @@ class ComputeWorkerWorkingDirectory(WorkerFixture, unittest.TestCase):
         _, done = self.render_from(self.SOURCE)
         self.assertFalse(done.get("ok"))
 
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
 class ComputeWorkerIncludeReload(WorkerFixture, unittest.TestCase):
     """An edit to an included file has to reach the next render.
 
@@ -485,6 +486,7 @@ class ComputeWorkerIncludeReload(WorkerFixture, unittest.TestCase):
         self.assertNotEqual(first["first.osig"], second["second.osig"],
                             "the worker rendered the include it had already seen")
 
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
 class ComputeWorkerFeatures(WorkerFixture, unittest.TestCase):
     """Experimental features are per-process, and the worker is a different process.
 
