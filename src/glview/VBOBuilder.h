@@ -391,7 +391,7 @@ public:
   //! normal per facet, which is the behaviour every caller had before it existed.
   void create_surface(const PolySet& ps, const Transform3d& m, const Color4f& default_color,
                       bool enable_barycentric, bool force_default_color = false,
-                      double smooth_angle = 0.0);
+                      double smooth_angle = 0.0, const Color4f *cutout_color = nullptr);
   void create_edges(const Polygon2d& polygon, const Transform3d& m, const Color4f& color);
   void create_polygons(const PolySet& ps, const Transform3d& m, const Color4f& color);
 

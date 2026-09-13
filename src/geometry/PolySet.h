@@ -20,10 +20,13 @@ class PolySet : public Geometry
   friend class PolySetBuilder;
 
 public:
+  static constexpr int32_t COLOR_INDEX_DEFAULT = -1;
+  static constexpr int32_t COLOR_INDEX_CUTOUT = -2;
   VISITABLE_GEOMETRY();
   PolygonIndices indices;
   std::vector<Vector3d> vertices;
-  // Per polygon color, indexing the colors vector below. Can be empty, and -1 means no specific color.
+  // Per polygon color, indexing the colors vector below. Negative values identify colors that the
+  // renderer must resolve from the active color scheme.
   std::vector<int32_t> color_indices;
   std::vector<Color4f> colors;
   // Shading parameters, parallel to colors and indexed by the same

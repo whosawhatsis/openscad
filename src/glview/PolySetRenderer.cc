@@ -132,13 +132,14 @@ namespace {
 // to separate *draws*, and renumbering indices to drop unreferenced vertices
 // would cost more than the vertices save.
 std::shared_ptr<PolySet> facesByTransparency(const PolySet& ps, const Color4f& default_color,
-                                             bool wantTransparent)
+                                             const Color4f& cutout_color, bool wantTransparent)
 {
   const auto isTransparent = [&](size_t i) {
     const int32_t ci = i < ps.color_indices.size() ? ps.color_indices[i] : -1;
     if (ci >= 0 && static_cast<size_t>(ci) < ps.colors.size() && ps.colors[ci].isValid()) {
       return ps.colors[ci].a() < 1.0f;
     }
+    if (ci == PolySet::COLOR_INDEX_CUTOUT) return cutout_color.a() < 1.0f;
     return default_color.a() < 1.0f;
   };
 
@@ -192,6 +193,9 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
   transparent_builder.allocateBuffers(num_vertices);
   bool any_transparent = false;
 
+  Color4f cutout_color;
+  getColorSchemeColor(ColorMode::CUTOUT, cutout_color);
+
   for (const auto& polyset : this->polysets_) {
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
@@ -202,8 +206,8 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
     // render regression image in the suite.
     const double smooth_angle = smoothShading() ? polyset->smoothAngle() : 0.0;
 
-    const auto opaque = facesByTransparency(*polyset, color, false);
-    const auto transparent = facesByTransparency(*polyset, color, true);
+    const auto opaque = facesByTransparency(*polyset, color, cutout_color, false);
+    const auto transparent = facesByTransparency(*polyset, color, cutout_color, true);
 
     if (opaque) {
       // Fallback only: a PolySet that went through a material() carries its finish
@@ -213,7 +217,7 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
       add_shader_pointers(vbo_builder, shaderinfo);
       vbo_builder.writeSurface();
       vbo_builder.create_surface(*opaque, Transform3d::Identity(), color, enable_barycentric, false,
-                                 smooth_angle);
+                                 smooth_angle, &cutout_color);
     }
     if (transparent) {
       any_transparent = true;
@@ -221,7 +225,7 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
       add_shader_pointers(transparent_builder, shaderinfo);
       transparent_builder.writeSurface();
       transparent_builder.create_surface(*transparent, Transform3d::Identity(), color,
-                                         enable_barycentric, false, smooth_angle);
+                                         enable_barycentric, false, smooth_angle, &cutout_color);
     }
   }
 

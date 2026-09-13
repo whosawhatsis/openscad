@@ -711,6 +711,36 @@ void TestMainWindow::checkIsolatedPreviewProducesProducts()
   QCOMPARE(window->isolatedPreviewsForTest(), 1);
 }
 
+void TestMainWindow::checkIsolatedPreviewUsesGuiColorScheme()
+{
+#ifdef ENABLE_OPENCSG
+  Feature::enable_feature("process-isolation");
+  auto *previewWindow = runInOwnWindow(
+    QStringLiteral(
+      "render() difference() { cube(100, center = true); cylinder(r = 12, h = 200, center = true); }"),
+    true);
+  Feature::enable_feature("process-isolation", false);
+  QVERIFY2(previewWindow != nullptr, "the isolated preview never finished");
+
+  previewWindow->show();
+  QVERIFY(QTest::qWaitForWindowExposed(previewWindow));
+  previewWindow->qglview->setColorScheme("DeepOcean");
+  previewWindow->qglview->zoom(120, true);
+  previewWindow->qglview->repaint();
+  const QImage moved = previewWindow->qglview->grabFramebuffer().copy();
+  QVERIFY(!moved.isNull());
+
+  qsizetype cornfieldPixels = 0;
+  for (int y = 0; y < moved.height(); ++y) {
+    for (int x = 0; x < moved.width(); ++x) {
+      const auto color = moved.pixelColor(x, y);
+      if (color.red() > 150 && color.green() > 130 && color.blue() < 80) ++cornfieldPixels;
+    }
+  }
+  QCOMPARE(cornfieldPixels, 0);
+#endif
+}
+
 void TestMainWindow::checkIsolatedRenderUsesCustomizerValues()
 {
   // The worker parses its own copy of the source, so without being told the Customizer's values it

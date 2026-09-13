@@ -22,8 +22,6 @@
 #include "geometry/Polygon2d.h"
 #include "geometry/linalg.h"
 #include "geometry/manifold/manifoldutils.h"
-#include "glview/ColorMap.h"
-#include "glview/RenderSettings.h"
 #include "utils/printutils.h"
 #ifdef ENABLE_CGAL
 #include "geometry/cgal/cgalutils.h"
@@ -146,10 +144,6 @@ std::shared_ptr<PolySet> ManifoldGeometry::toPolySet() const
   ps->colors.reserve(originalIDToColor_.size());
   ps->color_indices.reserve(ps->indices.size());
 
-  auto colorScheme = ColorMap::instance().findColorScheme(RenderSettings::inst()->colorscheme);
-  int32_t faceFrontColorIndex = -1;
-  int32_t faceBackColorIndex = -1;
-
   // Keyed on the pair: two bodies may agree on color and differ in finish, and
   // one entry cannot describe both.
   std::map<std::pair<Color4f, SurfaceFinish>, int32_t> surfaceToIndex;
@@ -161,24 +155,9 @@ std::shared_ptr<PolySet> ManifoldGeometry::toPolySet() const
     if (hasFinishes) ps->finishes.push_back(finish);
   };
 
-  auto getFaceFrontColorIndex = [&]() -> int {
-    if (faceFrontColorIndex < 0) {
-      faceFrontColorIndex = ps->colors.size();
-      addSurface(ColorMap::getColor(*colorScheme, RenderColor::CGAL_FACE_FRONT_COLOR), {});
-    }
-    return faceFrontColorIndex;
-  };
-  auto getFaceBackColorIndex = [&]() -> int {
-    if (faceBackColorIndex < 0) {
-      faceBackColorIndex = ps->colors.size();
-      addSurface(ColorMap::getColor(*colorScheme, RenderColor::CGAL_FACE_BACK_COLOR), {});
-    }
-    return faceBackColorIndex;
-  };
-
   auto getColorIndex = [&](uint32_t originalID) -> int32_t {
     if (subtractedIDs_.find(originalID) != subtractedIDs_.end()) {
-      return getFaceBackColorIndex();
+      return PolySet::COLOR_INDEX_CUTOUT;
     }
     auto colorIndexIt = originalIDToColorIndex.find(originalID);
     if (colorIndexIt != originalIDToColorIndex.end()) {
@@ -187,7 +166,7 @@ std::shared_ptr<PolySet> ManifoldGeometry::toPolySet() const
     auto colorIt = originalIDToColor_.find(originalID);
     auto finishIt = originalIDToFinish_.find(originalID);
     if (colorIt == originalIDToColor_.end() && finishIt == originalIDToFinish_.end()) {
-      return getFaceFrontColorIndex();
+      return PolySet::COLOR_INDEX_DEFAULT;
     }
     // A material() need not name a color. An invalid one reads as "use the
     // default color", which is what it means, and still gives the finish an

@@ -490,6 +490,8 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
     vertex_state_container->setStableKey(std::hash<std::string>{}(stable_key));
 
     Color4f last_color;
+    Color4f cutout_color;
+    getColorSchemeColor(ColorMode::CUTOUT, cutout_color);
     auto& vertex_states = vertex_state_container->states();
     VBOBuilder vbo_builder(std::make_unique<OpenCSGVertexStateFactory>(), *vertex_state_container.get());
     vbo_builder.addSurfaceData();
@@ -542,7 +544,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
         if (color.a() == 1.0f) {
           // object is opaque, draw normally
           vbo_builder.create_surface(*csgobj.leaf->polyset, csgobj.leaf->matrix, last_color,
-                                     enable_barycentric, override_color, smooth_angle);
+                                     enable_barycentric, override_color, smooth_angle, &cutout_color);
           if (const auto csg_vs = std::dynamic_pointer_cast<OpenCSGVertexState>(vertex_states.back())) {
             csg_vs->setCsgObjectIndex(csgobj.leaf->index);
             vertex_state_container->addPrimitive(
@@ -560,7 +562,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
           vertex_states.emplace_back(std::move(cull));
 
           vbo_builder.create_surface(*csgobj.leaf->polyset, csgobj.leaf->matrix, last_color,
-                                     enable_barycentric, override_color, smooth_angle);
+                                     enable_barycentric, override_color, smooth_angle, &cutout_color);
           if (const auto csg_vs = std::dynamic_pointer_cast<OpenCSGVertexState>(vertex_states.back())) {
             csg_vs->setCsgObjectIndex(csgobj.leaf->index);
 
@@ -634,7 +636,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
           tmp *= Eigen::Scaling(1.0, 1.0, 1.1);
         }
         vbo_builder.create_surface(*csgobj.leaf->polyset, tmp, last_color, enable_barycentric,
-                                   override_color, smooth_angle);
+                                   override_color, smooth_angle, &cutout_color);
         if (const auto csg_vs = std::dynamic_pointer_cast<OpenCSGVertexState>(vertex_states.back())) {
           csg_vs->setCsgObjectIndex(csgobj.leaf->index);
           vertex_state_container->addPrimitive(
