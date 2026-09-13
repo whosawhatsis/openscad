@@ -149,11 +149,14 @@ void CGALRenderer::createPolySetStates()
   }
   vbo_builder.allocateBuffers(num_vertices);
 
+  Color4f cutout_color;
+  getColorSchemeColor(ColorMode::CUTOUT, cutout_color);
+
   for (const auto& polyset : this->polysets_) {
     Color4f color;
     getColorSchemeColor(ColorMode::MATERIAL, color);
     vbo_builder.writeSurface();
-    vbo_builder.create_surface(*polyset, Transform3d::Identity(), color, false);
+    vbo_builder.create_surface(*polyset, Transform3d::Identity(), color, false, false, &cutout_color);
   }
 
   vbo_builder.createInterleavedVBOs();
