@@ -99,6 +99,10 @@
 #include "core/node.h"
 #include "core/parsersettings.h"
 #include "geometry/Geometry.h"
+#include "geometry/GeometryCache.h"
+#ifdef ENABLE_CGAL
+#include "geometry/cgal/CGALCache.h"
+#endif
 #include "geometry/GeometryEvaluator.h"
 #include "geometry/GeometryUtils.h"
 #include "geometry/PolySet.h"
@@ -1507,6 +1511,17 @@ int compute_worker_main()
       if (request.contains("normalizationLimit")) {
         RenderSettings::inst()->openCSGTermLimit = request["normalizationLimit"].get<unsigned int>();
       }
+      // So are the cache sizes. Left at the built-in 100 MB, a large model evicts geometry between
+      // requests and the worker recomputes it; a recomputed hull can triangulate differently, so the
+      // window cannot reuse the vertex buffers it built for that leaf last time.
+      if (request.contains("geometryCacheSizeMB")) {
+        GeometryCache::instance()->setMaxSizeMB(request["geometryCacheSizeMB"].get<size_t>());
+      }
+#ifdef ENABLE_CGAL
+      if (request.contains("cgalCacheSizeMB")) {
+        CGALCache::instance()->setMaxSizeMB(request["cgalCacheSizeMB"].get<size_t>());
+      }
+#endif
       // Falls back to the document's own directory when one is named, since that is what relative
       // paths in the model are written against -- not wherever the text happens to have been read
       // from.
@@ -1551,6 +1566,11 @@ int compute_worker_main()
 
       if (result != 0) throw std::runtime_error("evaluation of '" + input + "' failed");
       answer["ok"] = true;
+      // What this process is actually running with, so a caller can tell a limit took effect.
+      answer["geometryCacheSizeMB"] = GeometryCache::instance()->maxSizeMB();
+#ifdef ENABLE_CGAL
+      answer["cgalCacheSizeMB"] = CGALCache::instance()->maxSizeMB();
+#endif
     } catch (const ProgressCancelException&) {
       // Withdrawn by the parent. Answering rather than exiting is the entire point: the process
       // keeps the caches that make the next render cheap.

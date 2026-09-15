@@ -16,6 +16,10 @@
 
 #include "Feature.h"
 #include "geometry/Geometry.h"
+#include "geometry/GeometryCache.h"
+#ifdef ENABLE_CGAL
+#include "geometry/cgal/CGALCache.h"
+#endif
 #include "glview/CsgInfo.h"
 #include "io/ipc_channel.h"
 #include "io/ipc_geometry.h"
@@ -48,6 +52,17 @@ std::vector<std::string> enabledFeatures()
     if ((*feature)->is_enabled()) names.push_back((*feature)->get_name());
   }
   return names;
+}
+
+//! The cache limits this process runs with, which the window set from Preferences. The worker is
+//! its own process and would otherwise keep the built-in 100 MB, evicting and recomputing a large
+//! model's geometry between previews.
+void addCacheLimits(nlohmann::json& request)
+{
+  request["geometryCacheSizeMB"] = GeometryCache::instance()->maxSizeMB();
+#ifdef ENABLE_CGAL
+  request["cgalCacheSizeMB"] = CGALCache::instance()->maxSizeMB();
+#endif
 }
 }  // namespace
 
@@ -251,6 +266,7 @@ void ComputeWorker::startRender(const QString& scadPath, const QString& paramete
   nlohmann::json request;
   request["command"] = "render";
   request["features"] = enabledFeatures();
+  addCacheLimits(request);
   request["cancelFile"] = d->cancelFile.toStdString();
   request["input"] = scadPath.toStdString();
   request["output"] = kRenderOutputName;
@@ -296,6 +312,7 @@ void ComputeWorker::startPreview(const QString& scadPath, const QString& paramet
   nlohmann::json request;
   request["command"] = "preview";
   request["features"] = enabledFeatures();
+  addCacheLimits(request);
   request["cancelFile"] = d->cancelFile.toStdString();
   request["input"] = scadPath.toStdString();
   request["output"] = kPreviewOutputName;
