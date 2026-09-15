@@ -65,6 +65,9 @@ struct ComputeWorker::Private {
   //! Counts requests, so an escalation timer can tell whether the one it was armed for is still
   //! the one running.
   unsigned long long requestSerial = 0;
+  //! The last preview's decoded leaves, by payload bytes. An unchanged leaf then comes back as the
+  //! same PolySet, so the window's vertex-buffer cache can reuse what it built for it.
+  DecodedLeaves previewLeaves;
 };
 
 ComputeWorker::ComputeWorker(QString program, QStringList arguments, QString channelEnvironmentVariable)
@@ -316,7 +319,7 @@ void ComputeWorker::startPreview(const QString& scadPath, const QString& paramet
                  auto products = std::make_shared<CsgInfo>();
                  // Every leaf the list names has to have arrived, or the preview would be missing
                  // geometry without saying so.
-                 if (!import_csg_products(*products, found->second, payloads)) {
+                 if (!import_csg_products(*products, found->second, payloads, &d->previewLeaves)) {
                    emit previewFailed(tr("The worker returned a preview that could not be read."));
                    return;
                  }
