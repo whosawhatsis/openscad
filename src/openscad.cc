@@ -473,8 +473,6 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
   }
   Tree tree(root_node, fparent.string());
 
-  // Only progress_prepare() writes through this, and only to number the nodes for progress
-  // reporting -- the tree itself is not modified.
   struct CancelWatch {
     const std::string& file;
     ~CancelWatch() { progress_report_fin(); }
@@ -482,6 +480,8 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
   std::unique_ptr<CancelWatch> cancelWatch;
   if (!cmd.cancelFile.empty()) {
     cancelWatch = std::make_unique<CancelWatch>(CancelWatch{cmd.cancelFile});
+    // The cast is safe: progress_report_prep() only numbers the nodes for progress reporting, it
+    // does not modify the tree.
     progress_report_prep(
       std::const_pointer_cast<AbstractNode>(root_node),
       [](const std::shared_ptr<const AbstractNode>&, void *userdata, int) {
@@ -930,9 +930,6 @@ int compute_worker_main()
       // A window renders what is in its editor, which it hands over as a temporary file. Relative
       // include<> and use<> must still resolve against the document's own directory, or a model
       // that renders in the GUI fails in the worker.
-      // The editor's text arrives as a temporary file, so where the document really lives has to
-      // be said separately or its relative includes cannot be found.
-      const auto workingDirectory = request.value("workingDirectory", std::string{});
       const auto sourcePath = request.value("sourcePath", std::string{});
       // The window owns this preference, so a preview normalized in the worker has to be told it
       // or the product list would differ from the one the same model produces in-process.
@@ -953,9 +950,8 @@ int compute_worker_main()
       // Falls back to the document's own directory when one is named, since that is what relative
       // paths in the model are written against -- not wherever the text happens to have been read
       // from.
-      const fs::path originalPath = !workingDirectory.empty() ? fs::path(workingDirectory)
-                                    : !sourcePath.empty()     ? fs::path(sourcePath).parent_path()
-                                                              : fs::path(input).parent_path();
+      const fs::path originalPath =
+        !sourcePath.empty() ? fs::path(sourcePath).parent_path() : fs::path(input).parent_path();
       // The Customizer's values are not in the .scad file, so unless the request carries them the
       // worker renders the file's defaults -- a window that shows one thing and exports another.
       const std::string parameterFile = request.value("parameterFile", std::string{});
