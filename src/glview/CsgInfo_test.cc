@@ -151,3 +151,48 @@ TEST_CASE("A document that is not a product list is refused", "[glview][CsgProdu
   CHECK_FALSE(import_csg_products(read, "{ not json", none));
   CHECK_FALSE(import_csg_products(read, "{\"unrelated\": true}", none));
 }
+
+TEST_CASE("An unchanged leaf decodes to the same PolySet on the next preview", "[glview][CsgProducts]")
+{
+  // The preview's vertex-buffer cache is keyed by PolySet identity. Decoding every leaf afresh on
+  // each preview meant an isolated preview could never hit it, and rebuilt every buffer each time.
+  const auto previewOf = [](double size, std::map<std::string, std::string>& payloads) {
+    auto products = std::make_shared<CSGProducts>();
+    products->products.front().intersections.emplace_back(
+      leaf(triangle(size), Color4f(1, 0, 0, 1), "solid", 0));
+    CsgInfo written;
+    written.root_products = products;
+    return serialize(written, "preview.json", payloads);
+  };
+  const auto leafOf = [](const CsgInfo& info) {
+    return info.root_products->products.front().intersections.front().leaf->polyset;
+  };
+
+  DecodedLeaves reuse;
+  std::map<std::string, std::string> firstPayloads;
+  const auto firstDocument = previewOf(10, firstPayloads);
+  CsgInfo first;
+  REQUIRE(import_csg_products(first, firstDocument, firstPayloads, &reuse));
+
+  SECTION("identical bytes reuse the object")
+  {
+    std::map<std::string, std::string> againPayloads;
+    const auto againDocument = previewOf(10, againPayloads);
+    CsgInfo again;
+    REQUIRE(import_csg_products(again, againDocument, againPayloads, &reuse));
+    CHECK(leafOf(again) == leafOf(first));
+    CHECK(reuse.size() == 1);
+  }
+
+  SECTION("changed geometry does not")
+  {
+    std::map<std::string, std::string> changedPayloads;
+    const auto changedDocument = previewOf(12, changedPayloads);
+    CsgInfo changed;
+    REQUIRE(import_csg_products(changed, changedDocument, changedPayloads, &reuse));
+    CHECK(leafOf(changed) != leafOf(first));
+    CHECK(leafOf(changed)->vertices[1].x() == Catch::Approx(12.0));
+    // Only the latest preview's leaves are kept alive.
+    CHECK(reuse.size() == 1);
+  }
+}

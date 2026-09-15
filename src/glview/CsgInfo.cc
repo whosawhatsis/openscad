@@ -118,27 +118,45 @@ std::string export_csg_products(const CsgInfo& csgInfo, const std::string& filen
 
 namespace {
 
+//! What one import has decoded so far, and what the previous import left for reuse.
+struct Decoding {
+  //! By payload name: a leaf named in several products is decoded once.
+  std::map<std::string, std::shared_ptr<const PolySet>> byName;
+  //! By payload bytes, from the previous preview; null when the caller keeps nothing.
+  const DecodedLeaves *previous = nullptr;
+  //! By payload bytes, everything this import used -- the next import's `previous`.
+  DecodedLeaves used;
+};
+
 //! Resolves a leaf by the name its payload arrived under. Decoded meshes are shared: a name that
 //! appears in several products is one PolySet, as it was on the worker's side.
-std::shared_ptr<const PolySet> readGeometry(
-  const std::string& name, const std::map<std::string, std::string>& payloads,
-  std::map<std::string, std::shared_ptr<const PolySet>>& decoded)
+std::shared_ptr<const PolySet> readGeometry(const std::string& name,
+                                            const std::map<std::string, std::string>& payloads,
+                                            Decoding& decoded)
 {
-  const auto already = decoded.find(name);
-  if (already != decoded.end()) return already->second;
+  const auto already = decoded.byName.find(name);
+  if (already != decoded.byName.end()) return already->second;
 
   const auto payload = payloads.find(ipc_payload_name(name));
   if (payload == payloads.end()) return {};
-  std::shared_ptr<const PolySet> polyset =
-    import_ipc_polyset_buffer(payload->second.data(), payload->second.size(), name);
+  std::shared_ptr<const PolySet> polyset;
+  if (decoded.previous) {
+    // Unchanged bytes are an unchanged mesh: hand back the object the last preview built its
+    // vertex buffers from, so they can be reused instead of rebuilt.
+    const auto reused = decoded.previous->find(payload->second);
+    if (reused != decoded.previous->end()) polyset = reused->second;
+  }
+  if (!polyset) {
+    polyset = import_ipc_polyset_buffer(payload->second.data(), payload->second.size(), name);
+  }
   if (!polyset) return {};
-  decoded.emplace(name, polyset);
+  decoded.byName.emplace(name, polyset);
+  decoded.used.emplace(payload->second, polyset);
   return polyset;
 }
 
 bool readChain(const json& input, std::vector<CSGChainObject>& output,
-               const std::map<std::string, std::string>& payloads,
-               std::map<std::string, std::shared_ptr<const PolySet>>& decoded)
+               const std::map<std::string, std::string>& payloads, Decoding& decoded)
 {
   for (const auto& item : input) {
     const auto name = item.value("geometry", std::string{});
@@ -185,8 +203,7 @@ bool readChain(const json& input, std::vector<CSGChainObject>& output,
 }
 
 bool readProducts(const json& input, std::shared_ptr<CSGProducts>& output,
-                  const std::map<std::string, std::string>& payloads,
-                  std::map<std::string, std::shared_ptr<const PolySet>>& decoded)
+                  const std::map<std::string, std::string>& payloads, Decoding& decoded)
 {
   if (!input.is_array() || input.empty()) return true;  // nothing of this kind is not a failure
   auto products = std::make_shared<CSGProducts>();
@@ -209,7 +226,7 @@ bool readProducts(const json& input, std::shared_ptr<CSGProducts>& output,
 }  // namespace
 
 bool import_csg_products(CsgInfo& csgInfo, const std::string& document,
-                         const std::map<std::string, std::string>& payloads)
+                         const std::map<std::string, std::string>& payloads, DecodedLeaves *reuse)
 {
   json parsed;
   try {
@@ -223,13 +240,17 @@ bool import_csg_products(CsgInfo& csgInfo, const std::string& document,
 
   // Shared across the three lists, so a leaf appearing in more than one is decoded once, exactly as
   // it was sent once.
-  std::map<std::string, std::shared_ptr<const PolySet>> decoded;
+  Decoding decoded;
+  decoded.previous = reuse;
   try {
-    return readProducts(parsed["products"], csgInfo.root_products, payloads, decoded) &&
-           readProducts(parsed.value("highlights", json::array()), csgInfo.highlights_products, payloads,
-                        decoded) &&
-           readProducts(parsed.value("background", json::array()), csgInfo.background_products, payloads,
-                        decoded);
+    const bool ok = readProducts(parsed["products"], csgInfo.root_products, payloads, decoded) &&
+                    readProducts(parsed.value("highlights", json::array()), csgInfo.highlights_products,
+                                 payloads, decoded) &&
+                    readProducts(parsed.value("background", json::array()), csgInfo.background_products,
+                                 payloads, decoded);
+    // Only a complete import replaces what is kept; a failed one leaves the last good preview's.
+    if (ok && reuse) *reuse = std::move(decoded.used);
+    return ok;
   } catch (const std::exception& e) {
     // A malformed product list has to be reported, not thrown. This runs on the GUI thread from a
     // queued reply, where an escaping exception kills the request silently and leaves the window

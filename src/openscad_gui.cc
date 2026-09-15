@@ -87,6 +87,8 @@
 
 Q_DECLARE_METATYPE(Message);
 Q_DECLARE_METATYPE(std::shared_ptr<const Geometry>);
+// Qt5 cannot queue a type through a signal without this; Qt6 registers it implicitly.
+Q_DECLARE_METATYPE(std::shared_ptr<CsgInfo>);
 
 extern std::string arg_colorscheme;
 
