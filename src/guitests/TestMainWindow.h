@@ -40,4 +40,6 @@ private slots:
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();
   void checkAdvancedExportActionAvailable();
+  //! A repeat preview of an unchanged model with more products than the old fixed cap builds nothing.
+  void checkRepeatPreviewOfManyProductsReusesCachedBuffers();
 };
