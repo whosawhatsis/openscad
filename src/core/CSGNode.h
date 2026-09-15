@@ -130,6 +130,9 @@ public:
 
   [[nodiscard]] std::string dump() const;
   [[nodiscard]] BoundingBox getBoundingBox(bool throwntogether = false) const;
+  //! Deterministic key for ordering transparent products whose samples land at exactly equal
+  //! depth. Equal for equal geometry and color across rebuilds; not a content hash.
+  [[nodiscard]] size_t stableKey() const;
 
   std::vector<CSGChainObject> intersections;
   std::vector<CSGChainObject> subtractions;
