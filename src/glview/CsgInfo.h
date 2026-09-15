@@ -33,9 +33,16 @@ std::string export_csg_products(const CsgInfo& csgInfo, const std::string& filen
    resolved by name from `payloads`. False if the document is not a product list, or if it names a
    leaf that never arrived -- compositing a list with missing geometry would silently drop part of
    the model, which is worse than refusing it.
+
+   `reuse`, when given, carries decoded leaves from one import to the next, keyed by their exact
+   payload bytes. A leaf whose bytes are unchanged comes back as the same PolySet object, which is
+   what lets the preview's vertex-buffer cache -- keyed by PolySet identity -- skip rebuilding it.
+   On return it holds only this import's leaves.
  */
+using DecodedLeaves = std::map<std::string, std::shared_ptr<const class PolySet>>;
 bool import_csg_products(CsgInfo& csgInfo, const std::string& document,
-                         const std::map<std::string, std::string>& payloads);
+                         const std::map<std::string, std::string>& payloads,
+                         DecodedLeaves *reuse = nullptr);
 
 /*
    Small helper class for compiling and normalizing node trees into CSG products
