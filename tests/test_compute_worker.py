@@ -340,6 +340,26 @@ class ComputeWorkerPreview(WorkerFixture, unittest.TestCase):
                         "identical cubes were sent as separate meshes")
 
 
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerCacheLimits(WorkerFixture, unittest.TestCase):
+    """The window's cache sizes have to reach the worker.
+
+    The worker is a separate process, so the Preferences cache limits the window applies to itself
+    never reach it: it ran with the built-in 100 MB each. A model bigger than that evicted cached
+    geometry between previews, the worker recomputed it -- a recomputed hull can triangulate the
+    same vertices differently -- and the window could not reuse any vertex buffers for those leaves.
+    """
+
+    def test_a_request_sets_the_worker_cache_limits(self):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, command="preview", requestId=1, input=self.write_scad("cube(1);"),
+                output="preview.json", geometryCacheSizeMB=321, cgalCacheSizeMB=654)
+        _, done = self.read_until_done(parent)
+        self.assertTrue(done.get("ok"), f"preview failed: {done}")
+        self.assertEqual(done.get("geometryCacheSizeMB"), 321, f"answer: {done}")
+        self.assertEqual(done.get("cgalCacheSizeMB"), 654, f"answer: {done}")
+
 
 @unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
 class ComputeWorkerParameters(WorkerFixture, unittest.TestCase):
