@@ -278,8 +278,7 @@ std::unique_ptr<ExternalToolInterface> createExternalToolService(print_service_t
 
 }  // namespace
 
-MainWindow::MainWindow(const QStringList& filenames)
-  : rubberBandManager(this), processIsolation(Feature::ExperimentalProcessIsolation.is_enabled())
+MainWindow::MainWindow(const QStringList& filenames) : rubberBandManager(this)
 {
   // Main UI setup
   setupWindow();
@@ -1976,14 +1975,6 @@ void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
   finishPreview();
 }
 
-void MainWindow::isolatedPreviewFailed(const QString& reason)
-{
-  LOG(message_group::Error, "%1$s", reason.toStdString());
-  progress_report_fin();
-  updateStatusBar(nullptr);
-  compileEnded();
-}
-
 // What a preview does once its products exist, whichever process produced them.
 void MainWindow::finishPreview()
 {
@@ -2001,7 +1992,7 @@ void MainWindow::finishPreview()
 
 void MainWindow::csgRender()
 {
-  // The isolated preview ends in isolatedPreviewDone (or isolatedPreviewFailed), not here: the
+  // The isolated preview ends in isolatedPreviewDone (or isolatedRenderFailed), not here: the
   // worker answers on the channel, long after this returns.
   if (this->rootNode && this->computeWorker) {
     startIsolatedPreview();
@@ -2142,8 +2133,6 @@ QString MainWindow::writeParametersForWorker()
 
 void MainWindow::startIsolatedRender()
 {
-  // What the user sees is the editor's contents, which may never have been saved. The worker reads
-  // a copy, and is told where the document really lives so its relative includes still resolve.
   const QString sourceFile = writeSourceForWorker();
   if (sourceFile.isEmpty()) return;
   this->computeWorker->startRender(sourceFile, writeParametersForWorker(),
@@ -2153,8 +2142,9 @@ void MainWindow::startIsolatedRender()
 
 void MainWindow::isolatedRenderFailed(const QString& reason)
 {
-  // The window has to be released either way. A render that ends without ending the progress state
-  // leaves the user with a progress bar and no way to start another.
+  // Ends a failed render or preview. The window has to be released either way: a request that ends
+  // without ending the progress state leaves the user with a progress bar and no way to start
+  // another.
   LOG(message_group::Error, "%1$s", reason.toStdString());
   progress_report_fin();
   updateStatusBar(nullptr);
@@ -3646,7 +3636,7 @@ void MainWindow::setupCoreSubsystems()
   this->geometryWorker = new GeometryWorker();
   connect(this->geometryWorker, &GeometryWorker::done, this, &MainWindow::actionRenderDone);
 
-  if (this->processIsolation) {
+  if (Feature::ExperimentalProcessIsolation.is_enabled()) {
     // One worker per window, started with the window and kept for its life: starting a process per
     // render would throw away the caches that make a repeat render cheap, which is most of what
     // this buys.
@@ -3656,8 +3646,7 @@ void MainWindow::setupCoreSubsystems()
     connect(this->computeWorker, &ComputeWorker::renderDone, this, &MainWindow::actionRenderDone);
     connect(this->computeWorker, &ComputeWorker::renderFailed, this, &MainWindow::isolatedRenderFailed);
     connect(this->computeWorker, &ComputeWorker::previewDone, this, &MainWindow::isolatedPreviewDone);
-    connect(this->computeWorker, &ComputeWorker::previewFailed, this,
-            &MainWindow::isolatedPreviewFailed);
+    connect(this->computeWorker, &ComputeWorker::previewFailed, this, &MainWindow::isolatedRenderFailed);
     if (!this->computeWorker->start()) {
       // Say so and carry on in-process. Refusing to open the window would be a worse answer than
       // computing the way it always did.

@@ -444,7 +444,6 @@ class ComputeWorkerWorkingDirectory(WorkerFixture, unittest.TestCase):
         parent.settimeout(REPLY_TIMEOUT)
         extra = {}
         if document_directory:
-            extra["workingDirectory"] = document_directory
             # Where the document really lives. The text itself is somewhere else, exactly as a
             # window's unsaved editor contents would be.
             extra["sourcePath"] = os.path.join(document_directory, "model.scad")

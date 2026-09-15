@@ -8,7 +8,6 @@
 #include <string>
 #include <QString>
 #include <QStringList>
-#include <memory>
 
 class QByteArray;
 class CsgInfo;
