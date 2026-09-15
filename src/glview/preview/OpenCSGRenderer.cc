@@ -314,17 +314,13 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
     std::unique_ptr<OpenCSGVBOProduct> vertex_state_container = std::make_unique<OpenCSGVBOProduct>();
 
     bool transparent = !highlight_mode && !background_mode && !product.intersections.empty();
-    std::string stable_key;
     for (const auto& csgobj : product.intersections) {
       Color4f color;
       getShaderColor(ColorMode::MATERIAL, csgobj.leaf->color, color);
       transparent = transparent && color.a() < 1.0f;
-      stable_key += csgobj.leaf->polyset ? csgobj.leaf->polyset->dump() : std::string();
-      stable_key += std::to_string(color.r()) + std::to_string(color.g()) + std::to_string(color.b()) +
-                    std::to_string(color.a());
     }
     vertex_state_container->setTransparent(transparent);
-    vertex_state_container->setStableKey(std::hash<std::string>{}(stable_key));
+    vertex_state_container->setStableKey(product.stableKey());
 
     Color4f last_color;
     auto& vertex_states = vertex_state_container->states();
