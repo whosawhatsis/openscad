@@ -51,9 +51,11 @@ void TestModuleCache::testBasicCache()
   QString filename = QString::fromStdString("test-tmp.scad");
   SourceFile *previousFile{nullptr};
   SourceFile *currentFile{nullptr};
-  const auto connection = connect(window, &MainWindow::compilationDone,
-                                  [&currentFile](SourceFile *file) { currentFile = file; });
-  const auto disconnect = qScopeGuard([connection] { QObject::disconnect(connection); });
+  auto connection = connect(window, &MainWindow::compilationDone,
+                            [&currentFile](SourceFile *file) { currentFile = file; });
+  // The lambda above captures a stack local by reference; without this, the connection outlives
+  // this function and MainWindow emitting compilationDone later writes through a dangling pointer.
+  auto disconnectGuard = qScopeGuard([&]() { disconnect(connection); });
 
   window->designActionAutoReload->setChecked(false);  // Disable auto-reload  & preview
   window->tabManager->open(filename);                 // Open use.scad
