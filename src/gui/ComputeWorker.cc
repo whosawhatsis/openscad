@@ -167,7 +167,13 @@ bool ComputeWorker::receive(IpcMessage& message)
 
 void ComputeWorker::cancel()
 {
-  if (isRunning()) d->process.kill();
+  if (!isRunning()) return;
+  // Ask first, insist after a second. A SIGKILLed worker is an abnormal exit as far as the OS is
+  // concerned, and users saw crash-reporter dialogs for a worker they had deliberately stopped.
+  // Terminating gives it the chance to exit cleanly; the kill is still there for a worker too busy
+  // inside a boolean to notice, which is the case cancellation exists for.
+  d->process.terminate();
+  if (!d->process.waitForFinished(1000)) d->process.kill();
 }
 
 void ComputeWorker::cancelRequest()

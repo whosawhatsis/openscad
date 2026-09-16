@@ -1,5 +1,7 @@
 #include "TestMainWindow.h"
 
+#include <algorithm>
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -221,6 +223,37 @@ void TestMainWindow::checkIsolatedPreviewUsesGuiColorScheme()
   }
   QCOMPARE(cornfieldPixels, 0);
 #endif
+}
+
+void TestMainWindow::checkIsolatedRenderTagsSchemeColors()
+{
+  // F5 has checkIsolatedPreviewUsesGuiColorScheme; F6 had nothing, and it takes a different path --
+  // a single mesh through exportFileByName rather than a product list.
+  //
+  // The invariant is that the worker does NOT resolve implicit face colors: it cannot, because the
+  // color scheme belongs to the window and the worker has its own, unrelated one. It sends tags and
+  // the window resolves them against the scheme it is showing. If the worker ever sent resolved
+  // colors instead, the rendered object would keep the worker's scheme no matter what the user
+  // selects -- checked here on the geometry rather than on pixels, which in this harness depend on
+  // window exposure and view mode.
+  Feature::enable_feature("process-isolation");
+  auto *window = runInOwnWindow(
+    QStringLiteral("difference() { cube(100, center = true); cylinder(r = 12, h = 200, center = true); }"),
+    false);
+  Feature::enable_feature("process-isolation", false);
+  QVERIFY2(window != nullptr, "the isolated render never finished");
+
+  const auto polyset = std::dynamic_pointer_cast<const PolySet>(window->rootGeom);
+  QVERIFY2(polyset != nullptr, "the isolated render produced no PolySet");
+  QVERIFY2(!polyset->color_indices.empty(),
+           "the render carried no per-face color data at all, so the check below proves nothing");
+
+  const bool tagged = std::any_of(
+    polyset->color_indices.begin(), polyset->color_indices.end(),
+    [](int32_t index) { return index == PolySet::COLOR_INDEX_DEFAULT || index == PolySet::COLOR_INDEX_CUTOUT; });
+  QVERIFY2(tagged,
+           "the worker resolved implicit face colors itself instead of tagging them; the rendered "
+           "object will keep the worker's color scheme whatever the user selects");
 }
 
 void TestMainWindow::checkIsolatedRenderUsesCustomizerValues()
