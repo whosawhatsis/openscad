@@ -1958,7 +1958,8 @@ void MainWindow::startIsolatedPreview()
   const auto limit = 2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
   this->computeWorker->startPreview(sourceFile, writeParametersForWorker(),
                                     QString::fromStdString(kWorkerParameterSet),
-                                    this->activeEditor->filepath, limit);
+                                    this->activeEditor->filepath, limit, qglview->cam,
+                                    this->animateWidget->getAnimTval());
 }
 
 void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
@@ -2137,7 +2138,8 @@ void MainWindow::startIsolatedRender()
   if (sourceFile.isEmpty()) return;
   this->computeWorker->startRender(sourceFile, writeParametersForWorker(),
                                    QString::fromStdString(kWorkerParameterSet),
-                                   this->activeEditor->filepath);
+                                   this->activeEditor->filepath, qglview->cam,
+                                   this->animateWidget->getAnimTval());
 }
 
 void MainWindow::isolatedRenderFailed(const QString& reason)

@@ -12,6 +12,7 @@ inherited HANDLE, which Python's subprocess does not expose. The Windows side of
 covered by the ComputeWorker unit tests, which spawn a real child on every platform.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -263,6 +264,58 @@ class ComputeWorkerGeometry(WorkerFixture, unittest.TestCase):
         self.assertEqual(done.get("requestId"), 2)
         self.assertIn("good.osig", payloads)
 
+
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerRenderVariables(WorkerFixture, unittest.TestCase):
+    """The `$` variables a window owns have to travel with every request.
+
+    `MainWindow::setRenderVariables()` fills `$preview`, `$t`, `$vpr`, `$vpt`, `$vpd` and `$vpf` from
+    the window's animation time and its viewport camera. The worker is a separate process and can see
+    neither, so unless the request carries them the model is evaluated with `$t = 0` and a
+    default-constructed camera -- animation produces the same frame every time, and a model that
+    orients itself to the viewport renders differently than it does in-process.
+
+    Each is checked by making the geometry depend on it and requiring the payload to change, which
+    holds whatever the encoding does. The camera can be moved between two renders, so these travel
+    per request rather than being set once when the worker starts.
+    """
+
+    def render(self, source, **extra):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, command="render", requestId=1, input=self.write_scad(source),
+                output="result.osig", **extra)
+        payloads, done = self.read_until_done(parent)
+        self.assertTrue(done.get("ok"), f"render failed: {done}")
+        self.assertIn("result.osig", payloads)
+        # A digest, not the bytes: a failure here should say which variable did not arrive, not
+        # print two meshes.
+        return hashlib.sha256(payloads["result.osig"]).hexdigest()
+
+    def test_animation_time_reaches_the_model(self):
+        """Without this every frame of an animation is identical."""
+        model = "cube([1 + $t * 10, 1, 1]);"
+        still = self.render(model)
+        moved = self.render(model, time=0.5)
+        self.assertNotEqual(still, moved,
+                            "$t did not reach the model: the same geometry came back for t=0 and "
+                            "t=0.5, so an isolated animation renders one frame over and over")
+
+    def test_the_viewport_variables_reach_the_model(self):
+        for variable, source, first, second in (
+            ("$vpd", "cube([$vpd / 100, 1, 1]);", {"vpd": 140.0}, {"vpd": 500.0}),
+            ("$vpf", "cube([$vpf / 10, 1, 1]);", {"vpf": 22.5}, {"vpf": 45.0}),
+            ("$vpr", "cube([1 + $vpr[0] / 10, 1, 1]);",
+             {"vpr": [0.0, 0.0, 0.0]}, {"vpr": [90.0, 0.0, 0.0]}),
+            ("$vpt", "cube([1 + $vpt[0] / 10, 1, 1]);",
+             {"vpt": [0.0, 0.0, 0.0]}, {"vpt": [50.0, 0.0, 0.0]}),
+        ):
+            with self.subTest(variable=variable):
+                self.assertNotEqual(
+                    self.render(source, **first), self.render(source, **second),
+                    f"{variable} did not reach the model; a model that orients itself to the "
+                    "viewport renders differently under isolation than in-process")
 
 
 @unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")

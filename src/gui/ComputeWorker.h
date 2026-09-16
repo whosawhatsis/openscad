@@ -77,17 +77,19 @@ public:
      isolating it at all. This mirrors what CGALWorker does for the in-process path.
    */
   void startRender(const QString& scadPath, const QString& parameterFile, const QString& setName,
-                   const QString& sourcePath = {});
+                   const QString& sourcePath, const class Camera& camera, double animationTime);
 
   /*!
      Asks for a preview. Answers as `previewDone` or `previewFailed`.
 
      A preview is not a mesh: it is the CSG product list the window composites, plus the mesh for
      each leaf. `normalizationLimit` is the window's OpenCSG limit, which decides how far the
-     product list is normalized -- the worker cannot know it.
+     product list is normalized -- the worker cannot know it. `camera` and `animationTime` are
+     likewise the window's: they become $vpr/$vpt/$vpd/$vpf and $t in the worker.
    */
   void startPreview(const QString& scadPath, const QString& parameterFile, const QString& setName,
-                    const QString& sourcePath, std::size_t normalizationLimit);
+                    const QString& sourcePath, std::size_t normalizationLimit,
+                    const class Camera& camera, double animationTime);
 
 signals:
   //! The geometry a render produced. Never null: a failure comes through renderFailed instead.

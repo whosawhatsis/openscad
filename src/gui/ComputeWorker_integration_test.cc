@@ -12,6 +12,8 @@
 
 #include "gui/ComputeWorker.h"
 
+#include "glview/Camera.h"
+
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QProcess>
@@ -217,7 +219,7 @@ TEST_CASE("A render can be asked for without blocking the caller", "[gui][Comput
                    });
 
   const auto model = writeModel("cube([10, 10, 10]);", "openscad-worker-async");
-  worker->startRender(QString::fromStdString(model), {}, {});
+  worker->startRender(QString::fromStdString(model), {}, {}, {}, Camera{}, 0.0);
 
   // The point of the exercise: control comes straight back, and the answer arrives later through
   // the event loop rather than by blocking here.
@@ -243,7 +245,8 @@ TEST_CASE("A render that fails reports rather than hanging", "[gui][ComputeWorke
     failed = true;
   });
 
-  worker->startRender(QString::fromStdString(writeModel("nonsense (((", "openscad-worker-bad")), {}, {});
+  worker->startRender(QString::fromStdString(writeModel("nonsense (((", "openscad-worker-bad")), {},
+                      {}, {}, Camera{}, 0.0);
   REQUIRE(waitFor([&] { return failed; }));
   CHECK_FALSE(message.isEmpty());
 }
@@ -266,7 +269,7 @@ TEST_CASE("A cancelled render leaves the worker alive", "[gui][ComputeWorkerInte
   // which ignores the cancellation still ends rather than hanging the suite.
   const auto model = writeModel("for (i = [0:1:120]) translate([i * 3, 0, 0]) sphere(r = 2, $fn = 64);",
                                 "openscad-worker-cancel");
-  worker->startRender(QString::fromStdString(model), {}, {});
+  worker->startRender(QString::fromStdString(model), {}, {}, {}, Camera{}, 0.0);
   worker->cancelRequest();
 
   REQUIRE(waitFor([&] { return failed || completed; }));
@@ -280,7 +283,8 @@ TEST_CASE("A cancelled render leaves the worker alive", "[gui][ComputeWorkerInte
   QObject::connect(worker.get(), &ComputeWorker::renderDone, worker.get(),
                    [&](const std::shared_ptr<const Geometry>&) { completed = true; });
   worker->startRender(
-    QString::fromStdString(writeModel("cube([10, 10, 10]);", "openscad-worker-after-cancel")), {}, {});
+    QString::fromStdString(writeModel("cube([10, 10, 10]);", "openscad-worker-after-cancel")), {}, {},
+    {}, Camera{}, 0.0);
   REQUIRE(waitFor([&] { return completed; }));
 }
 

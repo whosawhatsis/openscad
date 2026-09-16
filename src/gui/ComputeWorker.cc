@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "Feature.h"
+#include "glview/Camera.h"
 #include "geometry/Geometry.h"
 #include "geometry/GeometryCache.h"
 #ifdef ENABLE_CGAL
@@ -248,8 +249,24 @@ void ComputeWorker::requestFinished()
   d->renderThread = nullptr;
 }
 
+namespace {
+//! The window's viewport and animation time become $vpr/$vpt/$vpd/$vpf and $t in the worker, which
+//! has neither. Sent per request: the user can move the view between two renders.
+void addViewState(nlohmann::json& request, const Camera& camera, double animationTime)
+{
+  const auto vpr = camera.getVpr();
+  const auto vpt = camera.getVpt();
+  request["vpr"] = {vpr.x(), vpr.y(), vpr.z()};
+  request["vpt"] = {vpt.x(), vpt.y(), vpt.z()};
+  request["vpd"] = camera.zoomValue();
+  request["vpf"] = camera.fovValue();
+  request["time"] = animationTime;
+}
+}  // namespace
+
 void ComputeWorker::startRender(const QString& scadPath, const QString& parameterFile,
-                                const QString& setName, const QString& sourcePath)
+                                const QString& setName, const QString& sourcePath,
+                                const Camera& camera, const double animationTime)
 {
   if (!d->channel) {
     emit renderFailed(tr("The compute worker is not running."));
@@ -266,6 +283,7 @@ void ComputeWorker::startRender(const QString& scadPath, const QString& paramete
   nlohmann::json request;
   request["command"] = "render";
   request["features"] = enabledFeatures();
+  addViewState(request, camera, animationTime);
   addCacheLimits(request);
   request["cancelFile"] = d->cancelFile.toStdString();
   request["input"] = scadPath.toStdString();
@@ -295,7 +313,8 @@ void ComputeWorker::startRender(const QString& scadPath, const QString& paramete
 
 void ComputeWorker::startPreview(const QString& scadPath, const QString& parameterFile,
                                  const QString& setName, const QString& sourcePath,
-                                 const std::size_t normalizationLimit)
+                                 const std::size_t normalizationLimit, const Camera& camera,
+                                 const double animationTime)
 {
   if (!d->channel) {
     emit previewFailed(tr("The compute worker is not running."));
@@ -312,6 +331,7 @@ void ComputeWorker::startPreview(const QString& scadPath, const QString& paramet
   nlohmann::json request;
   request["command"] = "preview";
   request["features"] = enabledFeatures();
+  addViewState(request, camera, animationTime);
   addCacheLimits(request);
   request["cancelFile"] = d->cancelFile.toStdString();
   request["input"] = scadPath.toStdString();

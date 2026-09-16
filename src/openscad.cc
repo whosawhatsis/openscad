@@ -205,6 +205,13 @@ struct CommandLine {
      parent creates this file; evaluation notices it at the next progress tick and unwinds.
    */
   const std::string cancelFile;
+  /*!
+     The animation time the request was made at, which is `$t`.
+
+     A window owns this (its Animate tab drives it) and the worker cannot see it, so without it every
+     frame of an isolated animation would be evaluated at `$t = 0` -- the same frame, over and over.
+   */
+  const double animationTime = 0;
 };
 
 namespace {
@@ -720,7 +727,7 @@ int cmdline(const CommandLine& cmd)
   };
 
   if (cmd.animate.frames == 0) {
-    render_variables.time = 0;
+    render_variables.time = cmd.animationTime;
     return do_export(cmd, render_variables, export_format, root_file);
   } else {
     // export the requested number of animated frames
@@ -935,7 +942,22 @@ int compute_worker_main()
       // the duration of this request.
       ipc_payload_sink::begin(*channel);
       const ViewOptions viewOptions{};
-      const Camera camera;
+      // $vpr/$vpt/$vpd/$vpf come from the window's viewport, which this process cannot see, and the
+      // user can move it between two renders -- so they ride on each request rather than being set
+      // once at startup. Anything the request leaves out keeps the default camera's value, which is
+      // what a caller with no viewport (a test, or a CLI-side parent) should get.
+      Camera camera;
+      if (request.contains("vpr")) {
+        const auto vpr = request["vpr"].get<std::vector<double>>();
+        if (vpr.size() == 3) camera.setVpr(vpr[0], vpr[1], vpr[2]);
+      }
+      if (request.contains("vpt")) {
+        const auto vpt = request["vpt"].get<std::vector<double>>();
+        if (vpt.size() == 3) camera.setVpt(vpt[0], vpt[1], vpt[2]);
+      }
+      if (request.contains("vpd")) camera.setVpd(request["vpd"].get<double>());
+      if (request.contains("vpf")) camera.setVpf(request["vpf"].get<double>());
+      const double animationTime = request.value("time", 0.0);
       const CmdLineExportOptions exportOptions;
       // A window renders what is in its editor, which it hands over as a temporary file. Relative
       // include<> and use<> must still resolve against the document's own directory, or a model
@@ -995,7 +1017,8 @@ int compute_worker_main()
                             {},
                             "",
                             sourcePath,
-                            cancelFile});
+                            cancelFile,
+                            animationTime});
       ipc_payload_sink::end();
 
       if (result != 0) throw std::runtime_error("evaluation of '" + input + "' failed");
