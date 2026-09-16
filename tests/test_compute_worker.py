@@ -266,6 +266,55 @@ class ComputeWorkerGeometry(WorkerFixture, unittest.TestCase):
 
 
 @unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorker2DRender(WorkerFixture, unittest.TestCase):
+    """An isolated F6 must accept a 2D top-level object, exactly as the in-process path does.
+
+    `FileFormat::IPC_GEOMETRY` -- the worker's transport for a render result -- is classified 3D by
+    `fileformat::is3D()`, so `do_export()` would derive `dim = 3` and `checkAndExport()` would reject
+    any 2D top level with "Current top level object is not a 3D object". The worker then answers with
+    an error and the window keeps whatever geometry it was already showing, which reads to the user as
+    a stale or wrong render rather than as a failure.
+
+    The transport has always carried `Polygon2d` (see `appendBody` in io/ipc_geometry.cc); only the
+    dimension gate was wrong. The 3D case is asserted alongside so that simply deleting the gate does
+    not pass this.
+    """
+
+    def render(self, source):
+        process, parent = self.start_worker()
+        parent.settimeout(REPLY_TIMEOUT)
+        request(parent, command="render", requestId=1, input=self.write_scad(source),
+                output="result.osig")
+        payloads, done = self.read_until_done(parent)
+        return payloads, done
+
+    def assertRendered(self, source, description):
+        payloads, done = self.render(source)
+        self.assertTrue(done.get("ok"),
+                        f"the isolated render of {description} failed: {done}; the window gets no "
+                        "geometry and keeps showing what it had")
+        self.assertIn("result.osig", payloads,
+                      f"{description} answered ok but sent no geometry payload")
+        self.assertTrue(payloads["result.osig"].startswith(b"OSIG"))
+
+    def test_a_2d_top_level_object_renders(self):
+        self.assertRendered("difference() { square(20, center = true); circle(5); }",
+                            "a 2D top level")
+
+    def test_a_2d_top_level_reached_through_a_root_modifier_renders(self):
+        """How this was originally reported: the root modifier selects a 2D subtree out of a model
+        whose top level is otherwise 3D."""
+        self.assertRendered(
+            "translate([50, 0, 0]) cube(5);\n"
+            "linear_extrude(10) !difference() { square(20, center = true); circle(5); }",
+            "a 2D subtree selected by a root modifier")
+
+    def test_a_3d_top_level_object_still_renders(self):
+        self.assertRendered("difference() { cube(10, center = true); sphere(6.4, $fn = 24); }",
+                            "a 3D top level")
+
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
 class ComputeWorkerPreview(WorkerFixture, unittest.TestCase):
     """A preview returns a CSG product list, not a single mesh.
 

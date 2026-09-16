@@ -571,7 +571,13 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     }
 
     const std::string input_filename = cmd.is_stdin ? "<stdin>" : cmd.filename;
-    const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
+    // The worker transport carries whatever the model produced -- it is classified 3D only so the
+    // export machinery dispatches it -- so its dimension comes from the geometry. Gating it as 3D
+    // would reject a 2D top level that the in-process path renders happily.
+    const int dim = export_format == FileFormat::IPC_GEOMETRY ? int(root_geom->getDimension())
+                    : fileformat::is3D(export_format)         ? 3
+                    : fileformat::is2D(export_format)         ? 2
+                                                              : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
                                              input_filename, &cmd.camera, cmd.exportOptions);
     if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
