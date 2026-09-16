@@ -59,6 +59,15 @@ void tuneBuffers(RawEnd end)
   const int size = 1 << 20;
   ::setsockopt(end, SOL_SOCKET, SO_SNDBUF, &size, sizeof size);
   ::setsockopt(end, SOL_SOCKET, SO_RCVBUF, &size, sizeof size);
+#ifdef SO_NOSIGPIPE
+  // Writing to a worker that has already died must return an error, not raise SIGPIPE and take the
+  // GUI down with it -- which would turn the one failure this feature exists to contain into a
+  // worse one. Asio sets this itself, but only on sockets it creates or accepts; these come from
+  // socketpair() and are adopted with assign(), so neither path runs. Linux needs nothing here:
+  // Asio passes MSG_NOSIGNAL on every send where the platform has it, and macOS does not.
+  const int on = 1;
+  ::setsockopt(end, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+#endif
 }
 
 #endif
