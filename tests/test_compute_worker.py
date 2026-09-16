@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import socket
 import subprocess
 import sys
@@ -461,6 +462,81 @@ class ComputeWorkerCacheLimits(WorkerFixture, unittest.TestCase):
         self.assertTrue(done.get("ok"), f"preview failed: {done}")
         self.assertEqual(done.get("geometryCacheSizeMB"), 321, f"answer: {done}")
         self.assertEqual(done.get("cgalCacheSizeMB"), 654, f"answer: {done}")
+
+
+@unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")
+class ComputeWorkerCachePersistence(WorkerFixture, unittest.TestCase):
+    """The worker's geometry cache survives across requests, and it lets go of the document.
+
+    Keeping the process alive between requests is most of why a window has its own worker: a second
+    request for unchanged source must be answered from GeometryCache/CGALCache rather than
+    re-evaluated. Nothing else guards that -- a change that cleared a cache too eagerly, or that made
+    the node tree dump differ between two identical requests, would silently cost every repeat render
+    its full evaluation time and still pass every other test here.
+
+    Characterisation, not red-first: this already worked when it was written (ported from the old
+    implementation, which measured 3.5s to 0.05s on this model).
+    """
+
+    # Heavy enough that a cache miss is unmistakable rather than a timing wobble, cheap enough not
+    # to slow the suite: a few seconds cold, tens of milliseconds warm.
+    MODEL = "for (i = [0:60]) rotate([0, 0, i * 6]) translate([10, 0, 0]) sphere(3, $fn = 40);"
+    # A broken cache re-evaluates and lands near 100% of the cold run; a working one is a few
+    # percent. The threshold sits far from both so a loaded machine does not make this flaky.
+    MAX_CACHED_FRACTION = 0.25
+
+    def timed_render(self, parent, identifier, source_path, **extra):
+        start = time.monotonic()
+        request(parent, command="render", requestId=identifier, input=source_path,
+                output="result.osig", **extra)
+        _, done = self.read_until_done(parent)
+        self.assertTrue(done.get("ok"), f"render failed: {done}")
+        return time.monotonic() - start
+
+    def test_a_repeat_render_of_unchanged_source_is_served_from_the_cache(self):
+        process, parent = self.start_worker()
+        parent.settimeout(TIMEOUT)
+        source = self.write_scad(self.MODEL)
+        # Byte-identical requests, which is the point: unchanged source means an unchanged node tree
+        # dump, which means an unchanged cache key.
+        cold = self.timed_render(parent, 1, source)
+        warm = min(self.timed_render(parent, n, source) for n in (2, 3))
+        self.assertLess(warm, cold * self.MAX_CACHED_FRACTION,
+                        f"repeat render took {warm:.3f}s against a cold {cold:.3f}s "
+                        f"({warm / cold:.0%}); the worker's geometry cache is not being hit")
+
+    def test_a_small_cache_limit_actually_takes_effect(self):
+        """The limits are reported as applied by ComputeWorkerCacheLimits; this pins that they are
+        obeyed. A worker that accepted the field and cached anyway would pass that test and fail
+        every user whose model exceeds the size they configured."""
+        process, parent = self.start_worker()
+        parent.settimeout(TIMEOUT)
+        source = self.write_scad(self.MODEL)
+        cold = self.timed_render(parent, 1, source, geometryCacheSizeMB=1, cgalCacheSizeMB=1)
+        warm = self.timed_render(parent, 2, source, geometryCacheSizeMB=1, cgalCacheSizeMB=1)
+        self.assertGreater(warm, cold * self.MAX_CACHED_FRACTION,
+                           f"a 1 MB cache still served the repeat render in {warm:.3f}s against a "
+                           f"cold {cold:.3f}s; the worker is ignoring the cache sizes")
+
+    def test_the_worker_does_not_hold_the_document_directory(self):
+        """do_export() chdir()s into the document's directory, so a persistent worker would sit in
+        the last directory it rendered from forever. On Windows a process's current directory is an
+        open handle and nothing can then remove that directory -- which is how this failed there
+        while every other assertion passed. The worker is deliberately still running here: that is
+        the state in which the directory has to be removable."""
+        process, parent = self.start_worker()
+        parent.settimeout(TIMEOUT)
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        source = os.path.join(directory, "model.scad")
+        with open(source, "w") as handle:
+            handle.write("cube([10, 10, 10]);")
+        self.timed_render(parent, 1, source)
+        shutil.rmtree(directory)
+        self.assertFalse(os.path.exists(directory),
+                         f"{directory} survived removal while the worker was still running; the "
+                         "worker is holding it, most likely as its current directory")
+        self.assertIsNone(process.poll(), "the worker exited instead of staying up")
 
 
 @unittest.skipIf(sys.platform == "win32", "descriptor passing is POSIX-only; see module docstring")

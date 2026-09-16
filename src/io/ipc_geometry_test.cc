@@ -14,6 +14,7 @@
 #include <string>
 
 #include "geometry/Geometry.h"
+#include "io/export.h"
 #include "geometry/PolySet.h"
 #include "geometry/Polygon2d.h"
 #include "geometry/linalg.h"
@@ -176,4 +177,52 @@ TEST_CASE("IPC geometry single-body decode skips the list wrapper", "[io][IPC][I
   CHECK(ps->getConvexity() == 7);
   CHECK(ps->colors.size() == 3);
   CHECK(ps->vertices.size() == 4);
+}
+
+// Export parity: the round trip through the channel must be invisible to the exporters.
+//
+// This is what a user actually notices. Under isolation an F6 result reaches the window as a payload
+// and is decoded back into a PolySet, so a later export goes through a round trip the in-process path
+// never performs. The codec tests above pin each field individually; this pins the whole of it at the
+// surface a user sees, and would catch a field that survives decoding but is written differently.
+//
+// Ported from the old implementation's tests/test_compute_worker_parity.py, which decoded payloads in
+// Python. Done here instead because decoding is free on this side and the Python decoder was written
+// against a payload layout this branch does not use.
+TEST_CASE("An export after the IPC round trip is byte-identical", "[io][IPC][IPC-Geometry]")
+{
+  const auto exportOff = [](const std::shared_ptr<const Geometry>& geom) {
+    std::ostringstream out;
+    export_off(geom, out);
+    return out.str();
+  };
+  const auto exportAsciiStl = [](const std::shared_ptr<const Geometry>& geom) {
+    std::ostringstream out;
+    export_stl(geom, out, false);
+    return out.str();
+  };
+
+  SECTION("a colored, concave PolySet")
+  {
+    const std::shared_ptr<const Geometry> original = coloredTetrahedron();
+    const auto decoded = decode(encode(original));
+    REQUIRE(decoded);
+    CHECK(exportOff(decoded) == exportOff(original));
+    CHECK(exportAsciiStl(decoded) == exportAsciiStl(original));
+  }
+
+  SECTION("a 2D outline with a hole")
+  {
+    // Through DXF, which is what a 2D result is actually exported as. (OFF is 3D-only: handing it a
+    // Polygon2d crashes, here and on master alike, which is why do_export() gates on dimension.)
+    const auto exportDxf = [](const std::shared_ptr<const Geometry>& geom) {
+      std::ostringstream out;
+      export_dxf(geom, out);
+      return out.str();
+    };
+    const std::shared_ptr<const Geometry> original = squareWithHole();
+    const auto decoded = decode(encode(original));
+    REQUIRE(decoded);
+    CHECK(exportDxf(decoded) == exportDxf(original));
+  }
 }
