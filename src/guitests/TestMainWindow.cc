@@ -22,6 +22,7 @@
 #include "core/CSGNode.h"
 #include "geometry/PolySet.h"
 #include "glview/preview/OpenCSGRenderer.h"
+#include "gui/OpenSCADApp.h"
 #include "platform/PlatformUtils.h"
 
 void TestMainWindow::checkOpenTabPropagateToWindow()
@@ -739,4 +740,24 @@ void TestMainWindow::checkRepeatPreviewOfManyProductsReusesCachedBuffers()
   QVERIFY2(rebuilt == 0, qPrintable(QStringLiteral("the repeat preview rebuilt %1 of 150 products")
                                       .arg(static_cast<qulonglong>(rebuilt))));
 #endif
+}
+
+void TestMainWindow::checkClosingWindowDoesNotUseFreedMembers()
+{
+  restoreWindowInitialState();
+
+  const int windowCountBefore = scadApp->windowManager.getWindows().size();
+
+  auto *extraWindow = new MainWindow(QStringList());
+  QCOMPARE(scadApp->windowManager.getWindows().size(), windowCountBefore + 1);
+
+  // Closing a window destroys its members, and destroying a child widget delivers events while
+  // that is happening. MainWindow is still installed as an event filter at that point, so
+  // MainWindow::eventFilter() can run against members that have already been destroyed and read
+  // freed memory. That is silent in an ordinary build and a heap-use-after-free under
+  // AddressSanitizer, which is what this test exists to catch.
+  extraWindow->close();
+  QCoreApplication::processEvents();
+
+  QCOMPARE(scadApp->windowManager.getWindows().size(), windowCountBefore);
 }
