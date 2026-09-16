@@ -86,6 +86,7 @@ public slots:
   void on_buttonAddMaterialColor_clicked();
   void on_buttonRemoveMaterialColor_clicked();
   void on_checkBoxShowWarningsIn3dView_toggled(bool);
+  void on_checkBoxTransparentColorSchemeBackground_toggled(bool);
   void on_checkBoxMouseCentricZoom_toggled(bool);
   void on_timeThresholdOnRenderCompleteSoundEdit_textChanged(const QString&);
   void on_enableClearConsoleCheckBox_toggled(bool);

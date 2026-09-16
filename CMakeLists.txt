@@ -1564,6 +1564,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestTabManager.h
     src/guitests/TestMainWindow.h
     src/guitests/TestAnalysisView.h
+    src/guitests/TestExportImage.h
     src/guitests/UXTest.h
   )
 
@@ -1573,6 +1574,7 @@ if(ENABLE_GUI_TESTS)
     src/guitests/TestTabManager.cc
     src/guitests/TestMainWindow.cc
     src/guitests/TestAnalysisView.cc
+    src/guitests/TestExportImage.cc
     src/guitests/UXTest.cc
   )
 

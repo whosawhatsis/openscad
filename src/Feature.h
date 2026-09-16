@@ -29,6 +29,7 @@ public:
   static const Feature ExperimentalEditorEnhancements;
   static const Feature ExperimentalScreenSpaceReflections;
   static const Feature ExperimentalShadows;
+  static const Feature ExperimentalTransparentCompositing;
 #ifdef ENABLE_PYTHON
   static const Feature ExperimentalPythonEngine;
 #endif

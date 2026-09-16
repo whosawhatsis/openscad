@@ -100,6 +100,7 @@ std::unique_ptr<OffscreenView> prepare_geometry_view(const std::shared_ptr<const
   glview->setAnalysisMode(options.canny ? AnalysisMode::Canny : analysisModeFor(options, agentMode));
   glview->edge_width = options.edgeWidth;
   glview->setDepthOptions(depthOptions);
+  glview->setTransparentBackground(options["transparent"]);
   glview->paintGL();
   return glview;
 }
@@ -180,6 +181,7 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
   glview->setAnalysisMode(analysisModeFor(options, agentMode));
   glview->edge_width = options.edgeWidth;
   glview->setChromaticGauge(chromaticGauge);
+  glview->setTransparentBackground(options["transparent"]);
   glview->paintGL();
   return glview;
 }

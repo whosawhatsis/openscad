@@ -442,6 +442,7 @@ struct ViewOptions {
     // thing rather than a variant of it.
     {"depth-metric", false},
     {"depth-metric10um", false},
+    {"transparent", false},
   };
 
   const std::vector<std::string> names()
