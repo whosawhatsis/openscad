@@ -15,11 +15,8 @@ void TestTabManager::checkOpenClose()
   // The window has only one editor with file default.scad
   restoreWindowInitialState();
 
-  QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty.scad";
-  QString filename2 =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty2.scad";
-
+  QString filename = fixturePath("basic-ux/empty.scad");
+  QString filename2 = fixturePath("basic-ux/empty2.scad");
   window->tabManager->open(filename);
   // The active editor must have a filepath equal to the loaded file
   QCOMPARE(window->activeEditor->filepath, filename);
@@ -42,9 +39,7 @@ void TestTabManager::checkReOpen()
 {
   restoreWindowInitialState();
 
-  QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty.scad";
-  auto numPanel = window->tabManager->count();
+  QString filename = fixturePath("basic-ux/empty.scad");  auto numPanel = window->tabManager->count();
 
   // When we open a new file,
   window->tabManager->open(filename);
