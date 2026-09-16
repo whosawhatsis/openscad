@@ -196,20 +196,26 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
     vbo_builder.setFinish({polyset->shaderRoughness(), polyset->metallic()});
     transparent_builder.setFinish({polyset->shaderRoughness(), polyset->metallic()});
 
+    // Smooth shading is a property of the Shaded mode's lighting, so it is applied
+    // only when that shader is bound. Smoothing the default view would move every
+    // render regression image in the suite.
+    const double smooth_angle = smoothShading() ? polyset->smoothAngle() : 0.0;
+
     const auto opaque = facesByTransparency(*polyset, color, false);
     const auto transparent = facesByTransparency(*polyset, color, true);
 
     if (opaque) {
       add_shader_pointers(vbo_builder, shaderinfo);
       vbo_builder.writeSurface();
-      vbo_builder.create_surface(*opaque, Transform3d::Identity(), color, enable_barycentric, false);
+      vbo_builder.create_surface(*opaque, Transform3d::Identity(), color, enable_barycentric, false,
+                                 smooth_angle);
     }
     if (transparent) {
       any_transparent = true;
       add_shader_pointers(transparent_builder, shaderinfo);
       transparent_builder.writeSurface();
       transparent_builder.create_surface(*transparent, Transform3d::Identity(), color,
-                                         enable_barycentric, false);
+                                         enable_barycentric, false, smooth_angle);
     }
   }
 

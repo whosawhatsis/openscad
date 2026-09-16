@@ -1,0 +1,1 @@
+$fa changes the shading of identical geometry: yes

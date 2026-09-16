@@ -1082,6 +1082,7 @@ set(CORE_SOURCES
   src/geometry/PolySet.cc
   src/geometry/PolySetBuilder.cc
   src/geometry/PolySetUtils.cc
+  src/geometry/smooth_normals.cc
   src/geometry/Polygon2d.cc
   src/geometry/boolean_utils.cc
   src/geometry/linalg.cc
@@ -1597,6 +1598,7 @@ file(GLOB_RECURSE TEST_SOURCES
   "src/*_test.cc"
   "src/utils/*_test.cc"
   "src/core/*_test.cc"
+  "src/geometry/*_test.cc"
   "src/io/*_test.cc"
   "src/glview/*_test.cc"
 )
