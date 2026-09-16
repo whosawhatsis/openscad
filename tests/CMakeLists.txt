@@ -865,6 +865,71 @@ add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_COMMON_FIL
 add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_DIFFERENT_EXPECTATIONS} ARGS --backend=manifold)
 endif()
 
+# Depth shading must hold still while the viewport rotates: the sphere sits on
+# the center of rotation, so its distance from the eye - and therefore its shade -
+# is the same from every angle.
+set(DEPTHMAP_SYMMETRY ${TEST_SCAD_DIR}/misc/depthmap-orbit-symmetry.scad)
+set(DEPTHMAP_OFFCENTER ${TEST_SCAD_DIR}/misc/depthmap-offcenter.scad)
+# Both compare against the SAME expected image on purpose: the scene has four-fold
+# symmetry about Z, so a 90 degree orbit maps it onto itself and the two renders
+# must be the same image rather than merely similar ones.
+add_cmdline_test(export-depthmap-orbit-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_SYMMETRY} EXPECTEDDIR export-depthmap-orbit ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,0,1600)
+add_cmdline_test(export-depthmap-orbit-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_SYMMETRY} EXPECTEDDIR export-depthmap-orbit ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,90,1600)
+
+# The asymmetric case, which is what actually distinguishes a range centered on the
+# rotation center from one centered on the bounding box. Separate expectations,
+# because the distant cube really does move between these two angles.
+add_cmdline_test(export-depthmap-offcenter-a OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTER} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,55,0,25,300)
+add_cmdline_test(export-depthmap-offcenter-b OPENSCAD SUFFIX png FILES ${DEPTHMAP_OFFCENTER} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,20,0,140,300)
+
+# Depth map range stability. Depth is normalized across the model's bounding
+# sphere centered on the viewport's center of rotation (capped_sphere_range() in
+# src/io/depthmap.h), which is orientation invariant - so these two views of one
+# long model must grade against the same range. The side view is deliberately the
+# unflattering one: invariance costs contrast exactly where a model is thin in
+# depth, and that cost belongs in the suite rather than only in the argument for
+# it.
+set(DEPTHMAP_ELONGATED ${TEST_SCAD_DIR}/misc/depthmap-elongated.scad)
+# The fine metric profile: same geometry, 10um units instead of 1mm, so the same
+# object spans a hundred times as many levels. Registered on the elongated model
+# because its depth range is the one most likely to expose a scaling mistake.
+add_cmdline_test(export-depthmap-10um OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=metric10um --camera=0,0,0,90,0,90,400)
+add_cmdline_test(export-depthmap-endon  OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,90,400)
+add_cmdline_test(export-depthmap-sideon OPENSCAD SUFFIX png FILES ${DEPTHMAP_ELONGATED} ARGS --export-format=depthmap -O depthmap/profile=visual --camera=0,0,0,90,0,0,400)
+# Agent lighting modes (AgentSCAD): each mode must render differently from an
+# ordinary preview and stay stable. These go through the preview path by design -
+# the modes are shader/lighting overrides on it, and --render is refused.
+set(AGENT_LIGHTING_FILES ${TEST_SCAD_DIR}/misc/agent-lighting.scad)
+# IMAGE_COMPARE_EXE, not Python3_EXECUTABLE: this script imports PIL at module
+# scope, and PIL is only guaranteed in the testing venv that ImageCompare.cmake
+# builds - the interpreter CMake found need not have it, and on this Mac does
+# not. Registered against the bare interpreter these two tests failed with
+# ModuleNotFoundError on every run, which reads in the summary as a Canny defect
+# rather than a missing dependency. Every other image test reaches PIL through
+# the same venv, via test_cmdline_tool.py's comparator.
+# IMAGE_COMPARE_EXE is only defined when USE_IMAGE_COMPARE_PY built the venv;
+# fall back to the interpreter CMake found, which then has to supply PIL itself.
+if(IMAGE_COMPARE_EXE)
+  set(CANNY_PY_EXE ${IMAGE_COMPARE_EXE} ${IMAGE_COMPARE_OPTS})
+else()
+  set(CANNY_PY_EXE ${Python3_EXECUTABLE})
+endif()
+foreach(canny_backend cgal manifold)
+  add_test(NAME canny-map-${canny_backend}
+    COMMAND ${CANNY_PY_EXE} ${CMAKE_CURRENT_SOURCE_DIR}/canny-map-test.py
+      ${OPENSCAD_BINPATH} ${canny_backend})
+endforeach()
+add_cmdline_test(export-normalmap     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=normalmap)
+add_cmdline_test(export-coordinatemap OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=coordinatemap)
+add_cmdline_test(export-flatmap       OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=flatmap)
+add_cmdline_test(export-chromatic     OPENSCAD SUFFIX png FILES ${AGENT_LIGHTING_FILES} ARGS --export-format=chromatic)
+
+# At alpha zero the body contributes nothing, so every non-background pixel in
+# the expected image must come from the unattenuated Blinn-Phong highlight.
+add_cmdline_test(preview-shaded-transparency OPENSCAD SUFFIX png
+  FILES ${TEST_SCAD_DIR}/misc/shaded-transparent.scad
+  ARGS --view=shaded --camera=0,0,0,70,0,25,140 --imgsize=512,256)
+
 # Note: we're missing coverage for ${PREVIEW_DIFFERENT_EXPECTATIONS} files for throwntogether
 add_cmdline_test(throwntogether-cgal  OPENSCAD FILES ${ALL_THROWNTOGETHER_FILES} SUFFIX png EXPECTEDDIR throwntogether ARGS --preview=throwntogether --backend=cgal)
 add_cmdline_test(throwntogether-manifold  OPENSCAD FILES ${ALL_THROWNTOGETHER_FILES} SUFFIX png EXPECTEDDIR throwntogether ARGS --preview=throwntogether --backend=manifold)

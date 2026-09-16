@@ -131,6 +131,11 @@ std::unique_ptr<const Geometry> CubeNode::createGeometry() const
     {2, 0, 4, 6},  // left
   };
 
+  // A cube has no curvature, so it contributes no smoothing tolerance. Leaving it at
+  // the default would poison the maximum taken across a boolean's children: every
+  // model containing a cube would fall back to the default tolerance no matter how
+  // finely its curved parts were tessellated.
+  ps->setSmoothAngle(0.0);
   return ps;
 }
 
@@ -219,6 +224,10 @@ std::unique_ptr<const Geometry> SphereNode::createGeometry() const
     polyset->indices.back().push_back(num_rings * num_fragments - i - 1);
   }
 
+  // Twice $fa: facets meeting at less than the angle they were generated at are meant
+  // to read as one curved surface. Deliberately $fa and not the actual angular step -
+  // a coarse $fn=6 cylinder has 60 degree facets and is meant to look faceted.
+  polyset->setSmoothAngle(2.0 * discretizer.minimumFragmentAngle());
   return polyset;
 }
 
@@ -304,6 +313,10 @@ std::unique_ptr<const Geometry> CylinderNode::createGeometry() const
     }
   }
 
+  // Twice $fa: facets meeting at less than the angle they were generated at are meant
+  // to read as one curved surface. Deliberately $fa and not the actual angular step -
+  // a coarse $fn=6 cylinder has 60 degree facets and is meant to look faceted.
+  polyset->setSmoothAngle(2.0 * discretizer.minimumFragmentAngle());
   return polyset;
 }
 
@@ -410,6 +423,8 @@ std::unique_ptr<const Geometry> PolyhedronNode::createGeometry() const
     }
   }
   p->setTriangular(is_triangular);
+  // Author-supplied faces, with no tessellation tolerance of their own; see cube().
+  p->setSmoothAngle(0.0);
   return p;
 }
 
