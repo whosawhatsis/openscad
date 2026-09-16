@@ -167,6 +167,7 @@ struct AnimateArgs {
   unsigned num_shards = 1;
   unsigned shard = 1;
   unsigned fps = 30;  //!< only used by the animation container formats
+  unsigned blend_remesh_samples = 256;
 };
 
 struct CommandLine {
@@ -317,6 +318,13 @@ AnimateArgs get_animate(const po::variables_map& vm)
     animate.fps = vm["animate_fps"].as<unsigned>();
     if (animate.fps == 0 || animate.fps > 100) {
       LOG("--animate_fps needs to be in range <1..100>");
+      exit(1);
+    }
+  }
+  if (vm.count("blend-remesh-samples")) {
+    animate.blend_remesh_samples = vm["blend-remesh-samples"].as<unsigned>();
+    if (animate.blend_remesh_samples == 0 || animate.blend_remesh_samples > 256) {
+      LOG("--blend-remesh-samples needs to be in range <1..256>");
       exit(1);
     }
   }
@@ -639,7 +647,7 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     const std::string input_filename = cmd.is_stdin ? "<stdin>" : cmd.filename;
     const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
-                                             input_filename, &cmd.camera, cmd.exportOptions);
+                                             input_filename, &camera, cmd.exportOptions);
     if (usdFrames != nullptr) {
       /*
          Animated USD: one stage covers every frame, so the geometry is collected here and
@@ -653,7 +661,7 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       std::vector<UsdAnimationObject> objects;
       const auto csgRoot = usdCsgEvaluator.buildCSGTree(*tree.root());
       if (!collectUsdAnimationObjects(csgRoot, objects)) objects.clear();
-      usdFrames->push_back({root_geom, std::move(objects)});
+      usdFrames->push_back({root_geom, std::move(objects), camera});
     } else if (cmd.multiStl) {
       if (!Feature::ExperimentalMultiMaterial.is_enabled()) {
         LOG("Option --multi-stl requires --enable=multi-material.");
@@ -977,7 +985,12 @@ int cmdline(const CommandLine& cmd)
       const bool wrote = with_output(
         false, fs::path(cmd.output_file).generic_string(),
         [&](std::ostream& stream) {
-          if (export_format == FileFormat::USDZ) {
+          if (export_format == FileFormat::BLEND) {
+            export_blend_animation(
+              usdFrames, cmd.animate.fps, stream,
+              {.remeshSamples = static_cast<size_t>(cmd.animate.blend_remesh_samples),
+               .defaultColor = exportInfo.defaultColor});
+          } else if (export_format == FileFormat::USDZ) {
             export_usdz_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
           } else {
             export_usda_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
@@ -1173,7 +1186,9 @@ po::options_description build_options_description()
     ("preview", po::value<std::string>()->implicit_value(""),
       "[=throwntogether] -for ThrownTogether preview png")
     ("animate", po::value<unsigned>(), "export N animated frames")
-    ("animate_fps", po::value<unsigned>(), "frame rate for formats that fold the frames into one file (gif, apng, avi, usda, usdz); default 30")
+    ("animate_fps", po::value<unsigned>(), "frame rate for formats that fold the frames into one file (gif, apng, avi, usda, usdz, blend); default 30")
+    ("blend-remesh-samples", po::value<unsigned>(),
+      "maximum evenly spaced geometry samples in .blend animations; range 1..256, default 256")
     ("animate_sharding", po::value<std::string>(),
       "Parameter <shard>/<num_shards> - Divide work into <num_shards> and only output frames for "
       "<shard>. E.g. 2/5 only outputs the second 1/5 of frames. Use to parallelize work on multiple "
