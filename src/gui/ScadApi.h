@@ -9,7 +9,11 @@
 #include <unordered_set>
 #include <utility>
 
+#include <QHash>
+#include <QStringList>
+
 #include "core/SourceFile.h"
+#include "gui/CompletionItem.h"
 
 class ApiFunc
 {
@@ -70,17 +74,32 @@ class ScadApi : public QsciAbstractAPIs
 private:
   ScintillaEditor *editor;
   QList<ApiFunc> funcs;
+  QList<CompletionItem> completions;
+  QList<CompletionItem> userCompletions;
+  QList<CompletionItem> importedCompletions;
+  QHash<QString, QStringList> builtinParameters;
+  QHash<QString, QStringList> userParameters;
 
 protected:
   void autoCompleteFolder(const QStringList& context, const QString& text, const int col,
                           QStringList& list);
   void autoCompleteFunctions(const QStringList& context, QStringList& list);
+  QString textBeforeCursor() const;
 
 public:
   ScadApi(ScintillaEditor *editor, QsciLexer *lexer);
 
   void updateAutoCompletionList(const QStringList& context, QStringList& list) override;
   void autoCompletionSelected(const QString& selection) override;
+  void completeSelection(const QString& selection);
+  /// Ranked candidates for the caret, in the order they should be shown. Used by
+  /// the user-list path, which - unlike QScintilla's AcsAPIs path - neither sorts
+  /// the list nor trims entries at their first space.
+  QStringList completionList();
+  /// Accept an entry chosen from that list. A user list does not replace the typed
+  /// word, so that is done here before the usual structure is applied.
+  void acceptUserListSelection(const QString& text);
+  static int wordStartColumn(const QString& lineText, int col);
   QStringList callTips(const QStringList& context, int commas, QsciScintilla::CallTipsStyle style,
                        QList<int>& shifts) override;
 

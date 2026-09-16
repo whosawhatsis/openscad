@@ -58,6 +58,8 @@ const Feature Feature::ExperimentalUnicodeIdentifiers(
   "Allow non-ASCII characters in identifiers, following Unicode Standard Annex #31.");
 const Feature Feature::ExperimentalTransparencyOrdering(
   "transparency-ordering", "Enable depth-sorted OpenCSG transparency ordering.");
+const Feature Feature::ExperimentalEditorEnhancements("editor-enhancements",
+                                                      "Enable experimental editor enhancements.");
 
 #ifdef ENABLE_PYTHON
 const Feature Feature::ExperimentalPythonEngine(

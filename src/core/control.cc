@@ -215,7 +215,7 @@ static std::shared_ptr<AbstractNode> builtin_if(const ModuleInstantiation *inst,
 
 void register_builtin_control()
 {
-  Builtins::init("children", new BuiltinModule(builtin_children),
+  Builtins::init("children", new BuiltinModule(builtin_children, nullptr, BuiltinModule::Kind::Leaf),
                  {
                    "children()",
                    "children(number)",
@@ -224,12 +224,12 @@ void register_builtin_control()
                    "children([vector])",
                  });
 
-  Builtins::init("echo", new BuiltinModule(builtin_echo),
+  Builtins::init("echo", new BuiltinModule(builtin_echo, nullptr, BuiltinModule::Kind::Leaf),
                  {
                    "echo(arg, ...)",
                  });
 
-  Builtins::init("assert", new BuiltinModule(builtin_assert),
+  Builtins::init("assert", new BuiltinModule(builtin_assert, nullptr, BuiltinModule::Kind::Leaf),
                  {
                    "assert(boolean)",
                    "assert(boolean, string)",
