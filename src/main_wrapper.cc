@@ -1,5 +1,9 @@
 #include "openscad.h"
 
+#include <cstdio>
+
+#include "command_line.h"
+
 #ifndef OPENSCAD_NOGUI
 #include <QtCore/qresource.h>  // Bring in Q_INIT_RESOURCE
 #endif
@@ -18,7 +22,17 @@ int main(int argc, char **argv)
   Q_INIT_RESOURCE(mac);
 #endif
 #endif
-  return openscad_main(argc, argv);
+  /*
+     Argument errors are raised rather than exit()ed, so that the same parsing code can be
+     driven from inside a running process without killing it (see command_line.h). The CLI's
+     own behaviour is unchanged: report the message and exit 1.
+   */
+  try {
+    return openscad_main(argc, argv);
+  } catch (const CommandLineError& e) {
+    fprintf(stderr, "%s\n", e.what());
+    return 1;
+  }
 }
 
 #ifdef _WIN32

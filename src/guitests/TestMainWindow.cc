@@ -1,5 +1,7 @@
 #include "TestMainWindow.h"
 
+#include <QAction>
+#include <QMenu>
 #include <QString>
 #include <QStringList>
 #include <QTest>
@@ -42,4 +44,12 @@ void TestMainWindow::checkSaveToShouldUpdateWindowTitle()
 
   // The window title must also have the name of open file
   QCOMPARE(window->windowTitle(), "test-tmp.scad");
+}
+
+void TestMainWindow::checkAdvancedExportActionAvailable()
+{
+  auto *action = window->findChild<QAction *>("fileActionAdvancedExport");
+  QVERIFY(action);
+  QVERIFY(window->menuExport->actions().contains(action));
+  QCOMPARE(action->text(), "Advanced Export...");
 }
