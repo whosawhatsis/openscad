@@ -15,6 +15,8 @@ private slots:
   void checkIsolatedRenderTagsSchemeColors();
   void checkUntouchedCustomizerDoesNotOverrideEditedText();
   void checkIsolatedRenderUsesCommandLineDefinitions();
+  void checkF5DuringAnInFlightPreviewShowsTheEditedModel();
+  void checkIdenticalPreviewRequestIsNotRepeated();
   //! Auto-reload previews by its own continuation, which must reach the worker too.
   void checkIsolatedAutoReloadPreviewUsesWorker();
   //! And what the worker renders must be what the Customizer says, not the document's defaults.
