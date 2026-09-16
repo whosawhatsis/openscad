@@ -69,6 +69,19 @@ std::string encode(bool with_alpha)
   return out.str();
 }
 
+// PNG is an 8-byte signature followed by length/type/data/crc chunks.
+bool hasChunk(const std::string& png, const std::string& type)
+{
+  for (size_t i = 8; i + 8 <= png.size();) {
+    const uint32_t len = (static_cast<uint8_t>(png[i]) << 24) |
+                         (static_cast<uint8_t>(png[i + 1]) << 16) |
+                         (static_cast<uint8_t>(png[i + 2]) << 8) | static_cast<uint8_t>(png[i + 3]);
+    if (png.substr(i + 4, 4) == type) return true;
+    i += 12 + len;
+  }
+  return false;
+}
+
 }  // namespace
 
 TEST_CASE("a 16-bit depth PNG carries its metadata in a text chunk", "[imageutils]")
@@ -141,4 +154,15 @@ TEST_CASE("write_png preserves alpha when asked", "[imageutils]")
   CHECK(decoded[12] == 255);
   CHECK(decoded[13] == 255);
   CHECK(decoded[14] == 255);
+}
+
+// The same render exported on two platforms should produce the same file. An embedded color
+// profile is the difference that survived having a second, platform-specific encoder.
+TEST_CASE("write_png embeds no color profile", "[imageutils]")
+{
+  const auto png = encode(false);
+  CHECK_FALSE(hasChunk(png, "iCCP"));
+  CHECK_FALSE(hasChunk(png, "sRGB"));
+  CHECK_FALSE(hasChunk(png, "gAMA"));
+  CHECK_FALSE(hasChunk(png, "cHRM"));
 }
