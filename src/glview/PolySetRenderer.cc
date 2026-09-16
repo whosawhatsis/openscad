@@ -126,6 +126,9 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
   }
   vbo_builder.allocateBuffers(num_vertices);
 
+  Color4f cutout_color;
+  getColorSchemeColor(ColorMode::CUTOUT, cutout_color);
+
   for (const auto& polyset : this->polysets_) {
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
@@ -133,7 +136,8 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
     add_shader_pointers(vbo_builder, shaderinfo);
 
     vbo_builder.writeSurface();
-    vbo_builder.create_surface(*polyset, Transform3d::Identity(), color, enable_barycentric, false);
+    vbo_builder.create_surface(*polyset, Transform3d::Identity(), color, enable_barycentric, false,
+                               &cutout_color);
   }
 
   vbo_builder.createInterleavedVBOs();

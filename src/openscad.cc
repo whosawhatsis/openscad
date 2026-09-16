@@ -884,6 +884,9 @@ int compute_worker_main()
     return 1;
   }
 
+  // The window resolves implicit face colors against its own scheme, which this process cannot see.
+  PolySet::emitSchemeColorTags = true;
+
   IpcMessage message;
   while (channel->read(message)) {
     // Anything unrecognised is skipped rather than treated as an error: a newer parent must not be

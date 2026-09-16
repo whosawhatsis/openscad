@@ -242,6 +242,46 @@ bool exportFileStdOut(const std::shared_ptr<const Geometry>& root_geom, const Ex
   return true;
 }
 
+namespace {
+
+// Geometry from a compute worker carries PolySet::COLOR_INDEX_* tags for faces colored by the
+// scheme. Every exporter reads a negative index as "no color", so they are resolved here, once.
+std::shared_ptr<const Geometry> resolveSchemeColorTags(const std::shared_ptr<const Geometry>& geom,
+                                                       const ColorScheme *scheme)
+{
+  if (!scheme) return geom;
+  if (const auto list = std::dynamic_pointer_cast<const GeometryList>(geom)) {
+    Geometry::Geometries children;
+    for (const auto& [node, child] : list->getChildren()) {
+      children.emplace_back(node, resolveSchemeColorTags(child, scheme));
+    }
+    return std::make_shared<GeometryList>(children);
+  }
+  const auto isTag = [](int32_t index) {
+    return index == PolySet::COLOR_INDEX_DEFAULT || index == PolySet::COLOR_INDEX_CUTOUT;
+  };
+  const auto ps = std::dynamic_pointer_cast<const PolySet>(geom);
+  if (!ps || std::none_of(ps->color_indices.begin(), ps->color_indices.end(), isTag)) return geom;
+
+  auto resolved = std::make_shared<PolySet>(*ps);
+  int32_t front = -1;
+  int32_t back = -1;
+  for (auto& index : resolved->color_indices) {
+    if (!isTag(index)) continue;
+    const bool cutout = index == PolySet::COLOR_INDEX_CUTOUT;
+    auto& cached = cutout ? back : front;
+    if (cached < 0) {
+      cached = static_cast<int32_t>(resolved->colors.size());
+      resolved->colors.push_back(ColorMap::getColor(
+        *scheme, cutout ? RenderColor::CGAL_FACE_BACK_COLOR : RenderColor::CGAL_FACE_FRONT_COLOR));
+    }
+    index = cached;
+  }
+  return resolved;
+}
+
+}  // namespace
+
 bool exportFileByName(const std::shared_ptr<const Geometry>& root_geom, const std::string& filename,
                       const ExportInfo& exportInfo)
 {
@@ -265,7 +305,7 @@ bool exportFileByName(const std::shared_ptr<const Geometry>& root_geom, const st
     bool onerror = false;
     fstream.exceptions(std::ios::badbit | std::ios::failbit);
     try {
-      exportFile(root_geom, fstream, exportInfo);
+      exportFile(resolveSchemeColorTags(root_geom, exportInfo.colorScheme), fstream, exportInfo);
     } catch (std::ios::failure&) {
       onerror = true;
     }
