@@ -1,0 +1,378 @@
+#include "gui/ComputeWorker.h"
+
+#include <QByteArray>
+#include <QFile>
+#include <QTimer>
+#include <QMetaObject>
+#include <QProcess>
+#include <QThread>
+#include <QProcessEnvironment>
+#include <cstdio>
+#include <exception>
+#include <functional>
+#include <map>
+#include <utility>
+#include <vector>
+
+#include "Feature.h"
+#include "glview/Camera.h"
+#include "geometry/Geometry.h"
+#include "geometry/GeometryCache.h"
+#ifdef ENABLE_CGAL
+#include "geometry/cgal/CGALCache.h"
+#endif
+#include "glview/CsgInfo.h"
+#include "io/ipc_channel.h"
+#include "io/ipc_geometry.h"
+#include "json/json.hpp"
+#include "utils/printutils.h"
+#include "io/ipc_endpoint.h"
+
+namespace {
+
+//! Names the payload the worker returns geometry under. The request asks for this name and the
+//! reply carries it back, so the two only have to agree here.
+constexpr auto kRenderOutputName = "render.osig";
+//! And the product list a preview returns; its leaves are named after it.
+constexpr auto kPreviewOutputName = "preview.json";
+
+}  // namespace
+
+namespace {
+//! How long a child gets to notice a cancellation before it is killed instead.
+//!
+//! The child only notices at its next progress tick, and that is slower than it looks: measured on an
+//! M1 Max, a cancelled render answered in ~490 ms warm and ~1230 ms on the first run after the binary
+//! was rebuilt. A one-second grace period therefore killed a worker that was about to comply -- which
+//! throws away its caches, and is the opposite of what the polite form is for. The CI machines are
+//! slower still. This sits well clear of both; the kill is still there for a worker stuck inside one
+//! long boolean, which is the case the escalation exists for.
+constexpr int kCancelGracePeriodMs = 5000;
+
+//! The experimental features this process has on. They are per-process state, so a worker that is
+//! not told renders as if every experimental builtin did not exist -- the module is ignored with a
+//! warning and the result is empty. Sent with every request rather than at startup, so a
+//! preference changed mid-session takes effect on the next render.
+std::vector<std::string> enabledFeatures()
+{
+  std::vector<std::string> names;
+  for (auto feature = Feature::begin(); feature != Feature::end(); ++feature) {
+    if ((*feature)->is_enabled()) names.push_back((*feature)->get_name());
+  }
+  return names;
+}
+
+//! The cache limits this process runs with, which the window set from Preferences. The worker is
+//! its own process and would otherwise keep the built-in 100 MB, evicting and recomputing a large
+//! model's geometry between previews.
+void addCacheLimits(nlohmann::json& request)
+{
+  request["geometryCacheSizeMB"] = GeometryCache::instance()->maxSizeMB();
+#ifdef ENABLE_CGAL
+  request["cgalCacheSizeMB"] = CGALCache::instance()->maxSizeMB();
+#endif
+}
+}  // namespace
+
+struct ComputeWorker::Private {
+  QString program;
+  QStringList arguments;
+  QString channelVariable;
+  QProcess process;
+  std::unique_ptr<IpcChannelPair> channel;
+  //! One request at a time per worker, run off the GUI thread.
+  QThread *renderThread = nullptr;
+  //! The file whose existence tells the child to abandon the request it is running. Named after
+  //! the request's own input, which lives in a directory the parent owns.
+  QString cancelFile;
+  //! Counts requests, so an escalation timer can tell whether the one it was armed for is still
+  //! the one running.
+  unsigned long long requestSerial = 0;
+  //! The last preview's decoded leaves, by payload bytes. An unchanged leaf then comes back as the
+  //! same PolySet, so the window's vertex-buffer cache can reuse what it built for it.
+  DecodedLeaves previewLeaves;
+};
+
+ComputeWorker::ComputeWorker(QString program, QStringList arguments, QString channelEnvironmentVariable)
+  : d(std::make_unique<Private>())
+{
+  d->program = std::move(program);
+  d->arguments = std::move(arguments);
+  d->channelVariable = std::move(channelEnvironmentVariable);
+}
+
+ComputeWorker::~ComputeWorker()
+{
+  if (d->renderThread) {
+    // The thread is blocked in read() until the child goes away, so the child has to go first.
+    if (isRunning()) cancel();
+    d->renderThread->quit();
+    d->renderThread->wait();
+  }
+  if (isRunning()) {
+    cancel();
+    d->process.waitForFinished(-1);
+  }
+}
+
+bool ComputeWorker::start()
+{
+  if (d->channel) return false;
+
+  auto channel = std::make_unique<IpcChannelPair>();
+  if (!channel->valid()) return false;
+
+  auto environment = QProcessEnvironment::systemEnvironment();
+  environment.insert(d->channelVariable, QString::fromStdString(channel->childArgument()));
+  d->process.setProcessEnvironment(environment);
+  d->process.start(d->program, d->arguments);
+  if (!d->process.waitForStarted()) {
+    // Worth saying out loud: without this a worker that cannot be started is indistinguishable
+    // from one that started and said nothing.
+    LOG(message_group::Error, "Could not start compute worker '%1$s': %2$s", d->program.toStdString(),
+        d->process.errorString().toStdString());
+    return false;
+  }
+
+  // The child has it now, so this process must not keep a copy. Holding one leaves the channel
+  // open from this end forever, and a worker that dies would then never produce an end of stream
+  // -- a hang where there should be a diagnostic. This ordering is the whole of it: after
+  // waitForStarted(), before the first read.
+  channel->releaseChildEnd();
+  d->channel = std::move(channel);
+  return true;
+}
+
+bool ComputeWorker::isRunning() const
+{
+  return d->process.state() == QProcess::Running;
+}
+
+qint64 ComputeWorker::processId() const
+{
+  return isRunning() ? d->process.processId() : 0;
+}
+
+bool ComputeWorker::send(const QString& name, const QByteArray& payload)
+{
+  if (!d->channel) return false;
+  try {
+    d->channel->parent().write(name.toStdString(), std::string(payload.constData(), payload.size()));
+  } catch (const std::exception&) {
+    // A worker that died between the check and the write. Its exit status is the honest report;
+    // this only has to avoid pretending the message went anywhere.
+    return false;
+  }
+  return true;
+}
+
+bool ComputeWorker::receive(IpcMessage& message)
+{
+  if (!d->channel) return false;
+  return d->channel->parent().read(message);
+}
+
+void ComputeWorker::cancel()
+{
+  if (!isRunning()) return;
+  // Ask first, insist after a second. A SIGKILLed worker is an abnormal exit as far as the OS is
+  // concerned, and users saw crash-reporter dialogs for a worker they had deliberately stopped.
+  // Terminating gives it the chance to exit cleanly; the kill is still there for a worker too busy
+  // inside a boolean to notice, which is the case cancellation exists for.
+  d->process.terminate();
+  if (!d->process.waitForFinished(1000)) d->process.kill();
+}
+
+void ComputeWorker::cancelRequest()
+{
+  if (d->cancelFile.isEmpty()) return;
+  QFile file(d->cancelFile);
+  file.open(QIODevice::WriteOnly);
+  file.close();
+
+  // A child that has noticed will have answered by now. One that has not is somewhere it cannot
+  // notice, and waiting longer only leaves the window stuck.
+  const auto serial = d->requestSerial;
+  QTimer::singleShot(kCancelGracePeriodMs, this, [this, serial] {
+    if (d->requestSerial == serial && d->renderThread) cancel();
+  });
+}
+
+bool ComputeWorker::waitForFinished()
+{
+  if (d->process.state() == QProcess::NotRunning) return true;
+  return d->process.waitForFinished();
+}
+
+bool ComputeWorker::exitedCleanly() const
+{
+  return d->process.exitStatus() == QProcess::NormalExit && d->process.exitCode() == 0;
+}
+
+void ComputeWorker::startRequest(
+  const std::string& request,
+  std::function<void(std::map<std::string, std::string>&&, const QString&)> deliver)
+{
+  d->renderThread = QThread::create([this, request, deliver = std::move(deliver)] {
+    const QByteArray payload(request.data(), static_cast<int>(request.size()));
+    if (!send("request", payload)) {
+      QMetaObject::invokeMethod(this, [this, deliver] { deliver({}, tr("The worker went away.")); });
+      return;
+    }
+
+    // Payloads arrive before the answer that ends the request, so they are collected as they come.
+    std::map<std::string, std::string> payloads;
+    IpcMessage message;
+    while (receive(message)) {
+      if (message.name != "done") {
+        payloads.emplace(std::move(message.name), std::move(message.payload));
+        continue;
+      }
+      QString error;
+      try {
+        const auto answer = nlohmann::json::parse(message.payload);
+        if (!answer.value("ok", false)) {
+          error = QString::fromStdString(answer.value("error", std::string{"The request failed."}));
+        }
+      } catch (const std::exception& e) {
+        error = QString::fromLatin1(e.what());
+      }
+      QMetaObject::invokeMethod(this, [this, deliver, payloads = std::move(payloads), error]() mutable {
+        deliver(std::move(payloads), error);
+      });
+      return;
+    }
+    // The channel ended without an answer, which is what a crashed worker looks like from here.
+    QMetaObject::invokeMethod(this, [this, deliver] { deliver({}, tr("The compute worker stopped.")); });
+  });
+  connect(d->renderThread, &QThread::finished, d->renderThread, &QObject::deleteLater);
+  d->renderThread->start();
+}
+
+void ComputeWorker::requestFinished()
+{
+  if (!d->cancelFile.isEmpty()) {
+    QFile::remove(d->cancelFile);
+    d->cancelFile.clear();
+  }
+  ++d->requestSerial;
+  if (!d->renderThread) return;
+  d->renderThread->quit();
+  d->renderThread->wait();
+  d->renderThread = nullptr;
+}
+
+namespace {
+//! The window's viewport and animation time become $vpr/$vpt/$vpd/$vpf and $t in the worker, which
+//! has neither. Sent per request: the user can move the view between two renders.
+void addViewState(nlohmann::json& request, const Camera& camera, double animationTime)
+{
+  const auto vpr = camera.getVpr();
+  const auto vpt = camera.getVpt();
+  request["vpr"] = {vpr.x(), vpr.y(), vpr.z()};
+  request["vpt"] = {vpt.x(), vpt.y(), vpt.z()};
+  request["vpd"] = camera.zoomValue();
+  request["vpf"] = camera.fovValue();
+  request["time"] = animationTime;
+}
+}  // namespace
+
+void ComputeWorker::startRender(const QString& scadPath, const QString& parameterFile,
+                                const QString& setName, const QString& sourcePath, const Camera& camera,
+                                const double animationTime)
+{
+  if (!d->channel) {
+    emit renderFailed(tr("The compute worker is not running."));
+    return;
+  }
+  if (d->renderThread) {
+    emit renderFailed(tr("The compute worker is already busy."));
+    return;
+  }
+
+  d->cancelFile = scadPath + QStringLiteral(".cancel");
+  QFile::remove(d->cancelFile);
+
+  nlohmann::json request;
+  request["command"] = "render";
+  request["features"] = enabledFeatures();
+  addViewState(request, camera, animationTime);
+  addCacheLimits(request);
+  request["cancelFile"] = d->cancelFile.toStdString();
+  request["input"] = scadPath.toStdString();
+  request["output"] = kRenderOutputName;
+  if (!parameterFile.isEmpty()) request["parameterFile"] = parameterFile.toStdString();
+  if (!setName.isEmpty()) request["setName"] = setName.toStdString();
+  if (!sourcePath.isEmpty()) request["sourcePath"] = sourcePath.toStdString();
+
+  startRequest(
+    request.dump(), [this](std::map<std::string, std::string>&& payloads, const QString& error) {
+      requestFinished();
+      if (!error.isEmpty()) {
+        emit renderFailed(error);
+        return;
+      }
+      const auto found = payloads.find(kRenderOutputName);
+      if (found == payloads.end()) {
+        emit renderFailed(tr("The worker returned no geometry."));
+        return;
+      }
+      const auto geometry =
+        import_ipc_geometry_buffer(found->second.data(), found->second.size(), kRenderOutputName);
+      if (!geometry) emit renderFailed(tr("The worker returned geometry that could not be read."));
+      else emit renderDone(geometry);
+    });
+}
+
+void ComputeWorker::startPreview(const QString& scadPath, const QString& parameterFile,
+                                 const QString& setName, const QString& sourcePath,
+                                 const std::size_t normalizationLimit, const Camera& camera,
+                                 const double animationTime)
+{
+  if (!d->channel) {
+    emit previewFailed(tr("The compute worker is not running."));
+    return;
+  }
+  if (d->renderThread) {
+    emit previewFailed(tr("The compute worker is already busy."));
+    return;
+  }
+
+  d->cancelFile = scadPath + QStringLiteral(".cancel");
+  QFile::remove(d->cancelFile);
+
+  nlohmann::json request;
+  request["command"] = "preview";
+  request["features"] = enabledFeatures();
+  addViewState(request, camera, animationTime);
+  addCacheLimits(request);
+  request["cancelFile"] = d->cancelFile.toStdString();
+  request["input"] = scadPath.toStdString();
+  request["output"] = kPreviewOutputName;
+  request["normalizationLimit"] = normalizationLimit;
+  if (!parameterFile.isEmpty()) request["parameterFile"] = parameterFile.toStdString();
+  if (!setName.isEmpty()) request["setName"] = setName.toStdString();
+  if (!sourcePath.isEmpty()) request["sourcePath"] = sourcePath.toStdString();
+
+  startRequest(request.dump(),
+               [this](std::map<std::string, std::string>&& payloads, const QString& error) {
+                 requestFinished();
+                 if (!error.isEmpty()) {
+                   emit previewFailed(error);
+                   return;
+                 }
+                 const auto found = payloads.find(kPreviewOutputName);
+                 if (found == payloads.end()) {
+                   emit previewFailed(tr("The worker returned no product list."));
+                   return;
+                 }
+                 auto products = std::make_shared<CsgInfo>();
+                 // Every leaf the list names has to have arrived, or the preview would be missing
+                 // geometry without saying so.
+                 if (!import_csg_products(*products, found->second, payloads, &d->previewLeaves)) {
+                   emit previewFailed(tr("The worker returned a preview that could not be read."));
+                   return;
+                 }
+                 emit previewDone(products);
+               });
+}

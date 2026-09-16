@@ -20,10 +20,19 @@ class PolySet : public Geometry
   friend class PolySetBuilder;
 
 public:
+  // Tags for faces whose color comes from the viewer's color scheme. Distinct from -1, which keeps
+  // its old meaning of "no specific color".
+  static constexpr int32_t COLOR_INDEX_CUTOUT = -2;
+  static constexpr int32_t COLOR_INDEX_DEFAULT = -3;
+  //! Set only in a compute worker: geometry it produces carries the tags above instead of colors
+  //! resolved from its own, unrelated, color scheme. Everywhere else the tags never appear.
+  // ponytail: process-wide switch, since a worker process does nothing but serve its window.
+  static inline bool emitSchemeColorTags = false;
   VISITABLE_GEOMETRY();
   PolygonIndices indices;
   std::vector<Vector3d> vertices;
-  // Per polygon color, indexing the colors vector below. Can be empty, and -1 means no specific color.
+  // Per polygon color, indexing the colors vector below. -1 means no specific color; the
+  // COLOR_INDEX_* tags only arrive from a compute worker.
   std::vector<int32_t> color_indices;
   std::vector<Color4f> colors;
   // Shading parameters, parallel to colors and indexed by the same

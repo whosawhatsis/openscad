@@ -1,6 +1,9 @@
 #pragma once
 
+#include <map>
 #include <memory>
+#include <ostream>
+#include <string>
 #include <vector>
 
 #include "core/CSGNode.h"
@@ -10,6 +13,36 @@
 #include "glview/preview/CSGTreeNormalizer.h"
 #include "glview/RenderSettings.h"
 #include "utils/printutils.h"
+
+class CsgInfo;
+
+/*!
+   Serializes a compiled product list, emitting each distinct leaf mesh as its own payload and
+   referring to it by name. Inside a compute worker the payloads go to the channel; elsewhere they
+   go to files under the same naming scheme, so the references need no special case at either end.
+
+   Returns the document rather than writing it, because emitting a leaf closes whatever payload is
+   open: the caller must finish sending the leaves before it opens the one this text goes into.
+ */
+std::string export_csg_products(const CsgInfo& csgInfo, const std::string& filename);
+
+/*!
+   Rebuilds a product list from a document and the payloads that came with it.
+
+   The window never sees the worker's files, only what arrived on the channel, so every leaf is
+   resolved by name from `payloads`. False if the document is not a product list, or if it names a
+   leaf that never arrived -- compositing a list with missing geometry would silently drop part of
+   the model, which is worse than refusing it.
+
+   `reuse`, when given, carries decoded leaves from one import to the next, keyed by their exact
+   payload bytes. A leaf whose bytes are unchanged comes back as the same PolySet object, which is
+   what lets the preview's vertex-buffer cache -- keyed by PolySet identity -- skip rebuilding it.
+   On return it holds only this import's leaves.
+ */
+using DecodedLeaves = std::map<std::string, std::shared_ptr<const class PolySet>>;
+bool import_csg_products(CsgInfo& csgInfo, const std::string& document,
+                         const std::map<std::string, std::string>& payloads,
+                         DecodedLeaves *reuse = nullptr);
 
 /*
    Small helper class for compiling and normalizing node trees into CSG products

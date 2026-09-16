@@ -83,6 +83,7 @@
 #include "Feature.h"
 #include "LibraryInfo.h"
 #include "RenderStatistic.h"
+#include "core/progress.h"
 #include "core/AST.h"
 #include "core/BuiltinContext.h"
 #include "core/Builtins.h"
@@ -99,6 +100,10 @@
 #include "core/parsersettings.h"
 #include "core/str_utf8_wrapper.h"
 #include "geometry/Geometry.h"
+#include "geometry/GeometryCache.h"
+#ifdef ENABLE_CGAL
+#include "geometry/cgal/CGALCache.h"
+#endif
 #include "geometry/GeometryEvaluator.h"
 #include "geometry/GeometryUtils.h"
 #include "geometry/PolySet.h"
@@ -113,6 +118,10 @@
 #include "io/export.h"
 #include "io/VideoEncoder.h"
 #include "lodepng/lodepng.h"
+#include "json/json.hpp"
+
+#include "glview/CsgInfo.h"
+#include "io/ipc_endpoint.h"
 #include "openscad_gui.h"
 #include "openscad_mimalloc.h"
 #include "platform/PlatformUtils.h"
@@ -199,6 +208,30 @@ struct CommandLine {
   const std::string summaryFile;
   const bool multiStl;
   const bool overwrite;
+  /*!
+     Where the source should be treated as living, when that is not where it was read from.
+
+     A window renders what is in its editor, which it hands to its compute worker as a temporary
+     file. `include <>` and `use <>` resolve relative to the document, so without this they would
+     resolve relative to the temporary copy and a model that renders in the GUI would fail in the
+     worker. Empty everywhere else, which leaves the filename doing both jobs as before.
+   */
+  const std::string sourcePath;
+  /*!
+     A file whose appearance means "abandon this". Empty everywhere but a compute worker.
+
+     A worker cannot be told to stop on the channel it is already busy on, and killing it would
+     cost the window the geometry caches that are most of the reason it has its own process. The
+     parent creates this file; evaluation notices it at the next progress tick and unwinds.
+   */
+  const std::string cancelFile;
+  /*!
+     The animation time the request was made at, which is `$t`.
+
+     A window owns this (its Animate tab drives it) and the worker cannot see it, so without it every
+     frame of an isolated animation would be evaluated at `$t = 0` -- the same frame, over and over.
+   */
+  const double animationTime = 0;
 };
 
 namespace {
@@ -308,6 +341,13 @@ bool with_output(const bool is_stdout, const std::string& filename, const F& f,
     }
 #endif
     f(std::cout);
+    return true;
+  }
+  // A compute worker returns its outputs over the channel instead of writing them, named for the
+  // file they would have been. This covers the product list and the sidecars; the geometry itself
+  // goes through exportFileByName, which has the same check.
+  if (ipc_payload_sink::collecting()) {
+    f(ipc_payload_sink::open(filename));
     return true;
   }
   std::ofstream fstream(std::filesystem::u8path(filename), mode);
@@ -571,6 +611,23 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
   }
   Tree tree(root_node, fparent.string());
 
+  struct CancelWatch {
+    const std::string& file;
+    ~CancelWatch() { progress_report_fin(); }
+  };
+  std::unique_ptr<CancelWatch> cancelWatch;
+  if (!cmd.cancelFile.empty()) {
+    cancelWatch = std::make_unique<CancelWatch>(CancelWatch{cmd.cancelFile});
+    // The cast is safe: progress_report_prep() only numbers the nodes for progress reporting, it
+    // does not modify the tree.
+    progress_report_prep(
+      std::const_pointer_cast<AbstractNode>(root_node),
+      [](const std::shared_ptr<const AbstractNode>&, void *userdata, int) {
+        if (fs::exists(static_cast<CancelWatch *>(userdata)->file)) throw ProgressCancelException();
+      },
+      cancelWatch.get());
+  }
+
   if (export_format == FileFormat::CSG) {
     // https://github.com/openscad/openscad/issues/128
     // When I use the csg ouptput from the command line the paths in 'import'
@@ -582,6 +639,17 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
       stream << tree.getString(*root_node, "\t") << "\n";
     });
     fs::current_path(cmd.original_path);
+  } else if (export_format == FileFormat::IPC_PRODUCTS) {
+    // A preview is a product list plus one payload per distinct leaf, not a single mesh: the
+    // parent composites it and needs the structure, not a merged result.
+    CsgInfo csgInfo;
+    csgInfo.compile_products(tree);
+    // The leaves are sent first and the list afterwards: emitting a payload closes the previous
+    // one, so the list cannot be held open while the leaves it names are still being written.
+    const std::string products = export_csg_products(csgInfo, filename_str);
+    with_output(
+      cmd.is_stdout, filename_str, [&products](std::ostream& stream) { stream << products; },
+      std::ios::out | std::ios::binary);
   } else if (export_format == FileFormat::AST) {
     fs::current_path(fparent);  // Force exported filenames to be relative to document path
     with_output(cmd.is_stdout, filename_str,
@@ -661,7 +729,13 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     }
 
     const std::string input_filename = cmd.is_stdin ? "<stdin>" : cmd.filename;
-    const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
+    // The worker transport carries whatever the model produced -- it is classified 3D only so the
+    // export machinery dispatches it -- so its dimension comes from the geometry. Gating it as 3D
+    // would reject a 2D top level that the in-process path renders happily.
+    const int dim = export_format == FileFormat::IPC_GEOMETRY ? int(root_geom->getDimension())
+                    : fileformat::is3D(export_format)         ? 3
+                    : fileformat::is2D(export_format)         ? 2
+                                                              : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
                                              input_filename, &camera, cmd.exportOptions);
     if (usdFrames != nullptr) {
@@ -1109,7 +1183,8 @@ int cmdline(const CommandLine& cmd)
   text += "\n\x03\n" + commandline_commands;
 
   SourceFile *root_file = nullptr;
-  if (!parse(root_file, text, cmd.filename, cmd.filename, false)) {
+  const std::string& documentPath = cmd.sourcePath.empty() ? cmd.filename : cmd.sourcePath;
+  if (!parse(root_file, text, documentPath, documentPath, false)) {
     delete root_file;  // parse failed
     root_file = nullptr;
   }
@@ -1152,7 +1227,7 @@ int cmdline(const CommandLine& cmd)
           fileformat::info(export_format).description);
       return 1;
     }
-    render_variables.time = 0;
+    render_variables.time = cmd.animationTime;
     return do_export(cmd, render_variables, export_format, root_file, nullptr, nullptr);
   } else if (cmd.animate.processes > 1) {
     // Hand the frames to worker processes. This process renders none of them itself;
@@ -1494,8 +1569,184 @@ po::options_description build_options_description()
   return desc;
 }
 
+namespace {
+
+/*!
+   Serves a compute worker's channel until the parent finishes with it.
+
+   Recognised before any option parsing, so it works in a HEADLESS build and never reaches the code
+   that would put a window on screen. The channel arrives through the environment, not the command
+   line: a descriptor number is not secret, but it has no business being visible in a process list.
+
+   Returning when the channel ends is the whole contract. A worker whose window has gone must exit
+   rather than linger, or a session leaks one process per window.
+ */
+int compute_worker_main()
+{
+  const char *argument = std::getenv(kIpcChannelEnvironmentVariable);
+  if (argument == nullptr) {
+    LOG(message_group::Error, "No compute worker channel in %1$s.", kIpcChannelEnvironmentVariable);
+    return 1;
+  }
+  const auto channel = ipc_channel_from_argument(argument);
+  if (!channel) {
+    LOG(message_group::Error, "Compute worker channel '%1$s' is not usable.", argument);
+    return 1;
+  }
+
+  // The window resolves implicit face colors against its own scheme, which this process cannot see.
+  PolySet::emitSchemeColorTags = true;
+
+  IpcMessage message;
+  while (channel->read(message)) {
+    // Anything unrecognised is skipped rather than treated as an error: a newer parent must not be
+    // able to wedge an older worker just by sending a message it has not heard of.
+    if (message.name != "request") continue;
+
+    nlohmann::json answer;
+    try {
+      const auto request = nlohmann::json::parse(message.payload);
+      // Echoed back so a parent that has several requests in flight can match them up.
+      if (request.contains("requestId")) answer["requestId"] = request["requestId"];
+      const auto command = request.at("command").get<std::string>();
+      const auto preview = command == "preview";
+      if (!preview && command != "render") {
+        throw std::runtime_error("unknown command '" + command + "'");
+      }
+      const auto input = request.at("input").get<std::string>();
+      const auto output = request.at("output").get<std::string>();
+
+      // do_export() chdir()s into the document's directory and leaves the process there. The
+      // worker is persistent, so without restoring it here it would hold a handle on whichever
+      // directory it last rendered from for the rest of its life -- on Windows that directory can
+      // then not be renamed or removed by anyone. Restored on every exit from this request,
+      // including the failing ones.
+      const auto workerPath = fs::current_path();
+      struct RestorePath {
+        const fs::path& path;
+        ~RestorePath()
+        {
+          std::error_code ignored;
+          fs::current_path(path, ignored);
+        }
+      } const restorePath{workerPath};
+
+      // Everything the export machinery writes goes to the channel instead of the filesystem for
+      // the duration of this request.
+      ipc_payload_sink::begin(*channel);
+      const ViewOptions viewOptions{};
+      // $vpr/$vpt/$vpd/$vpf come from the window's viewport, which this process cannot see, and the
+      // user can move it between two renders -- so they ride on each request rather than being set
+      // once at startup. Anything the request leaves out keeps the default camera's value, which is
+      // what a caller with no viewport (a test, or a CLI-side parent) should get.
+      Camera camera;
+      if (request.contains("vpr")) {
+        const auto vpr = request["vpr"].get<std::vector<double>>();
+        if (vpr.size() == 3) camera.setVpr(vpr[0], vpr[1], vpr[2]);
+      }
+      if (request.contains("vpt")) {
+        const auto vpt = request["vpt"].get<std::vector<double>>();
+        if (vpt.size() == 3) camera.setVpt(vpt[0], vpt[1], vpt[2]);
+      }
+      if (request.contains("vpd")) camera.setVpd(request["vpd"].get<double>());
+      if (request.contains("vpf")) camera.setVpf(request["vpf"].get<double>());
+      const double animationTime = request.value("time", 0.0);
+      const CmdLineExportOptions exportOptions;
+      // A window renders what is in its editor, which it hands over as a temporary file. Relative
+      // include<> and use<> must still resolve against the document's own directory, or a model
+      // that renders in the GUI fails in the worker.
+      const auto sourcePath = request.value("sourcePath", std::string{});
+      // The window owns this preference, so a preview normalized in the worker has to be told it
+      // or the product list would differ from the one the same model produces in-process.
+      if (request.contains("normalizationLimit")) {
+        RenderSettings::inst()->openCSGTermLimit = request["normalizationLimit"].get<unsigned int>();
+      }
+      // So are the cache sizes. Left at the built-in 100 MB, a large model evicts geometry between
+      // requests and the worker recomputes it; a recomputed hull can triangulate differently, so the
+      // window cannot reuse the vertex buffers it built for that leaf last time.
+      if (request.contains("geometryCacheSizeMB")) {
+        GeometryCache::instance()->setMaxSizeMB(request["geometryCacheSizeMB"].get<size_t>());
+      }
+#ifdef ENABLE_CGAL
+      if (request.contains("cgalCacheSizeMB")) {
+        CGALCache::instance()->setMaxSizeMB(request["cgalCacheSizeMB"].get<size_t>());
+      }
+#endif
+      // Falls back to the document's own directory when one is named, since that is what relative
+      // paths in the model are written against -- not wherever the text happens to have been read
+      // from.
+      const fs::path originalPath =
+        !sourcePath.empty() ? fs::path(sourcePath).parent_path() : fs::path(input).parent_path();
+      // The Customizer's values are not in the .scad file, so unless the request carries them the
+      // worker renders the file's defaults -- a window that shows one thing and exports another.
+      const std::string parameterFile = request.value("parameterFile", std::string{});
+      const std::string setName = request.value("setName", std::string{});
+      // The parent creates this file to withdraw the request. Polling a path is crude, but the
+      // channel is not readable while this thread is inside the evaluation it would be cancelling.
+      const std::string cancelFile = request.value("cancelFile", std::string{});
+      // Experimental features are per-process state and this process is not the window's. Set the
+      // whole list every request rather than only enabling what is named: the worker is
+      // persistent, so a feature left on by an earlier request would silently outlive the
+      // preference change that turned it off.
+      const auto features = request.value("features", std::vector<std::string>{});
+      for (auto feature = Feature::begin(); feature != Feature::end(); ++feature) {
+        const bool wanted =
+          std::find(features.begin(), features.end(), (*feature)->get_name()) != features.end();
+        Feature::enable_feature((*feature)->get_name(), wanted);
+      }
+      const int result =
+        cmdline(CommandLine{false,
+                            input,
+                            false,
+                            output,
+                            originalPath,
+                            parameterFile,
+                            setName,
+                            viewOptions,
+                            camera,
+                            preview ? FileFormat::IPC_PRODUCTS : FileFormat::IPC_GEOMETRY,
+                            exportOptions,
+                            {},
+                            {},
+                            "",
+                            false,
+                            false,
+                            sourcePath,
+                            cancelFile,
+                            animationTime});
+      ipc_payload_sink::end();
+
+      if (result != 0) throw std::runtime_error("evaluation of '" + input + "' failed");
+      answer["ok"] = true;
+      // What this process is actually running with, so a caller can tell a limit took effect.
+      answer["geometryCacheSizeMB"] = GeometryCache::instance()->maxSizeMB();
+#ifdef ENABLE_CGAL
+      answer["cgalCacheSizeMB"] = CGALCache::instance()->maxSizeMB();
+#endif
+    } catch (const ProgressCancelException&) {
+      // Withdrawn by the parent. Answering rather than exiting is the entire point: the process
+      // keeps the caches that make the next render cheap.
+      ipc_payload_sink::end();
+      answer["ok"] = false;
+      answer["error"] = "cancelled";
+    } catch (const std::exception& e) {
+      ipc_payload_sink::end();
+      // A request the worker cannot make sense of is reported and the worker stays up. Exiting
+      // would cost the window its warm caches over a malformed message.
+      answer["ok"] = false;
+      answer["error"] = e.what();
+    }
+    channel->write("done", answer.dump());
+  }
+  return 0;
+}
+
+}  // namespace
+
 int openscad_main(int argc, char **argv)
 {
+  const bool compute_worker = argc == 2 && std::string(argv[1]) == "--compute-worker";
+
 #if defined(ENABLE_CGAL) && defined(USE_MIMALLOC)
   // call init_mimalloc before any GMP variables are initialized. (defined in src/openscad_mimalloc.h)
   init_mimalloc();
@@ -1540,6 +1791,11 @@ int openscad_main(int argc, char **argv)
   CGAL::set_warning_behaviour(CGAL::THROW_EXCEPTION);
 #endif
   Builtins::initialize();
+
+  // After the initialization a worker needs -- builtins, the application path, the allocator and
+  // CGAL's error behaviour -- and before any argument parsing, so this mode never reaches the
+  // options table or anything that would put a window on screen.
+  if (compute_worker) return compute_worker_main();
 
   auto original_path = fs::current_path();
 

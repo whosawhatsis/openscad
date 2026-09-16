@@ -45,6 +45,7 @@ Q_IMPORT_PLUGIN(QSvgPlugin)
 
 class BuiltinContext;
 class GeometryWorker;
+class ComputeWorker;
 class CSGNode;
 class CSGProducts;
 class FontListDialog;
@@ -125,6 +126,14 @@ public:
   int compileWarnings = 0;
 
   MainWindow(const QStringList& filenames);
+#ifdef ENABLE_GUI_TESTS
+  //! Test-only view of the preview state. A preview is composited from these, so a test that only
+  //! checked the geometry would not notice an empty view.
+  const std::shared_ptr<CSGProducts>& previewProductsForTest() const { return this->rootProduct; }
+  //! Counts previews composited from a worker's product list. Without this a test cannot tell an
+  //! isolated preview from the in-process one -- both end with products in the same member.
+  int isolatedPreviewsForTest() const { return this->isolatedPreviews; }
+#endif
   ~MainWindow() override;
 
 private:
@@ -281,6 +290,7 @@ private slots:
   void compileDone(bool didchange);
   void compileEnded();
   void resetCompileMessageCounts();
+  void selectPreviewViewMode();
 
 private slots:
   void on_editActionCopyVPT_triggered();
@@ -476,6 +486,29 @@ private:
   QTemporaryFile *tempFile{nullptr};
   ProgressWidget *progresswidget{nullptr};
   GeometryWorker *geometryWorker;
+  /*!
+     This window's private compute worker, or null when process isolation is off.
+
+     Latched once, at construction: a window that started computing in-process must not find itself
+     half-isolated because the preference changed underneath it, which is why the feature says it
+     needs a restart.
+   */
+  ComputeWorker *computeWorker = nullptr;
+  //! Holds the editor's text for as long as the worker is reading it.
+  std::unique_ptr<class QTemporaryDir> workerSourceDirectory;
+  //! Writes the editor's text where the worker can read it. Empty on failure, already reported.
+  QString writeSourceForWorker();
+  void startIsolatedRender();
+  void isolatedRenderFailed(const QString& reason);
+  void startIsolatedPreview();
+  QString writeParametersForWorker();
+  void connectWorkerCancel();
+  int isolatedPreviews = 0;
+  void isolatedPreviewDone(const std::shared_ptr<class CsgInfo>& products);
+  //! Builds the renderers a preview draws from, whichever process produced the products.
+  void createPreviewRenderers();
+  //! What a preview does once its products exist, whichever process produced them.
+  void finishPreview();
   QMutex consolemutex;
   EditorInterface *renderedEditor;  // stores pointer to editor which has been most recently rendered
   time_t includesMTime{0};          // latest include mod time

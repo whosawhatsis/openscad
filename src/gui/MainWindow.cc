@@ -66,6 +66,7 @@
 #include <QTextEdit>
 #include <QTextStream>
 #include <QTime>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
@@ -121,6 +122,9 @@
 #include "glview/preview/CSGTreeNormalizer.h"
 #include "glview/preview/ThrownTogetherRenderer.h"
 #include "gui/AboutDialog.h"
+#include "glview/CsgInfo.h"
+#include "gui/ComputeWorker.h"
+#include "io/ipc_endpoint.h"
 #include "gui/GeometryWorker.h"
 #include "gui/ColorList.h"
 #include "gui/Dock.h"
@@ -650,6 +654,8 @@ MainWindow::~MainWindow()
   if (find_panel) find_panel->removeEventFilter(this);
 
   delete this->geometryWorker;
+  // Takes the child process with it, so closing a window does not leave one behind.
+  delete this->computeWorker;
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -973,6 +979,21 @@ void MainWindow::resetCompileMessageCounts()
   this->compileWarnings = 0;
 }
 
+// Preview and thrown-together are the two non-rendered view modes; which one a preview lands in
+// is the user's choice, and OpenCSG has to be compiled in for preview to be one of the options.
+void MainWindow::selectPreviewViewMode()
+{
+  if (viewActionThrownTogether->isChecked()) {
+    viewModeThrownTogether();
+  } else {
+#ifdef ENABLE_OPENCSG
+    viewModePreview();
+#else
+    viewModeThrownTogether();
+#endif
+  }
+}
+
 void MainWindow::compileEnded()
 {
   clearCurrentOutput();
@@ -1162,20 +1183,7 @@ void MainWindow::compileCSG()
       this->backgroundProducts.reset();
     }
 
-    if (this->rootProduct && (this->rootProduct->size() >
-                              GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt())) {
-      LOG(message_group::UI_Warning, "Normalized tree has %1$d elements!", this->rootProduct->size());
-      LOG(message_group::UI_Warning, "OpenCSG rendering has been disabled.");
-    }
-#ifdef ENABLE_OPENCSG
-    else {
-      LOG("Normalized tree has %1$d elements!", (this->rootProduct ? this->rootProduct->size() : 0));
-      this->previewRenderer = std::make_shared<OpenCSGRenderer>(
-        this->rootProduct, this->highlightsProducts, this->backgroundProducts);
-    }
-#endif  // ifdef ENABLE_OPENCSG
-    this->thrownTogetherRenderer = std::make_shared<ThrownTogetherRenderer>(
-      this->rootProduct, this->highlightsProducts, this->backgroundProducts);
+    createPreviewRenderers();
     LOG("Compile and preview finished.");
     renderStatistic.printRenderingTime();
     this->processEvents();
@@ -1875,18 +1883,14 @@ void MainWindow::actionReloadRenderPreview()
 
 void MainWindow::csgReloadRender()
 {
+  // Auto-reload previews too, so it goes to the worker exactly as csgRender does.
+  if (this->rootNode && this->computeWorker) {
+    startIsolatedPreview();
+    return;
+  }
   if (this->rootNode) compileCSG();
 
-  // Go to non-CGAL view mode
-  if (viewActionThrownTogether->isChecked()) {
-    viewModeThrownTogether();
-  } else {
-#ifdef ENABLE_OPENCSG
-    viewModePreview();
-#else
-    viewModeThrownTogether();
-#endif
-  }
+  selectPreviewViewMode();
   compileEnded();
 }
 
@@ -1931,20 +1935,76 @@ void MainWindow::actionRenderPreview()
   }
 }
 
-void MainWindow::csgRender()
+// Builds the renderers a preview draws from, given the product lists. Shared by the in-process
+// path and the isolated one, which differ only in where the products came from.
+void MainWindow::createPreviewRenderers()
 {
-  if (this->rootNode) compileCSG();
-
-  // Go to non-CGAL view mode
-  if (viewActionThrownTogether->isChecked()) {
-    viewModeThrownTogether();
-  } else {
-#ifdef ENABLE_OPENCSG
-    viewModePreview();
-#else
-    viewModeThrownTogether();
-#endif
+  if (this->rootProduct && (this->rootProduct->size() >
+                            GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt())) {
+    LOG(message_group::UI_Warning, "Normalized tree has %1$d elements!", this->rootProduct->size());
+    LOG(message_group::UI_Warning, "OpenCSG rendering has been disabled.");
   }
+#ifdef ENABLE_OPENCSG
+  else {
+    LOG("Normalized tree has %1$d elements!", (this->rootProduct ? this->rootProduct->size() : 0));
+    this->previewRenderer = std::make_shared<OpenCSGRenderer>(
+      this->rootProduct, this->highlightsProducts, this->backgroundProducts);
+  }
+#endif  // ifdef ENABLE_OPENCSG
+  this->thrownTogetherRenderer = std::make_shared<ThrownTogetherRenderer>(
+    this->rootProduct, this->highlightsProducts, this->backgroundProducts);
+}
+
+namespace {
+//! The name the window's Customizer values travel under. Private to this pair of processes; it
+//! never reaches the document's own .json.
+const char *const kWorkerParameterSet = "openscad-compute-worker";
+}  // namespace
+
+void MainWindow::connectWorkerCancel()
+{
+  // Stop means stop wherever the work is. The in-process path polls wasCanceled() from its
+  // progress callback; nothing in this process ticks while a worker is computing, so the button
+  // would otherwise do nothing at all under isolation.
+  if (!this->computeWorker) return;
+  connect(this->progresswidget, &ProgressWidget::canceled, this->computeWorker,
+          &ComputeWorker::cancelRequest);
+}
+
+void MainWindow::startIsolatedPreview()
+{
+  // A preview reports no progress -- the worker sends none -- but it still has to be stoppable.
+  this->progresswidget = new ProgressWidget(this);
+  connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
+  connectWorkerCancel();
+
+  const QString sourceFile = writeSourceForWorker();
+  if (sourceFile.isEmpty()) return;  // writeSourceForWorker has already reported why
+  // The window owns the OpenCSG limit, so the worker is told how far to normalize.
+  const auto limit = 2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
+  this->computeWorker->startPreview(
+    sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
+    this->activeEditor->filepath, limit, qglview->cam, this->animateWidget->getAnimTval());
+}
+
+void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
+{
+  ++this->isolatedPreviews;
+  this->rootProduct = products->root_products;
+  this->highlightsProducts = products->highlights_products;
+  this->backgroundProducts = products->background_products;
+  createPreviewRenderers();
+  LOG("Compile and preview finished.");
+  renderStatistic.printRenderingTime();
+  progress_report_fin();
+  updateStatusBar(nullptr);
+  finishPreview();
+}
+
+// What a preview does once its products exist, whichever process produced them.
+void MainWindow::finishPreview()
+{
+  selectPreviewViewMode();
 
   if (animateWidget->dumpPictures()) {
     animateWidget->nextFrame();
@@ -1982,6 +2042,18 @@ bool MainWindow::writeUsdAnimation(const QString& path, const std::vector<UsdAni
   } else if (format == FileFormat::USDZ) export_usdz_animation(frames, fps, stream, exportInfo);
   else export_usda_animation(frames, fps, stream, exportInfo);
   return stream.good();
+}
+
+void MainWindow::csgRender()
+{
+  // The isolated preview ends in isolatedPreviewDone (or isolatedRenderFailed), not here: the
+  // worker answers on the channel, long after this returns.
+  if (this->rootNode && this->computeWorker) {
+    startIsolatedPreview();
+    return;
+  }
+  if (this->rootNode) compileCSG();
+  finishPreview();
 }
 
 void MainWindow::sendToExternalTool(ExternalToolInterface& externalToolService)
@@ -2072,11 +2144,72 @@ void MainWindow::cgalRender()
 
   this->progresswidget = new ProgressWidget(this);
   connect(this->progresswidget, &ProgressWidget::requestShow, this, &MainWindow::showProgress);
+  connectWorkerCancel();
 
   if (!isClosing) progress_report_prep(this->rootNode, report_func, this);
   else return;
 
-  this->geometryWorker->start(this->tree);
+  if (this->computeWorker) startIsolatedRender();
+  else this->geometryWorker->start(this->tree);
+}
+
+QString MainWindow::writeSourceForWorker()
+{
+  // What the user sees is the editor's contents, which may never have been saved. The worker reads
+  // a copy, and is told where the document really lives so its relative includes still resolve.
+  this->workerSourceDirectory = std::make_unique<QTemporaryDir>();
+  if (!this->workerSourceDirectory->isValid()) {
+    isolatedRenderFailed(tr("Could not create a temporary directory for the compute worker."));
+    return {};
+  }
+  const QString sourceFile = this->workerSourceDirectory->filePath(QStringLiteral("source.scad"));
+  QFile file(sourceFile);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    isolatedRenderFailed(tr("Could not write the source for the compute worker."));
+    return {};
+  }
+  file.write(this->activeEditor->toPlainText().toUtf8());
+  // -D definitions are not in the editor's text: parseTopLevelDocument() appends them to what this
+  // process parses, so the worker's copy needs them too or `openscad -D size=7` renders one thing
+  // here and another in the worker. Same separator, so the two parses see the same document.
+  if (!commandline_commands.empty()) {
+    file.write("\n\x03\n");
+    file.write(commandline_commands.c_str(), static_cast<qint64>(commandline_commands.size()));
+  }
+  file.close();
+  return sourceFile;
+}
+
+QString MainWindow::writeParametersForWorker()
+{
+  // The worker parses its own copy of the document and would otherwise see only the values written
+  // in it. Everything the Customizer holds goes over, which is exactly what applyParameters() does
+  // to the copy this process parsed -- anything less and the two would render different models.
+  const QString file = this->workerSourceDirectory->filePath(QStringLiteral("parameters.json"));
+  ParameterSets sets;
+  sets.push_back(this->activeEditor->parameterWidget->exportValues(kWorkerParameterSet));
+  sets.writeFile(file.toStdString());
+  return file;
+}
+
+void MainWindow::startIsolatedRender()
+{
+  const QString sourceFile = writeSourceForWorker();
+  if (sourceFile.isEmpty()) return;
+  this->computeWorker->startRender(
+    sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
+    this->activeEditor->filepath, qglview->cam, this->animateWidget->getAnimTval());
+}
+
+void MainWindow::isolatedRenderFailed(const QString& reason)
+{
+  // Ends a failed render or preview. The window has to be released either way: a request that ends
+  // without ending the progress state leaves the user with a progress bar and no way to start
+  // another.
+  LOG(message_group::Error, "%1$s", reason.toStdString());
+  progress_report_fin();
+  updateStatusBar(nullptr);
+  compileEnded();
 }
 
 void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_geom)
@@ -3713,6 +3846,27 @@ void MainWindow::setupCoreSubsystems()
 
   this->geometryWorker = new GeometryWorker();
   connect(this->geometryWorker, &GeometryWorker::done, this, &MainWindow::actionRenderDone);
+
+  if (Feature::ExperimentalProcessIsolation.is_enabled()) {
+    // One worker per window, started with the window and kept for its life: starting a process per
+    // render would throw away the caches that make a repeat render cheap, which is most of what
+    // this buys.
+    this->computeWorker = new ComputeWorker(QCoreApplication::applicationFilePath(),
+                                            QStringList{QStringLiteral("--compute-worker")},
+                                            QString::fromLatin1(kIpcChannelEnvironmentVariable));
+    connect(this->computeWorker, &ComputeWorker::renderDone, this, &MainWindow::actionRenderDone);
+    connect(this->computeWorker, &ComputeWorker::renderFailed, this, &MainWindow::isolatedRenderFailed);
+    connect(this->computeWorker, &ComputeWorker::previewDone, this, &MainWindow::isolatedPreviewDone);
+    connect(this->computeWorker, &ComputeWorker::previewFailed, this, &MainWindow::isolatedRenderFailed);
+    if (!this->computeWorker->start()) {
+      // Say so and carry on in-process. Refusing to open the window would be a worse answer than
+      // computing the way it always did.
+      LOG(message_group::Warning,
+          "Could not start this window's compute worker; computing in this process instead.");
+      delete this->computeWorker;
+      this->computeWorker = nullptr;
+    }
+  }
 
   autoReloadTimer = new QTimer(this);
   autoReloadTimer->setSingleShot(false);

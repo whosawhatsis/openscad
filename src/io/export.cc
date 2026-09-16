@@ -26,6 +26,9 @@
 
 #include "io/export.h"
 
+#include "io/ipc_endpoint.h"
+#include "io/ipc_geometry.h"
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -177,6 +180,8 @@ bool canPreview(FileFormat format)
           format == FileFormat::DEPTHMAP || format == FileFormat::NORMALMAP_PNG ||
           format == FileFormat::CANNYMAP_PNG || format == FileFormat::COORDINATEMAP_PNG ||
           format == FileFormat::FLATMAP_PNG || format == FileFormat::CHROMATIC_PNG ||
+          // A compute worker's preview: the window composites it, so the model sees $preview.
+          format == FileFormat::IPC_PRODUCTS ||
           isAnimation(format));
 }
 
@@ -197,7 +202,10 @@ bool is3D(FileFormat format)
          format == FileFormat::OBJ || format == FileFormat::OFF || format == FileFormat::WRL ||
          format == FileFormat::_3MF || format == FileFormat::NEFDBG || format == FileFormat::NEF3 ||
          format == FileFormat::POV || format == FileFormat::USDA || format == FileFormat::USDZ ||
-         format == FileFormat::BLEND;
+         format == FileFormat::BLEND ||
+         // Internal worker transport: 3D for dispatch, but absent from the identifier table, so
+         // all3D() -- which iterates that table -- still never offers it to a user.
+         format == FileFormat::IPC_GEOMETRY;
 }
 
 bool is2D(FileFormat format)
@@ -237,25 +245,26 @@ static void exportFile(const std::shared_ptr<const Geometry>& root_geom, std::os
                        const ExportInfo& exportInfo)
 {
   switch (exportInfo.format) {
-  case FileFormat::ASCII_STL:  export_stl(root_geom, output, false); break;
-  case FileFormat::BINARY_STL: export_stl(root_geom, output, true); break;
-  case FileFormat::OBJ:        export_obj(root_geom, output); break;
-  case FileFormat::OFF:        export_off(root_geom, output); break;
-  case FileFormat::WRL:        export_wrl(root_geom, output); break;
-  case FileFormat::_3MF:       export_3mf(root_geom, output, exportInfo); break;
-  case FileFormat::DXF:        export_dxf(root_geom, output); break;
-  case FileFormat::SVG:        export_svg(root_geom, output, exportInfo); break;
-  case FileFormat::PDF:        export_pdf(root_geom, output, exportInfo); break;
-  case FileFormat::POV:        export_pov(root_geom, output, exportInfo); break;
-  case FileFormat::USDA:       export_usda(root_geom, output, exportInfo); break;
-  case FileFormat::USDZ:       export_usdz(root_geom, output, exportInfo); break;
-  case FileFormat::BLEND:      {
+  case FileFormat::ASCII_STL:    export_stl(root_geom, output, false); break;
+  case FileFormat::BINARY_STL:   export_stl(root_geom, output, true); break;
+  case FileFormat::OBJ:          export_obj(root_geom, output); break;
+  case FileFormat::OFF:          export_off(root_geom, output); break;
+  case FileFormat::WRL:          export_wrl(root_geom, output); break;
+  case FileFormat::_3MF:         export_3mf(root_geom, output, exportInfo); break;
+  case FileFormat::DXF:          export_dxf(root_geom, output); break;
+  case FileFormat::SVG:          export_svg(root_geom, output, exportInfo); break;
+  case FileFormat::PDF:          export_pdf(root_geom, output, exportInfo); break;
+  case FileFormat::POV:          export_pov(root_geom, output, exportInfo); break;
+  case FileFormat::USDA:         export_usda(root_geom, output, exportInfo); break;
+  case FileFormat::USDZ:         export_usdz(root_geom, output, exportInfo); break;
+  case FileFormat::BLEND:        {
     UsdAnimationFrame frame;
     frame.geometry = root_geom;
     if (exportInfo.camera) frame.camera = *exportInfo.camera;
     export_blend_animation({std::move(frame)}, 30, output, {.defaultColor = exportInfo.defaultColor});
     break;
   }
+  case FileFormat::IPC_GEOMETRY: export_ipc_geometry(root_geom, output); break;
 #ifdef ENABLE_CGAL
   case FileFormat::NEFDBG: export_nefdbg(root_geom, output); break;
   case FileFormat::NEF3:   export_nef3(root_geom, output); break;
@@ -273,12 +282,58 @@ bool exportFileStdOut(const std::shared_ptr<const Geometry>& root_geom, const Ex
   return true;
 }
 
+namespace {
+
+// Geometry from a compute worker carries PolySet::COLOR_INDEX_* tags for faces colored by the
+// scheme. Every exporter reads a negative index as "no color", so they are resolved here, once.
+std::shared_ptr<const Geometry> resolveSchemeColorTags(const std::shared_ptr<const Geometry>& geom,
+                                                       const ColorScheme *scheme)
+{
+  if (!scheme) return geom;
+  if (const auto list = std::dynamic_pointer_cast<const GeometryList>(geom)) {
+    Geometry::Geometries children;
+    for (const auto& [node, child] : list->getChildren()) {
+      children.emplace_back(node, resolveSchemeColorTags(child, scheme));
+    }
+    return std::make_shared<GeometryList>(children);
+  }
+  const auto isTag = [](int32_t index) {
+    return index == PolySet::COLOR_INDEX_DEFAULT || index == PolySet::COLOR_INDEX_CUTOUT;
+  };
+  const auto ps = std::dynamic_pointer_cast<const PolySet>(geom);
+  if (!ps || std::none_of(ps->color_indices.begin(), ps->color_indices.end(), isTag)) return geom;
+
+  auto resolved = std::make_shared<PolySet>(*ps);
+  int32_t front = -1;
+  int32_t back = -1;
+  for (auto& index : resolved->color_indices) {
+    if (!isTag(index)) continue;
+    const bool cutout = index == PolySet::COLOR_INDEX_CUTOUT;
+    auto& cached = cutout ? back : front;
+    if (cached < 0) {
+      cached = static_cast<int32_t>(resolved->colors.size());
+      resolved->colors.push_back(ColorMap::getColor(
+        *scheme, cutout ? RenderColor::CGAL_FACE_BACK_COLOR : RenderColor::CGAL_FACE_FRONT_COLOR));
+    }
+    index = cached;
+  }
+  return resolved;
+}
+
+}  // namespace
+
 bool exportFileByName(const std::shared_ptr<const Geometry>& root_geom, const std::string& filename,
                       const ExportInfo& exportInfo)
 {
+  // A compute worker returns this over its channel instead of writing it, named for the file it
+  // would have created.
+  if (ipc_payload_sink::collecting()) {
+    exportFile(root_geom, ipc_payload_sink::open(filename), exportInfo);
+    return true;
+  }
   std::ios::openmode mode = std::ios::out | std::ios::trunc;
   if (exportInfo.format == FileFormat::_3MF || exportInfo.format == FileFormat::BINARY_STL ||
-      exportInfo.format == FileFormat::PDF) {
+      exportInfo.format == FileFormat::PDF || exportInfo.format == FileFormat::IPC_GEOMETRY) {
     mode |= std::ios::binary;
   }
   const std::filesystem::path path(filename);
@@ -290,7 +345,7 @@ bool exportFileByName(const std::shared_ptr<const Geometry>& root_geom, const st
     bool onerror = false;
     fstream.exceptions(std::ios::badbit | std::ios::failbit);
     try {
-      exportFile(root_geom, fstream, exportInfo);
+      exportFile(resolveSchemeColorTags(root_geom, exportInfo.colorScheme), fstream, exportInfo);
     } catch (std::ios::failure&) {
       onerror = true;
     }

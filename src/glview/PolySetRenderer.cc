@@ -186,6 +186,9 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
   transparent_builder.allocateBuffers(num_vertices);
   bool any_transparent = false;
 
+  Color4f cutout_color;
+  getColorSchemeColor(ColorMode::CUTOUT, cutout_color);
+
   for (const auto& polyset : this->polysets_) {
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
@@ -208,14 +211,14 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
       add_shader_pointers(vbo_builder, shaderinfo);
       vbo_builder.writeSurface();
       vbo_builder.create_surface(*opaque, Transform3d::Identity(), color, enable_barycentric, false,
-                                 smooth_angle);
+                                 &cutout_color, smooth_angle);
     }
     if (transparent) {
       any_transparent = true;
       add_shader_pointers(transparent_builder, shaderinfo);
       transparent_builder.writeSurface();
       transparent_builder.create_surface(*transparent, Transform3d::Identity(), color,
-                                         enable_barycentric, false, smooth_angle);
+                                         enable_barycentric, false, &cutout_color, smooth_angle);
     }
   }
 

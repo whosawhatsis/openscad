@@ -1763,6 +1763,18 @@ if(OPENSCAD_BINPATH)
   )
 endif()
 
+# The worker end of process isolation. Skips itself on Windows, where a descriptor cannot be handed
+# to a child through Python's subprocess.
+add_test(NAME compute_worker
+  CONFIGURATIONS Default
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_compute_worker.py
+)
+# CTEST_ENVIRONMENT is consumed by the regression-test helpers, not by a plain add_test, so the
+# binary location has to be handed over explicitly. The test fails rather than skips without it.
+set_tests_properties(compute_worker PROPERTIES ENVIRONMENT "OPENSCAD_BINARY=${OPENSCAD_BINPATH}")
+# The test imports tests/ipc_channel.py, which is beside it in the source tree.
+set_tests_properties(compute_worker PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+
 ####################
 # Extra Debug Info #
 ####################

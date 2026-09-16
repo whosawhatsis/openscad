@@ -61,6 +61,12 @@ public:
   void applyParameters(SourceFile *sourceFile);
   bool childHasFocus();
   bool isModified() const { return modified; }
+  //! The values the Customizer would apply to the document, for handing to another process that
+  //! parses the same source and would otherwise see only the document's own defaults.
+  ParameterSet exportValues(const std::string& setName) { return parameters.exportValues(setName); }
+#ifdef ENABLE_GUI_TESTS
+  void importValuesForTest(const ParameterSet& values) { parameters.importValues(values); }
+#endif
 
 public slots:
   void setModified(bool modified = true);

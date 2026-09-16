@@ -1097,6 +1097,7 @@ set(CORE_SOURCES
   src/geometry/linear_extrude.cc
   src/geometry/rotate_extrude.cc
   src/glview/Camera.cc
+  src/glview/CsgInfo.cc
   src/glview/ColorMap.cc
   src/glview/OffscreenContextFactory.cc
   src/glview/RenderSettings.cc
@@ -1130,6 +1131,8 @@ set(CORE_SOURCES
   src/io/import_off.cc
   src/io/import_stl.cc
   src/io/import_svg.cc
+  src/io/ipc_endpoint.cc
+  src/io/ipc_geometry.cc
   src/platform/PlatformUtils.cc
   src/platform/Subprocess.cc
   src/utils/StackCheck.h
@@ -1320,6 +1323,7 @@ set(GUI_SOURCES
   src/openscad_gui.cc
   src/gui/AutoUpdater.cc
   src/gui/GeometryWorker.cc
+  src/gui/ComputeWorker.cc
   src/gui/ViewportControl.cc
   src/gui/Console.cc
   src/gui/Dock.cc
@@ -1404,6 +1408,7 @@ set(GUI_HEADERS
     src/gui/AppleEvents.h
     src/gui/AutoUpdater.h
     src/gui/GeometryWorker.h
+    src/gui/ComputeWorker.h
     src/gui/Console.h
     src/gui/Dock.h
     src/gui/Editor.h
@@ -1612,8 +1617,15 @@ file(GLOB_RECURSE TEST_SOURCES
   "src/core/*_test.cc"
   "src/geometry/*_test.cc"
   "src/io/*_test.cc"
+  # Not GUI_TEST_SOURCES: the parts of glview that these cover are in CORE_SOURCES and build
+  # headless, so their tests should run in a headless build too.
   "src/glview/*_test.cc"
 )
+# Tests for sources that sit directly in src/, such as Feature.cc. Deliberately GLOB and not
+# GLOB_RECURSE: recursing from src/ would sweep up src/gui/*_test.cc and build the GUI tests into
+# headless builds, where they cannot link.
+file(GLOB TEST_SOURCES_TOPLEVEL "src/*_test.cc")
+list(APPEND TEST_SOURCES ${TEST_SOURCES_TOPLEVEL})
 file(GLOB_RECURSE GUI_TEST_SOURCES
   "src/gui/*_test.cc"
 )
@@ -1836,7 +1848,11 @@ if(ENABLE_TESTS)
     endif()
     target_link_libraries(OpenSCADUnitTests PRIVATE Catch2::Catch2WithMain OpenSCADLibInternal svg)
     target_compile_definitions(OpenSCADUnitTests PRIVATE
-      OPENSCAD_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+      OPENSCAD_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data"
+      # So a test can drive the real binary as a compute worker. This is the only coverage of the
+      # worker request path on Windows: tests/test_compute_worker.py cannot run there, because
+      # handing a descriptor to a child needs POSIX pass_fds.
+      OPENSCAD_BINARY_PATH="$<TARGET_FILE:OpenSCADExe>")
     include(CTest)
     include(Catch)
     catch_discover_tests(OpenSCADUnitTests ADD_TAGS_AS_LABELS)
