@@ -27,4 +27,6 @@ private slots:
   void checkAdvancedExportActionAvailable();
   void checkChangingColorSchemeRecolorsPreparedPreview();
   void checkCachedPreviewDistinguishesMaterialFromUncoloredGeometry();
+  //! A repeat preview of an unchanged model with more products than the old fixed cap builds nothing.
+  void checkRepeatPreviewOfManyProductsReusesCachedBuffers();
 };

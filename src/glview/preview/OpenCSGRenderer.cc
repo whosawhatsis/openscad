@@ -117,9 +117,21 @@ public:
       }
     }
     cache_.push_front({key, product});
-    if (cache_.size() > 100) {
+    while (cache_.size() > capacity_) {
       cache_.pop_back();
     }
+  }
+
+  //! Holds at least `products` entries from now on. A preview with more products than the
+  //! capacity evicts its own entries while it is being built, so the next preview of the same model
+  //! misses on every one of them -- a repeat preview of 150 products rebuilt all 150 under a fixed
+  //! 100.
+  // ponytail: grows to the largest preview seen and never shrinks; bound it by memory if very large
+  // models make that matter.
+  static void reserve(size_t products)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    capacity_ = std::max(capacity_, products);
   }
 
   static void clear()
@@ -131,10 +143,12 @@ public:
 private:
   static std::list<CacheEntry> cache_;
   static std::mutex mutex_;
+  static size_t capacity_;
 };
 
 std::list<OpenCSGRendererCache::CacheEntry> OpenCSGRendererCache::cache_;
 std::mutex OpenCSGRendererCache::mutex_;
+size_t OpenCSGRendererCache::capacity_ = 100;
 
 class OpenCSGVBOPrim : public OpenCSG::Primitive
 {
@@ -209,6 +223,15 @@ void OpenCSGRenderer::setColorScheme(const ColorScheme& cs)
 void OpenCSGRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
 {
   if (vertex_state_containers_.empty()) {
+#ifdef ENABLE_OPENCSG
+    // Room for every product about to be built, so building them cannot evict their own entries.
+    size_t products = 0;
+    for (const auto *list :
+         {root_products_.get(), background_products_.get(), highlights_products_.get()}) {
+      if (list) products += list->products.size();
+    }
+    OpenCSGRendererCache::reserve(products);
+#endif
     if (root_products_) {
       createCSGVBOProducts(*root_products_, false, false, shaderinfo);
     }
@@ -465,6 +488,7 @@ void OpenCSGRenderer::createCSGVBOProducts(const CSGProducts& products, bool hig
     }
 
     vertex_state_container = std::make_shared<OpenCSGVBOProduct>();
+    ++vbo_builds_;
 
     bool transparent = !highlight_mode && !background_mode && !product.intersections.empty();
     for (const auto& csgobj : product.intersections) {
