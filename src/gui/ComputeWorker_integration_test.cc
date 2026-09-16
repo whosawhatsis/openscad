@@ -245,8 +245,8 @@ TEST_CASE("A render that fails reports rather than hanging", "[gui][ComputeWorke
     failed = true;
   });
 
-  worker->startRender(QString::fromStdString(writeModel("nonsense (((", "openscad-worker-bad")), {},
-                      {}, {}, Camera{}, 0.0);
+  worker->startRender(QString::fromStdString(writeModel("nonsense (((", "openscad-worker-bad")), {}, {},
+                      {}, Camera{}, 0.0);
   REQUIRE(waitFor([&] { return failed; }));
   CHECK_FALSE(message.isEmpty());
 }

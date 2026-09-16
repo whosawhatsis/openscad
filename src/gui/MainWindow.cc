@@ -1956,10 +1956,9 @@ void MainWindow::startIsolatedPreview()
   if (sourceFile.isEmpty()) return;  // writeSourceForWorker has already reported why
   // The window owns the OpenCSG limit, so the worker is told how far to normalize.
   const auto limit = 2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
-  this->computeWorker->startPreview(sourceFile, writeParametersForWorker(),
-                                    QString::fromStdString(kWorkerParameterSet),
-                                    this->activeEditor->filepath, limit, qglview->cam,
-                                    this->animateWidget->getAnimTval());
+  this->computeWorker->startPreview(
+    sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
+    this->activeEditor->filepath, limit, qglview->cam, this->animateWidget->getAnimTval());
 }
 
 void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
@@ -2116,6 +2115,13 @@ QString MainWindow::writeSourceForWorker()
     return {};
   }
   file.write(this->activeEditor->toPlainText().toUtf8());
+  // -D definitions are not in the editor's text: parseTopLevelDocument() appends them to what this
+  // process parses, so the worker's copy needs them too or `openscad -D size=7` renders one thing
+  // here and another in the worker. Same separator, so the two parses see the same document.
+  if (!commandline_commands.empty()) {
+    file.write("\n\x03\n");
+    file.write(commandline_commands.c_str(), static_cast<qint64>(commandline_commands.size()));
+  }
   file.close();
   return sourceFile;
 }
@@ -2136,10 +2142,9 @@ void MainWindow::startIsolatedRender()
 {
   const QString sourceFile = writeSourceForWorker();
   if (sourceFile.isEmpty()) return;
-  this->computeWorker->startRender(sourceFile, writeParametersForWorker(),
-                                   QString::fromStdString(kWorkerParameterSet),
-                                   this->activeEditor->filepath, qglview->cam,
-                                   this->animateWidget->getAnimTval());
+  this->computeWorker->startRender(
+    sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
+    this->activeEditor->filepath, qglview->cam, this->animateWidget->getAnimTval());
 }
 
 void MainWindow::isolatedRenderFailed(const QString& reason)

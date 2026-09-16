@@ -271,8 +271,8 @@ void addViewState(nlohmann::json& request, const Camera& camera, double animatio
 }  // namespace
 
 void ComputeWorker::startRender(const QString& scadPath, const QString& parameterFile,
-                                const QString& setName, const QString& sourcePath,
-                                const Camera& camera, const double animationTime)
+                                const QString& setName, const QString& sourcePath, const Camera& camera,
+                                const double animationTime)
 {
   if (!d->channel) {
     emit renderFailed(tr("The compute worker is not running."));

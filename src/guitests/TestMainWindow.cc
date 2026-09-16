@@ -1,4 +1,6 @@
 #include "TestMainWindow.h"
+#include "openscad.h"
+#include <QDoubleSpinBox>
 
 #include <algorithm>
 
@@ -238,7 +240,8 @@ void TestMainWindow::checkIsolatedRenderTagsSchemeColors()
   // window exposure and view mode.
   Feature::enable_feature("process-isolation");
   auto *window = runInOwnWindow(
-    QStringLiteral("difference() { cube(100, center = true); cylinder(r = 12, h = 200, center = true); }"),
+    QStringLiteral(
+      "difference() { cube(100, center = true); cylinder(r = 12, h = 200, center = true); }"),
     false);
   Feature::enable_feature("process-isolation", false);
   QVERIFY2(window != nullptr, "the isolated render never finished");
@@ -248,12 +251,63 @@ void TestMainWindow::checkIsolatedRenderTagsSchemeColors()
   QVERIFY2(!polyset->color_indices.empty(),
            "the render carried no per-face color data at all, so the check below proves nothing");
 
-  const bool tagged = std::any_of(
-    polyset->color_indices.begin(), polyset->color_indices.end(),
-    [](int32_t index) { return index == PolySet::COLOR_INDEX_DEFAULT || index == PolySet::COLOR_INDEX_CUTOUT; });
+  const bool tagged =
+    std::any_of(polyset->color_indices.begin(), polyset->color_indices.end(), [](int32_t index) {
+      return index == PolySet::COLOR_INDEX_DEFAULT || index == PolySet::COLOR_INDEX_CUTOUT;
+    });
   QVERIFY2(tagged,
            "the worker resolved implicit face colors itself instead of tagging them; the rendered "
            "object will keep the worker's color scheme whatever the user selects");
+}
+
+// The Customizer's policy is that once the user touches a value it wins until the document closes.
+// A value the user has NEVER touched must not win: editing the variable's default in the text has to
+// take effect on the first render, as it does with the feature off. Sending the widget's values
+// unconditionally makes every edit render one step behind -- and F6 then exports that stale mesh.
+void TestMainWindow::checkUntouchedCustomizerDoesNotOverrideEditedText()
+{
+  Feature::enable_feature("process-isolation");
+  // A name no other test uses: a Customizer value outlives a complete source replacement.
+  auto *window =
+    runInOwnWindow(QStringLiteral("outrank_size = 10; // [10:100]\ncube(outrank_size);"), false);
+  Feature::enable_feature("process-isolation", false);
+  QVERIFY2(window != nullptr, "the first isolated render never finished");
+  QCOMPARE(window->rootGeom->getBoundingBox().max().x(), 10.0);
+
+  // Edit the default with the Customizer untouched: the edit must win.
+  window->rootGeom.reset();
+  window->activeEditor->setPlainText(
+    QStringLiteral("outrank_size = 40; // [10:100]\ncube(outrank_size);"));
+  renderAgain(window);
+  QVERIFY(window->rootGeom != nullptr);
+  QCOMPARE(window->rootGeom->getBoundingBox().max().x(), 40.0);
+
+  // ...and once touched, the Customizer wins, which is the escape hatch the user needs. Look the
+  // widget up now, not earlier: setParameters() rebuilds them whenever the source changes.
+  window->rootGeom.reset();
+  auto *spinBox = window->activeEditor->parameterWidget->findChild<QDoubleSpinBox *>("doubleSpinBox");
+  QVERIFY2(spinBox != nullptr, "no Customizer spin box for the parameter");
+  spinBox->setValue(70);
+  renderAgain(window);
+  QVERIFY(window->rootGeom != nullptr);
+  QCOMPARE(window->rootGeom->getBoundingBox().max().x(), 70.0);
+}
+
+// -D definitions are appended to the text the window parses. The worker parses its own copy of the
+// document, so unless they are appended there too, `openscad -D size=7 model.scad` renders one thing
+// in the GUI and another under isolation -- silently, since nothing reports the difference.
+void TestMainWindow::checkIsolatedRenderUsesCommandLineDefinitions()
+{
+  const auto previousCommands = commandline_commands;
+  commandline_commands = "size = 7;\n";
+  Feature::enable_feature("process-isolation");
+  auto *window = runInOwnWindow(QStringLiteral("cube(size);"), false);
+  Feature::enable_feature("process-isolation", false);
+  commandline_commands = previousCommands;
+
+  QVERIFY2(window != nullptr, "the isolated render never finished");
+  QVERIFY2(window->rootGeom != nullptr, "the isolated render produced no geometry");
+  QCOMPARE(window->rootGeom->getBoundingBox().max().x(), 7.0);
 }
 
 void TestMainWindow::checkIsolatedRenderUsesCustomizerValues()
