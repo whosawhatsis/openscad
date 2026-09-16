@@ -67,6 +67,23 @@ void PolySetBuilder::setConvexity(int convexity)
 
 void PolySetBuilder::addColor(const Color4f& color)
 {
+  addSurface(color, {});
+}
+
+// finishes_ is either empty or exactly as long as colors_. It stays empty until
+// something actually carries a finish, so a build that never sees one adds no
+// channel at all.
+SurfaceFinish PolySetBuilder::finishOf(size_t colorIndex) const
+{
+  return colorIndex < finishes_.size() ? finishes_[colorIndex] : SurfaceFinish();
+}
+
+void PolySetBuilder::addSurface(const Color4f& color, const SurfaceFinish& finish)
+{
+  if (!finishes_.empty() || finish != SurfaceFinish()) {
+    finishes_.resize(colors_.size(), SurfaceFinish());
+    finishes_.push_back(finish);
+  }
   colors_.push_back(color);
 }
 
@@ -167,10 +184,12 @@ void PolySetBuilder::endPolygon(const Color4f& color)
       if (color_indices_.empty() && indices_.size() > 1) {
         color_indices_.resize(indices_.size() - 1, -1);
       }
-      auto it = std::find(colors_.begin(), colors_.end(), color);
+      auto it = std::find_if(colors_.begin(), colors_.end(), [&](const Color4f& c) {
+        return c == color && finishOf(&c - &colors_[0]) == SurfaceFinish();
+      });
       if (it == colors_.end()) {
         color_indices_.push_back(colors_.size());
-        colors_.push_back(color);
+        addSurface(color, {});
       } else {
         color_indices_.push_back(it - colors_.begin());
       }
@@ -193,14 +212,20 @@ void PolySetBuilder::appendPolySet(const PolySet& ps)
     std::vector<uint32_t> color_map(nColors);
     for (size_t i = 0; i < nColors; i++) {
       const auto& color = ps.colors[i];
-      // Find index of color in colors_, or add it if it doesn't exist
-      auto it = std::find(colors_.begin(), colors_.end(), color);
-      if (it == colors_.end()) {
-        color_map[i] = colors_.size();
-        colors_.push_back(color);
-      } else {
-        color_map[i] = it - colors_.begin();
+      const SurfaceFinish finish = i < ps.finishes.size() ? ps.finishes[i] : SurfaceFinish();
+      // Find the color *and finish* in colors_, or add it. Matching on color
+      // alone would merge two bodies that share a color but not a material.
+      size_t found = colors_.size();
+      for (size_t j = 0; j < colors_.size(); j++) {
+        if (colors_[j] == color && finishOf(j) == finish) {
+          found = j;
+          break;
+        }
       }
+      if (found == colors_.size()) {
+        addSurface(color, finish);
+      }
+      color_map[i] = found;
     }
     for (auto color_index : ps.color_indices) {
       color_indices_.push_back(color_index < 0 ? -1 : color_map[color_index]);
@@ -229,6 +254,7 @@ std::unique_ptr<PolySet> PolySetBuilder::build()
   polyset->indices = std::move(indices_);
   polyset->color_indices = std::move(color_indices_);
   polyset->colors = std::move(colors_);
+  polyset->finishes = std::move(finishes_);
   polyset->setConvexity(convexity_);
   bool is_triangular = true;
   for (const auto& face : polyset->indices) {

@@ -514,6 +514,25 @@ SettingsEntryEnum<ColorListSortType> SettingsColorList::colorListSortType(
   ColorListSortType::alphabetical);
 SettingsEntryBool SettingsColorList::colorListSortAscending(SECTION_COLOR_LIST, "sort-ascending", true);
 
+SettingsEntryString SettingsMaterials::materialColors(SECTION_MATERIALS, "default-colors", "");
+
+std::string SettingsMaterials::defaultColor(const std::string& materialName)
+{
+  const std::string table = materialColors.value();
+  size_t pos = 0;
+  while (pos < table.size()) {
+    const size_t end = std::min(table.find(';', pos), table.size());
+    const size_t eq = table.find('=', pos);
+    if (eq != std::string::npos && eq < end) {
+      if (table.compare(pos, eq - pos, materialName) == 0) {
+        return table.substr(eq + 1, end - eq - 1);
+      }
+    }
+    pos = end + 1;
+  }
+  return "";
+}
+
 SettingsEntryEnum<std::string> SettingsAutoCompletion::autocompleteMode(
   "editor", "autocompleteMode",
   {{"ParsedFileMode", "parsedFileMode", _("Parsed File Mode")},

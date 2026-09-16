@@ -7,12 +7,16 @@
 #include <QStringList>
 #include <QFile>
 #include <QTest>
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QImage>
 
 #include <functional>
 
 #include "Feature.h"
 #include "core/SourceFile.h"
 #include "core/SourceFileCache.h"
+#include "core/Settings.h"
 #include "openscad.h"
 #include "gui/ScintillaEditor.h"
 #include "platform/PlatformUtils.h"
@@ -22,7 +26,7 @@ void TestMainWindow::checkOpenTabPropagateToWindow()
   restoreWindowInitialState();
 
   QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty.scad";
 
   // When we open a new file,
   window->tabManager->open(filename);
@@ -30,7 +34,8 @@ void TestMainWindow::checkOpenTabPropagateToWindow()
   // The window title must also have the name of open file
   QCOMPARE(window->windowTitle(), QFileInfo(filename).fileName());
 
-  filename = QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty2.scad";
+  filename =
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty2.scad";
 
   // When we open a new file,
   window->tabManager->open(filename);
@@ -591,7 +596,7 @@ void TestMainWindow::checkSaveToShouldUpdateWindowTitle()
   restoreWindowInitialState();
 
   QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty.scad";
 
   // When we open a new file,
   window->tabManager->open(filename);
@@ -608,4 +613,77 @@ void TestMainWindow::checkAdvancedExportActionAvailable()
   QVERIFY(action);
   QVERIFY(window->menuExport->actions().contains(action));
   QCOMPARE(action->text(), "Advanced Export...");
+}
+
+void TestMainWindow::checkChangingColorSchemeRecolorsPreparedPreview()
+{
+#ifdef ENABLE_OPENCSG
+  restoreWindowInitialState();
+  window->show();
+  QVERIFY(QTest::qWaitForWindowExposed(window));
+  window->qglview->setColorScheme("Cornfield");
+  window->activeEditor->setPlainText("cube(100, center = true);");
+
+  QVERIFY(QMetaObject::invokeMethod(window, "on_designActionPreview_triggered"));
+  QTRY_VERIFY_WITH_TIMEOUT(window->previewRenderer != nullptr, 10000);
+  window->qglview->repaint();
+  const auto before = window->qglview->grabFramebuffer();
+  QVERIFY(!before.isNull());
+  const auto cornfield = before.pixelColor(before.width() / 2, before.height() / 2);
+
+  window->qglview->setColorScheme("Starnight");
+  window->qglview->repaint();
+  const auto after = window->qglview->grabFramebuffer();
+  QVERIFY(!after.isNull());
+  const auto starnight = after.pixelColor(after.width() / 2, after.height() / 2);
+
+  QVERIFY2(cornfield != starnight,
+           "Changing schemes left the prepared preview colored by the previous scheme");
+#endif
+}
+
+void TestMainWindow::checkCachedPreviewDistinguishesMaterialFromUncoloredGeometry()
+{
+#ifdef ENABLE_OPENCSG
+  restoreWindowInitialState();
+  window->show();
+  QVERIFY(QTest::qWaitForWindowExposed(window));
+  window->qglview->setColorScheme("Cornfield");
+
+  const auto previous = Settings::SettingsMaterials::materialColors.value();
+  Settings::SettingsMaterials::materialColors.setValue("PLA=#ffff00ff");
+
+  const auto preview = [this](const QString& source) -> QImage {
+    bool compiled = false;
+    QObject::connect(
+      window, &MainWindow::compilationDone, window, [&compiled](SourceFile *) { compiled = true; },
+      Qt::SingleShotConnection);
+    window->activeEditor->setPlainText(source);
+    window->designActionPreview->trigger();
+    QElapsedTimer timer;
+    timer.start();
+    while (!compiled && timer.elapsed() < 10000) {
+      QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    if (!compiled) return {};
+    window->qglview->repaint();
+    return window->qglview->grabFramebuffer().copy();
+  };
+
+  const QImage material = preview("material(\"PLA\") cube(100, center = true);");
+  const QImage uncolored = preview("cube(100, center = true);");
+  Settings::SettingsMaterials::materialColors.setValue(previous);
+
+  QVERIFY(!material.isNull());
+  QVERIFY(!uncolored.isNull());
+  const QPoint center(uncolored.width() / 2, uncolored.height() / 2);
+  QVERIFY2(material.pixelColor(center) != uncolored.pixelColor(center),
+           "the cached PLA preview colored otherwise uncolored geometry");
+
+  window->qglview->zoom(120, true);
+  window->qglview->repaint();
+  const QImage moved = window->qglview->grabFramebuffer().copy();
+  QVERIFY2(uncolored.pixelColor(center) == moved.pixelColor(center),
+           "moving the camera changed an uncolored object to a cached material color");
+#endif
 }

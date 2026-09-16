@@ -30,6 +30,7 @@ constexpr inline auto SECTION_EXPORT_PDF = "export-pdf";
 constexpr inline auto SECTION_EXPORT_3MF = "export-3mf";
 constexpr inline auto SECTION_EXPORT_SVG = "export-svg";
 constexpr inline auto SECTION_COLOR_LIST = "color-list";
+constexpr inline auto SECTION_MATERIALS = "materials";
 
 class SettingsEntryBase
 {
@@ -625,6 +626,20 @@ public:
   static SettingsEntryBool colorListSortAscending;
   static SettingsEntryEnum<ColorListFilterType> colorListFilterType;
   static SettingsEntryEnum<ColorListSortType> colorListSortType;
+};
+
+// Default color per named material, as "name=color" pairs separated by ';',
+// e.g. "PLA=#ffff00ff;PETG=yellow". Any spelling parse_color() accepts works.
+// A material() call with no color of its own falls back to $material_colors in
+// the model first, and to this table second.
+class SettingsMaterials
+{
+public:
+  static SettingsEntryString materialColors;
+
+  // Looks up one material's default color. Returns an empty string when the
+  // table says nothing about it.
+  static std::string defaultColor(const std::string& materialName);
 };
 
 class SettingsVisitor

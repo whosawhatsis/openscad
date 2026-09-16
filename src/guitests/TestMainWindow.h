@@ -25,4 +25,6 @@ private slots:
   void checkReturnInsideBracesUsesKandRIndentation();
   void checkSaveToShouldUpdateWindowTitle();
   void checkAdvancedExportActionAvailable();
+  void checkChangingColorSchemeRecolorsPreparedPreview();
+  void checkCachedPreviewDistinguishesMaterialFromUncoloredGeometry();
 };

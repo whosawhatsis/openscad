@@ -69,6 +69,14 @@ PolySetRenderer::PolySetRenderer(const std::shared_ptr<const class Geometry>& ge
 void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
 {
   assert(geom != nullptr);
+  // Every conversion below mints a fresh PolySet, which does not inherit the
+  // source geometry's body identity. The renderer needs the material name to
+  // look up its display-time default color, so carry it across. This copies
+  // identity only - it never touches the geometry's own colors.
+  const auto addPolySet = [&](std::shared_ptr<PolySet> ps) {
+    ps->copyBodyAttributes(*geom);
+    this->polysets_.push_back(std::move(ps));
+  };
   if (const auto geomlist = std::dynamic_pointer_cast<const GeometryList>(geom)) {
     for (const auto& item : geomlist->getChildren()) {
       this->addGeometry(item.second);
@@ -77,14 +85,14 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
     assert(ps->getDimension() == 3);
     // We need to tessellate here, in case the generated PolySet contains concave polygons
     // See tests/data/scad/3D/features/polyhedron-concave-test.scad
-    this->polysets_.push_back(PolySetUtils::tessellate_faces(*ps));
+    addPolySet(PolySetUtils::tessellate_faces(*ps));
   } else if (const auto poly = std::dynamic_pointer_cast<const Polygon2d>(geom)) {
     this->polygons_.emplace_back(poly, std::shared_ptr<const PolySet>(poly->tessellate()));
 #ifdef ENABLE_MANIFOLD
   } else if (const auto mani = std::dynamic_pointer_cast<const ManifoldGeometry>(geom)) {
     auto mesh = mani->toPolySet();
     mesh->setSmoothAngle(mani->smoothAngle());
-    this->polysets_.push_back(std::move(mesh));
+    addPolySet(std::move(mesh));
 #endif
 #ifdef ENABLE_CGAL
   } else if (const auto N = std::dynamic_pointer_cast<const CGALNefGeometry>(geom)) {
@@ -95,7 +103,7 @@ void PolySetRenderer::addGeometry(const std::shared_ptr<const Geometry>& geom)
       if (auto ps = CGALUtils::createPolySetFromNefPolyhedron3(*N->p3)) {
         ps->setConvexity(N->getConvexity());
         ps->setSmoothAngle(N->smoothAngle());
-        this->polysets_.push_back(std::shared_ptr<PolySet>(std::move(ps)));
+        addPolySet(std::shared_ptr<PolySet>(std::move(ps)));
       }
     }
 #endif
@@ -181,7 +189,12 @@ void PolySetRenderer::createPolySetStates(const ShaderUtils::ShaderInfo *shaderi
   for (const auto& polyset : this->polysets_) {
     Color4f color;
     if (!polyset->colors.empty()) color = polyset->colors[0];
-    getShaderColor(ColorMode::MATERIAL, color, color);
+    getShaderColor(ColorMode::MATERIAL, color, polyset->materialName(), color);
+    // Fallback only: a PolySet that went through a material() carries its finish
+    // per face, and create_surface prefers that. This covers the single-material
+    // geometry whose attributes still ride on the object itself.
+    vbo_builder.setFinish({polyset->shaderRoughness(), polyset->metallic()});
+    transparent_builder.setFinish({polyset->shaderRoughness(), polyset->metallic()});
 
     const auto opaque = facesByTransparency(*polyset, color, false);
     const auto transparent = facesByTransparency(*polyset, color, true);
@@ -285,6 +298,25 @@ void PolySetRenderer::createPolygonEdgeStates()
 
 void PolySetRenderer::prepare(const ShaderUtils::ShaderInfo *shaderinfo)
 {
+  // Rebuild when the shader changes, not only when nothing has been built yet.
+  // A prepared container carries glVertexAttribPointer calls recorded against
+  // one program's attribute locations; draw() then enables whatever attributes
+  // the *current* program declares. Keeping stale containers across a shader
+  // change therefore leaves attributes enabled with no pointer behind them.
+  //
+  // In the GUI that is the difference between working and not: press F6 in the
+  // default view and the containers are built for the edge shader, so switching
+  // to Shaded afterwards left `material` unbound - metals lost their
+  // environment and reflections never appeared. Every CLI test passed because a
+  // command-line render only ever prepares once, with the shader it then draws
+  // with. OpenCSGRenderer::prepare already does this; the mesh renderer was
+  // never given the same treatment.
+  if (!polyset_vertex_state_containers_.empty() && shaderinfo != prepared_shaderinfo_) {
+    polyset_vertex_state_containers_.clear();
+    polygon_vertex_state_containers_.clear();
+  }
+  prepared_shaderinfo_ = shaderinfo;
+
   if (polyset_vertex_state_containers_.empty() && polygon_vertex_state_containers_.empty()) {
     if (!this->polysets_.empty() && !this->polygons_.empty()) {
       LOG(message_group::Error, "PolySetRenderer::prepare() called with both polysets and polygons");
@@ -326,7 +358,13 @@ void PolySetRenderer::drawPolySets(bool showedges, const ShaderUtils::ShaderInfo
     for (const auto& container : containers) {
       for (const auto& vertex_state : container.states()) {
         const auto shader_vs = std::dynamic_pointer_cast<VBOShaderVertexState>(vertex_state);
-        if (!shader_vs || (shader_vs && showedges)) {
+        // Run these whenever the shader is bound, not only when edges are shown.
+        // A VBOShaderVertexState is what calls glVertexAttribPointer for the
+        // attributes shader_attribs_enable has just enabled; skipping it leaves
+        // those attributes enabled with no pointer behind them and the driver
+        // dereferences null inside the draw. Whether edges are *visible* is the
+        // showEdges uniform's business, not this loop's.
+        if (!shader_vs || enable_shader || showedges) {
           vertex_state->draw();
         }
       }

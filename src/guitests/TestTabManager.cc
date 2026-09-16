@@ -16,9 +16,9 @@ void TestTabManager::checkOpenClose()
   restoreWindowInitialState();
 
   QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty.scad";
   QString filename2 =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty2.scad";
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty2.scad";
 
   window->tabManager->open(filename);
   // The active editor must have a filepath equal to the loaded file
@@ -43,7 +43,7 @@ void TestTabManager::checkReOpen()
   restoreWindowInitialState();
 
   QString filename =
-    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/basic-ux/empty.scad";
+    QString::fromStdString(PlatformUtils::resourceBasePath()) + "/tests/data/basic-ux/empty.scad";
   auto numPanel = window->tabManager->count();
 
   // When we open a new file,

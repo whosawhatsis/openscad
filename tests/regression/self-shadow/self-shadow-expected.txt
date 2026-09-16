@@ -1,0 +1,3 @@
+shadows change the render: yes
+a region of the model is shadowed: yes
+shadowing only removes light: yes

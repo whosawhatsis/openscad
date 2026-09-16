@@ -1,0 +1,6 @@
+WARNING: variable "ambient" not specified as parameter in file material-dropped-params.scad, line 12
+WARNING: variable "diffuse" not specified as parameter in file material-dropped-params.scad, line 13
+WARNING: variable "brilliance" not specified as parameter in file material-dropped-params.scad, line 14
+WARNING: variable "reflection" not specified as parameter in file material-dropped-params.scad, line 15
+WARNING: variable "crand" not specified as parameter in file material-dropped-params.scad, line 16
+WARNING: variable "ambient" not specified as parameter in file material-dropped-params.scad, line 17

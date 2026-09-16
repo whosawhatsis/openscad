@@ -1,0 +1,2 @@
+reflections change the render: yes
+the floor reflects the object: yes

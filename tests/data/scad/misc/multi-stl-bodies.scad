@@ -20,9 +20,9 @@ translate([0, 10, 0]) {
   material(c = "blue", name = "PETG") translate([4, 0, 0]) cube(2);
 }
 
-// A material needs no colour: the name is its first and most fundamental
+// A material needs no color: the name is its first and most fundamental
 // argument, so material("name") alone is a complete declaration and must not
-// paint the body with an unset colour.
+// paint the body with an unset color.
 material("brass") translate([50, 0, 0]) cube(2);
 
 // A body-combining operation produces one body carrying the first operand's

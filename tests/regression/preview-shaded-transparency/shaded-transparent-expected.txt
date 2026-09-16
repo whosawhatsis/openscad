@@ -1,0 +1,2 @@
+a fully transparent surface is still visible: yes
+its highlight is the brightest thing in frame: yes

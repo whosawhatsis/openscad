@@ -3,8 +3,10 @@
 #include "Feature.h"
 #include "geometry/linalg.h"
 #include "glview/ShaderUtils.h"
+#include "Feature.h"
 #include "core/Selection.h"
 #include "glview/system-gl.h"
+#include "glview/preview/OpenCSGRenderer.h"
 #include "glview/ColorMap.h"
 #include "glview/RenderSettings.h"
 #include "utils/printutils.h"
@@ -51,6 +53,204 @@ GLView::~GLView()
   teardownShader();
 }
 
+// Render the scene's depth from the key light, for self-shadowing.
+//
+// No FBO: like the reflection capture, this draws into the back buffer and
+// copies out with glCopyTexImage2D, which is core at the OpenGL 2.1 floor where
+// framebuffer objects are only an extension. That is why this runs at the very
+// top of paintGL, before the colour clear - the pass scribbles over the colour
+// buffer and the clear that follows wipes it, so nothing has to be masked or
+// restored.
+//
+// Only GL_LIGHT0 casts. GL_LIGHT1 sits at exactly the negation of GL_LIGHT0
+// (GLView.cc sets them that way), so it fills precisely what light 0 shadows -
+// shadowing both would cancel out to almost nothing.
+void GLView::renderShadowMap()
+{
+  GLint viewport[4];
+  glGetIntegerv(GL_VIEWPORT, viewport);
+  if (viewport[2] <= 0 || viewport[3] <= 0) return;
+  // The map cannot be larger than the framebuffer it is copied out of.
+  // glCopyTexImage2D reads the *framebuffer*, and enlarging the viewport does
+  // not enlarge that; asking for 1024 out of a 460-pixel buffer read back as
+  // all zeros - a map that is uniformly "nearest depth" and shadows nothing it
+  // is actually sampled against, with no GL error raised.
+  const int size = std::min(1024, std::min(viewport[2], viewport[3]));
+  if (size < 16) return;
+
+  // Eye-space transform of the model, exactly as the real pass will use it: the
+  // lights are eye-space and parented to the camera, so the whole shadow
+  // calculation stays in eye space and never needs world coordinates.
+  setupCamera();
+  glTranslated(cam.object_trans.x(), cam.object_trans.y(), cam.object_trans.z());
+  double modelview[16];
+  glGetDoublev(GL_MODELVIEW_MATRIX, modelview);
+  const Eigen::Map<const Eigen::Matrix4d> eyeFromObject(modelview);
+
+  // The scene's corners in eye space, to fit the light frustum to.
+  const BoundingBox bbox = this->renderer->getBoundingBox();
+  if (bbox.isEmpty()) return;
+  std::vector<Vector3d> corners;
+  for (int i = 0; i < 8; ++i) {
+    const Vector3d c(i & 1 ? bbox.max().x() : bbox.min().x(), i & 2 ? bbox.max().y() : bbox.min().y(),
+                     i & 4 ? bbox.max().z() : bbox.min().z());
+    const Eigen::Vector4d e = eyeFromObject * Eigen::Vector4d(c.x(), c.y(), c.z(), 1.0);
+    corners.emplace_back(e.x(), e.y(), e.z());
+  }
+
+  // GL_LIGHT0's eye-space direction, matching setupCamera's light_position0.
+  const Vector3d lightDir = Vector3d(-1.0, 1.0, 1.0).normalized();
+  Vector3d center = Vector3d::Zero();
+  for (const auto& c : corners) center += c;
+  center /= corners.size();
+
+  // A basis looking along -lightDir. Any up vector that is not parallel to the
+  // light will do; the model is not oriented with respect to this camera-
+  // parented light in any meaningful way.
+  const Vector3d up = std::abs(lightDir.z()) > 0.9 ? Vector3d(0, 1, 0) : Vector3d(0, 0, 1);
+  const Vector3d zAxis = lightDir.normalized();
+  const Vector3d xAxis = up.cross(zAxis).normalized();
+  const Vector3d yAxis = zAxis.cross(xAxis);
+
+  double minx = 0, maxx = 0, miny = 0, maxy = 0, minz = 0, maxz = 0;
+  for (size_t i = 0; i < corners.size(); ++i) {
+    const Vector3d d = corners[i] - center;
+    const double x = d.dot(xAxis), y = d.dot(yAxis), z = d.dot(zAxis);
+    if (i == 0) {
+      minx = maxx = x;
+      miny = maxy = y;
+      minz = maxz = z;
+    } else {
+      minx = std::min(minx, x);
+      maxx = std::max(maxx, x);
+      miny = std::min(miny, y);
+      maxy = std::max(maxy, y);
+      minz = std::min(minz, z);
+      maxz = std::max(maxz, z);
+    }
+  }
+  // A hair of margin so geometry exactly on the frustum wall is not clipped.
+  const double pad = 1e-3 * std::max(1.0, maxx - minx);
+  minx -= pad;
+  maxx += pad;
+  miny -= pad;
+  maxy += pad;
+  minz -= pad;
+  maxz += pad;
+
+  // Eye space -> light space, then an orthographic projection (the light is
+  // directional) fitted to the box just measured.
+  Eigen::Matrix4d lightView = Eigen::Matrix4d::Identity();
+  lightView.block<1, 3>(0, 0) = xAxis.transpose();
+  lightView.block<1, 3>(1, 0) = yAxis.transpose();
+  lightView.block<1, 3>(2, 0) = zAxis.transpose();
+  lightView(0, 3) = -xAxis.dot(center);
+  lightView(1, 3) = -yAxis.dot(center);
+  lightView(2, 3) = -zAxis.dot(center);
+
+  Eigen::Matrix4d proj = Eigen::Matrix4d::Identity();
+  proj(0, 0) = 2.0 / (maxx - minx);
+  proj(1, 1) = 2.0 / (maxy - miny);
+  proj(2, 2) = -2.0 / (maxz - minz);
+  proj(0, 3) = -(maxx + minx) / (maxx - minx);
+  proj(1, 3) = -(maxy + miny) / (maxy - miny);
+  // Plus, not minus, unlike x and y: the z row is flipped (m22 is negative,
+  // because the light looks down -z), and flipping the scale flips the sign of
+  // the translation with it. Nearly invisible in practice - the range is
+  // centred, so this term is close to zero - which is exactly why it would have
+  // survived any amount of eyeballing.
+  proj(2, 3) = (maxz + minz) / (maxz - minz);
+
+  const Eigen::Matrix4d lightClipFromEye = proj * lightView;
+  // Column-major for GL, and biased from clip space [-1,1] into texture [0,1].
+  Eigen::Matrix4d bias = Eigen::Matrix4d::Identity();
+  bias.diagonal() << 0.5, 0.5, 0.5, 1.0;
+  bias.col(3).head<3>() << 0.5, 0.5, 0.5;
+  const Eigen::Matrix4d biased = bias * lightClipFromEye;
+  for (int col = 0; col < 4; ++col) {
+    for (int row = 0; row < 4; ++row) {
+      shadow_matrix_[col * 4 + row] = static_cast<float>(biased(row, col));
+    }
+  }
+
+  shadow_texel_ = 1.0f / static_cast<float>(size);
+  const Eigen::Matrix4d lightFromObject = lightView * eyeFromObject;
+  // No transpose: Eigen stores column-major and glLoadMatrixd wants column-major,
+  // so data() is already in the right order. Transposing here sent the depth pass
+  // through a garbage projection, which produced a shadow map nothing ever
+  // sampled inside, and therefore no shadows and no error either.
+  glMatrixMode(GL_PROJECTION);
+  glLoadMatrixd(proj.data());
+  glMatrixMode(GL_MODELVIEW);
+  glLoadMatrixd(lightFromObject.data());
+
+  glViewport(0, 0, size, size);
+  glClear(GL_DEPTH_BUFFER_BIT);
+  // Depth only. Slope-scaled offset rather than a constant bias in the shader:
+  // acne scales with how obliquely a surface faces the light, and a constant
+  // large enough for the worst case detaches every contact shadow.
+  glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+  glEnable(GL_POLYGON_OFFSET_FILL);
+  glPolygonOffset(2.0f, 4.0f);
+  this->renderer->draw(true, phong_shader.get());
+  glDisable(GL_POLYGON_OFFSET_FILL);
+  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+  if (!shadow_map_tex_) glGenTextures(1, &shadow_map_tex_);
+  glActiveTexture(GL_TEXTURE3);
+  glBindTexture(GL_TEXTURE_2D, shadow_map_tex_);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+  glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 0, 0, size, size, 0);
+  glActiveTexture(GL_TEXTURE0);
+
+  glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+  shadow_map_valid_ = true;
+}
+
+// Copy the framebuffer's color and depth into textures the shader can sample.
+// glCopyTexImage2D rather than a framebuffer object: this is the OpenGL 2.1
+// path, FBOs are an extension there, and copying straight out of the default
+// framebuffer needs neither. Row 39's transparency compositor solves a related
+// problem by reading back to the CPU with glReadPixels and compositing in C++,
+// measured at 150-220 ms per frame - far too slow to do per fragment here.
+void GLView::captureSceneForReflections()
+{
+  GLint viewport[4];
+  glGetIntegerv(GL_VIEWPORT, viewport);
+  const GLsizei width = viewport[2];
+  const GLsizei height = viewport[3];
+  if (width <= 0 || height <= 0) return;
+
+  if (!ssr_color_tex_) glGenTextures(1, &ssr_color_tex_);
+  if (!ssr_depth_tex_) glGenTextures(1, &ssr_depth_tex_);
+
+  // Reallocating every frame is what glCopyTexImage2D does anyway; the size
+  // check exists so a resize does not leave a stale-sized texture bound.
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, ssr_color_tex_);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, viewport[0], viewport[1], width, height, 0);
+
+  glActiveTexture(GL_TEXTURE2);
+  glBindTexture(GL_TEXTURE_2D, ssr_depth_tex_);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  // A depth comparison would return 0/1; this wants the value itself.
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+  glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, viewport[0], viewport[1], width, height, 0);
+
+  glActiveTexture(GL_TEXTURE0);
+}
+
 void GLView::setupShader()
 {
   if (edge_shader) return;
@@ -73,10 +273,21 @@ void GLView::setupShader()
   phong_shader = std::make_unique<ShaderUtils::ShaderInfo>(ShaderUtils::ShaderInfo{
     .resource = phong_resource,
     .type = ShaderUtils::ShaderType::AGENT_RENDERING,
-    .uniforms = {{"showEdges", glGetUniformLocation(phong_resource.shader_program, "showEdges")}},
+    .uniforms =
+      {
+        {"showEdges", glGetUniformLocation(phong_resource.shader_program, "showEdges")},
+        {"ssrEnabled", glGetUniformLocation(phong_resource.shader_program, "ssrEnabled")},
+        {"ssrColor", glGetUniformLocation(phong_resource.shader_program, "ssrColor")},
+        {"ssrDepth", glGetUniformLocation(phong_resource.shader_program, "ssrDepth")},
+        {"shadowsEnabled", glGetUniformLocation(phong_resource.shader_program, "shadowsEnabled")},
+        {"shadowMap", glGetUniformLocation(phong_resource.shader_program, "shadowMap")},
+        {"shadowMatrix", glGetUniformLocation(phong_resource.shader_program, "shadowMatrix")},
+        {"shadowTexel", glGetUniformLocation(phong_resource.shader_program, "shadowTexel")},
+      },
     .attributes =
       {
         {"barycentric", glGetAttribLocation(phong_resource.shader_program, "barycentric")},
+        {"material", glGetAttribLocation(phong_resource.shader_program, "material")},
       },
   });
 
@@ -424,6 +635,15 @@ void GLView::paintGL()
 {
   const bool pureEdges =
     analysis_mode == AnalysisMode::Canny || analysis_mode == AnalysisMode::Wireframe;
+  // Before anything is drawn, because without an FBO this scribbles on the
+  // colour buffer and relies on the clear below to wipe it.
+  shadow_map_valid_ = false;
+  if (this->renderer && this->renderer->providesSceneDepth() && analysis_mode == AnalysisMode::Shaded &&
+      phong_shader && Feature::ExperimentalShadows.is_enabled()) {
+    this->renderer->prepare(phong_shader.get());
+    renderShadowMap();
+  }
+
   glDisable(GL_LIGHTING);
   auto bgcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_COLOR);
   auto bgstopcol = ColorMap::getColor(*this->colorscheme, RenderColor::BACKGROUND_STOP_COLOR);
@@ -523,6 +743,20 @@ void GLView::paintGL()
       glEnable(GL_LIGHTING);
     }
 
+    if (analysis_mode == AnalysisMode::Shaded && phong_shader) {
+      glUseProgram(active_shader->resource.shader_program);
+      glUniform1i(active_shader->uniforms.at("shadowsEnabled"), shadow_map_valid_ ? GL_TRUE : GL_FALSE);
+      if (shadow_map_valid_) {
+        glUniform1i(active_shader->uniforms.at("shadowMap"), 3);
+        glUniformMatrix4fv(active_shader->uniforms.at("shadowMatrix"), 1, GL_FALSE, shadow_matrix_);
+        glUniform1f(active_shader->uniforms.at("shadowTexel"), shadow_texel_);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, shadow_map_tex_);
+        glActiveTexture(GL_TEXTURE0);
+      }
+      glUseProgram(0);
+    }
+
     this->renderer->prepare(active_shader);
     // Phong emits premultiplied material RGB plus an unattenuated reflected
     // highlight, so its RGB must not be multiplied by alpha a second time.
@@ -551,6 +785,36 @@ void GLView::paintGL()
         if (feature_edge_error != error.what()) LOG(message_group::Error, "%1$s", error.what());
         feature_edge_error = error.what();
       }
+    }
+
+    // Screen-space reflections need the scene before they can reflect it, so
+    // the geometry is drawn a second time against the first pass's color and
+    // depth. Second, not deferred into a fullscreen pass: a G-buffer would need
+    // normals and material in render targets, and the OpenGL 2.1 floor this
+    // viewport supports has no multiple render targets to put them in.
+    if (this->renderer->providesSceneDepth() && analysis_mode == AnalysisMode::Shaded && phong_shader &&
+        Feature::ExperimentalScreenSpaceReflections.is_enabled()) {
+      captureSceneForReflections();
+      glUseProgram(active_shader->resource.shader_program);
+      glUniform1i(active_shader->uniforms.at("ssrEnabled"), GL_TRUE);
+      glUniform1i(active_shader->uniforms.at("ssrColor"), 1);
+      glUniform1i(active_shader->uniforms.at("ssrDepth"), 2);
+      glUseProgram(0);
+      // Draw over the first pass rather than clearing it: the background
+      // gradient, axes and crosshairs were drawn before any of this and a clear
+      // would take them with it. The same fragments land at the same depth, so
+      // the test has to accept equality or the second pass draws nothing.
+      glDepthFunc(GL_LEQUAL);
+      this->renderer->draw(active_showedges, active_shader);
+      glDepthFunc(GL_LESS);
+      glUseProgram(active_shader->resource.shader_program);
+      glUniform1i(active_shader->uniforms.at("ssrEnabled"), GL_FALSE);
+      glUseProgram(0);
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE2);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE0);
     }
     if (analysis_mode == AnalysisMode::Shaded) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (depth_preview_polarity(analysisDepthUnits()).invert) {
@@ -667,6 +931,8 @@ void GLView::enable_opencsg_shaders()
 
 void GLView::initializeGL()
 {
+  OpenCSGRenderer::clearCache();
+
 #ifdef DEBUG
 /*
    // Requires OpenGL 4.3+

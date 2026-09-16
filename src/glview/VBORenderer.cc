@@ -171,5 +171,29 @@ void VBORenderer::add_shader_pointers(VBOBuilder& vbo_builder, const ShaderUtils
       });
   }
 
+  // Shading attributes. Shaders that do not declare "material" simply do not
+  // bind it, exactly as with barycentric above.
+  const auto material = shaderinfo->attributes.find("material");
+  const int material_location = material == shaderinfo->attributes.end() ? -1 : material->second;
+  if (material_location >= 0) {
+    const GLuint material_index = static_cast<GLuint>(material_location);
+    const GLsizei mcount =
+      vertex_data->attributes()[vbo_builder.shader_attributes_index_ + MATERIAL_ATTRIB]->count();
+    const GLenum mtype =
+      vertex_data->attributes()[vbo_builder.shader_attributes_index_ + MATERIAL_ATTRIB]->glType();
+    const GLsizei mstride = vertex_data->stride();
+    const size_t moffset = start_offset + vertex_data->interleavedOffset(
+                                            vbo_builder.shader_attributes_index_ + MATERIAL_ATTRIB);
+    ss->glBegin().emplace_back(
+      [material_index, mcount, mtype, mstride, moffset, ss_ptr = std::weak_ptr<VertexState>(ss)]() {
+        auto ss = ss_ptr.lock();
+        if (!ss) return;
+        GL_TRACE("glVertexAttribPointer(%d, %d, %d, GL_FALSE, %d, %p)",
+                 material_index % mcount % mtype % mstride % (GLvoid *)(ss->drawOffset() + moffset));
+        GL_CHECKD(glVertexAttribPointer(material_index, mcount, mtype, GL_FALSE, mstride,
+                                        (GLvoid *)(ss->drawOffset() + moffset)));
+      });
+  }
+
   vbo_builder.states().emplace_back(std::move(ss));
 }

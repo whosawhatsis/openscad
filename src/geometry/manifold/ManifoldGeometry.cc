@@ -45,10 +45,12 @@ ManifoldGeometry::ManifoldGeometry() : manifold_(manifold::Manifold())
 
 ManifoldGeometry::ManifoldGeometry(manifold::Manifold mani, const std::set<uint32_t>& originalIDs,
                                    const std::map<uint32_t, Color4f>& originalIDToColor,
-                                   const std::set<uint32_t>& subtractedIDs)
+                                   const std::set<uint32_t>& subtractedIDs,
+                                   const std::map<uint32_t, SurfaceFinish>& originalIDToFinish)
   : manifold_(std::move(mani)),
     originalIDs_(originalIDs),
     originalIDToColor_(originalIDToColor),
+    originalIDToFinish_(originalIDToFinish),
     subtractedIDs_(subtractedIDs)
 {
 }
@@ -148,20 +150,28 @@ std::shared_ptr<PolySet> ManifoldGeometry::toPolySet() const
   int32_t faceFrontColorIndex = -1;
   int32_t faceBackColorIndex = -1;
 
-  std::map<Color4f, int32_t> colorToIndex;
+  // Keyed on the pair: two bodies may agree on color and differ in finish, and
+  // one entry cannot describe both.
+  std::map<std::pair<Color4f, SurfaceFinish>, int32_t> surfaceToIndex;
   std::map<uint32_t, int32_t> originalIDToColorIndex;
+  const bool hasFinishes = !originalIDToFinish_.empty();
+  // Kept exactly as long as colors, or empty. Every push to one pushes to the other.
+  const auto addSurface = [&](const Color4f& color, const SurfaceFinish& finish) {
+    ps->colors.push_back(color);
+    if (hasFinishes) ps->finishes.push_back(finish);
+  };
 
   auto getFaceFrontColorIndex = [&]() -> int {
     if (faceFrontColorIndex < 0) {
       faceFrontColorIndex = ps->colors.size();
-      ps->colors.push_back(ColorMap::getColor(*colorScheme, RenderColor::CGAL_FACE_FRONT_COLOR));
+      addSurface(ColorMap::getColor(*colorScheme, RenderColor::CGAL_FACE_FRONT_COLOR), {});
     }
     return faceFrontColorIndex;
   };
   auto getFaceBackColorIndex = [&]() -> int {
     if (faceBackColorIndex < 0) {
       faceBackColorIndex = ps->colors.size();
-      ps->colors.push_back(ColorMap::getColor(*colorScheme, RenderColor::CGAL_FACE_BACK_COLOR));
+      addSurface(ColorMap::getColor(*colorScheme, RenderColor::CGAL_FACE_BACK_COLOR), {});
     }
     return faceBackColorIndex;
   };
@@ -175,14 +185,20 @@ std::shared_ptr<PolySet> ManifoldGeometry::toPolySet() const
       return colorIndexIt->second;
     }
     auto colorIt = originalIDToColor_.find(originalID);
-    if (colorIt == originalIDToColor_.end()) {
+    auto finishIt = originalIDToFinish_.find(originalID);
+    if (colorIt == originalIDToColor_.end() && finishIt == originalIDToFinish_.end()) {
       return getFaceFrontColorIndex();
     }
-    const auto& color = colorIt->second;
+    // A material() need not name a color. An invalid one reads as "use the
+    // default color", which is what it means, and still gives the finish an
+    // entry to ride on.
+    const Color4f color = colorIt == originalIDToColor_.end() ? Color4f() : colorIt->second;
+    const SurfaceFinish finish =
+      finishIt == originalIDToFinish_.end() ? SurfaceFinish() : finishIt->second;
 
-    auto pair = colorToIndex.insert({color, ps->colors.size()});
+    auto pair = surfaceToIndex.insert({{color, finish}, static_cast<int32_t>(ps->colors.size())});
     if (pair.second) {
-      ps->colors.push_back(color);
+      addSurface(color, finish);
     }
     int32_t color_index = pair.first->second;
     originalIDToColorIndex[originalID] = color_index;
@@ -265,6 +281,7 @@ ManifoldGeometry ManifoldGeometry::binOp(const ManifoldGeometry& lhs, const Mani
 {
   auto mani = lhs.manifold_.Boolean(rhs.manifold_, opType);
   auto originalIDToColor = lhs.originalIDToColor_;
+  auto originalIDToFinish = lhs.originalIDToFinish_;
   auto subtractedIDs = lhs.subtractedIDs_;
 
   auto originalIDs = lhs.originalIDs_;
@@ -274,6 +291,14 @@ ManifoldGeometry ManifoldGeometry::binOp(const ManifoldGeometry& lhs, const Mani
     // Mark all the original ids coming from rhs as subtracted, unless they're mapped to a color.
     for (const auto id : rhs.originalIDs_) {
       auto it = rhs.originalIDToColor_.find(id);
+      auto fit = rhs.originalIDToFinish_.find(id);
+      if (fit != rhs.originalIDToFinish_.end()) {
+        originalIDToFinish[id] = fit->second;
+      }
+      // A subtracted body whose cut faces carry a color keeps its identity so
+      // those faces render as its own material; one that does not is marked
+      // subtracted and picks up the back-face color. The finish follows the
+      // same decision, which is the color map's alone to make.
       if (it != rhs.originalIDToColor_.end()) {
         originalIDToColor[id] = it->second;
       } else {
@@ -283,9 +308,10 @@ ManifoldGeometry ManifoldGeometry::binOp(const ManifoldGeometry& lhs, const Mani
   } else {
     // Add the id -> color mapping from the rhs.
     originalIDToColor.insert(rhs.originalIDToColor_.begin(), rhs.originalIDToColor_.end());
+    originalIDToFinish.insert(rhs.originalIDToFinish_.begin(), rhs.originalIDToFinish_.end());
     subtractedIDs.insert(rhs.subtractedIDs_.begin(), rhs.subtractedIDs_.end());
   }
-  return {mani, originalIDs, originalIDToColor, subtractedIDs};
+  return {mani, originalIDs, originalIDToColor, subtractedIDs, originalIDToFinish};
 }
 
 std::shared_ptr<ManifoldGeometry> minkowskiOp(const ManifoldGeometry& lhs, const ManifoldGeometry& rhs)
@@ -380,6 +406,21 @@ void ManifoldGeometry::setColor(const Color4f& c)
   subtractedIDs_.clear();
 }
 
+// Deliberately does not clear originalIDToColor_: a material() sets a color and
+// a finish in that order on the same geometry, and both collapse it to the same
+// single original ID, so whichever runs second must leave the first alone.
+void ManifoldGeometry::setFinish(const SurfaceFinish& f)
+{
+  if (manifold_.OriginalID() == -1) {
+    manifold_ = manifold_.AsOriginal();
+  }
+  originalIDs_.clear();
+  originalIDs_.insert(manifold_.OriginalID());
+  originalIDToFinish_.clear();
+  originalIDToFinish_[manifold_.OriginalID()] = f;
+  subtractedIDs_.clear();
+}
+
 void ManifoldGeometry::toOriginal()
 {
   if (manifold_.OriginalID() == -1) {
@@ -388,6 +429,7 @@ void ManifoldGeometry::toOriginal()
   originalIDs_.clear();
   originalIDs_.insert(manifold_.OriginalID());
   originalIDToColor_.clear();
+  originalIDToFinish_.clear();
   subtractedIDs_.clear();
 }
 

@@ -114,7 +114,21 @@ void PolySet::transform(const Transform3d& mat)
 void PolySet::setColor(const Color4f& c)
 {
   colors = {c};
+  finishes.clear();
   color_indices.assign(indices.size(), 0);
+}
+
+void PolySet::setFinish(const SurfaceFinish& f)
+{
+  // Paints every surface, whatever its color, which is what a material() on a
+  // subtree means. A geometry with no color channel gets one carrying an
+  // invalid color, so that there is an entry to hang the finish off; the
+  // renderer reads an invalid color as "use the default".
+  if (colors.empty()) {
+    colors = {Color4f()};
+    color_indices.assign(indices.size(), 0);
+  }
+  finishes.assign(colors.size(), f);
 }
 
 bool PolySet::isConvex() const

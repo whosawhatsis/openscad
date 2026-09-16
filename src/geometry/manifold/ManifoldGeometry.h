@@ -13,6 +13,7 @@
 
 #include "geometry/Geometry.h"
 #include "geometry/linalg.h"
+#include "geometry/SurfaceFinish.h"
 
 namespace manifold {
 class Manifold;
@@ -28,7 +29,8 @@ public:
   ManifoldGeometry();
   ManifoldGeometry(manifold::Manifold object, const std::set<uint32_t>& originalIDs = {},
                    const std::map<uint32_t, Color4f>& originalIDToColor = {},
-                   const std::set<uint32_t>& subtractedIDs = {});
+                   const std::set<uint32_t>& subtractedIDs = {},
+                   const std::map<uint32_t, SurfaceFinish>& originalIDToFinish = {});
   ManifoldGeometry(const ManifoldGeometry& other) = default;
 
   [[nodiscard]] bool isEmpty() const override;
@@ -64,6 +66,7 @@ public:
 
   void transform(const Transform3d& mat) override;
   void setColor(const Color4f& c) override;
+  void setFinish(const SurfaceFinish& f) override;
   void toOriginal();
   void resize(const Vector3d& newsize, const Eigen::Matrix<bool, 3, 1>& autosize) override;
 
@@ -79,5 +82,6 @@ private:
   manifold::Manifold manifold_;
   std::set<uint32_t> originalIDs_;
   std::map<uint32_t, Color4f> originalIDToColor_;
+  std::map<uint32_t, SurfaceFinish> originalIDToFinish_;
   std::set<uint32_t> subtractedIDs_;
 };
