@@ -115,6 +115,16 @@ ComputeWorker::~ComputeWorker()
   }
 }
 
+bool ComputeWorker::ensureRunning()
+{
+  if (d->channel && isRunning()) return true;
+  // The previous child is gone. Its channel is finished and cannot be reused, and start() refuses
+  // while one exists, so it is dropped first. The window loses that worker's caches -- unavoidable,
+  // they died with it -- but not its ability to compute.
+  d->channel.reset();
+  return start();
+}
+
 bool ComputeWorker::start()
 {
   if (d->channel) return false;
@@ -281,7 +291,7 @@ void ComputeWorker::startRender(const QString& scadPath, const QString& paramete
                                 const QString& setName, const QString& sourcePath, const Camera& camera,
                                 const double animationTime)
 {
-  if (!d->channel) {
+  if (!d->renderThread && !ensureRunning()) {
     emit renderFailed(tr("The compute worker is not running."));
     return;
   }
@@ -329,7 +339,7 @@ void ComputeWorker::startPreview(const QString& scadPath, const QString& paramet
                                  const std::size_t normalizationLimit, const Camera& camera,
                                  const double animationTime)
 {
-  if (!d->channel) {
+  if (!d->renderThread && !ensureRunning()) {
     emit previewFailed(tr("The compute worker is not running."));
     return;
   }

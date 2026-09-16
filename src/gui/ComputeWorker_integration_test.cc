@@ -293,6 +293,37 @@ TEST_CASE("A cancelled render leaves the worker alive", "[gui][ComputeWorkerInte
   REQUIRE(waitFor([&] { return completed; }));
 }
 
+TEST_CASE("A worker that died is replaced on the next request", "[gui][ComputeWorkerIntegration]")
+{
+  // A worker can die out from under its window: a crash, the OS killing it for memory, or the kill a
+  // cancellation escalates to. Before this, the window then had no worker for the rest of its life --
+  // every later F5/F6 failed with "not running" until the application was restarted, which is the
+  // kind of wedged window this whole feature exists to prevent.
+  auto worker = startRealWorker();
+  const auto firstProcess = worker->processId();
+  REQUIRE(firstProcess > 0);
+
+  worker->cancel();
+  REQUIRE(waitFor([&] { return !worker->isRunning(); }));
+
+  bool completed = false;
+  QString failure;
+  QObject::connect(worker.get(), &ComputeWorker::renderDone, worker.get(),
+                   [&](const std::shared_ptr<const Geometry>&) { completed = true; });
+  QObject::connect(worker.get(), &ComputeWorker::renderFailed, worker.get(),
+                   [&](const QString& reason) { failure = reason; });
+  worker->startRender(
+    QString::fromStdString(writeModel("cube([10, 10, 10]);", "openscad-worker-respawn")), {}, {}, {},
+    Camera{}, 0.0);
+
+  REQUIRE(waitFor([&] { return completed || !failure.isEmpty(); }));
+  INFO("render after the worker died failed with: " << failure.toStdString());
+  CHECK(completed);
+  CHECK(worker->isRunning());
+  // A new process, not the old one somehow surviving.
+  CHECK(worker->processId() != firstProcess);
+}
+
 TEST_CASE("A worker exits when its parent lets go of the channel", "[gui][ComputeWorkerIntegration]")
 {
   // The contract compute_worker_main() states: "A worker whose window has gone must exit rather
