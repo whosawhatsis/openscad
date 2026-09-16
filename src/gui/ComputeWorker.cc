@@ -40,7 +40,14 @@ constexpr auto kPreviewOutputName = "preview.json";
 
 namespace {
 //! How long a child gets to notice a cancellation before it is killed instead.
-constexpr int kCancelGracePeriodMs = 1000;
+//!
+//! The child only notices at its next progress tick, and that is slower than it looks: measured on an
+//! M1 Max, a cancelled render answered in ~490 ms warm and ~1230 ms on the first run after the binary
+//! was rebuilt. A one-second grace period therefore killed a worker that was about to comply -- which
+//! throws away its caches, and is the opposite of what the polite form is for. The CI machines are
+//! slower still. This sits well clear of both; the kill is still there for a worker stuck inside one
+//! long boolean, which is the case the escalation exists for.
+constexpr int kCancelGracePeriodMs = 5000;
 
 //! The experimental features this process has on. They are per-process state, so a worker that is
 //! not told renders as if every experimental builtin did not exist -- the module is ignored with a

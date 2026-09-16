@@ -257,6 +257,8 @@ TEST_CASE("A cancelled render leaves the worker alive", "[gui][ComputeWorkerInte
   // away the geometry caches that are most of the reason each window has its own worker. A cancel
   // the child notices costs nothing, so the next render is still warm.
   auto worker = startRealWorker();
+  const auto processBefore = worker->processId();
+  REQUIRE(processBefore > 0);
 
   bool failed = false;
   bool completed = false;
@@ -275,8 +277,11 @@ TEST_CASE("A cancelled render leaves the worker alive", "[gui][ComputeWorkerInte
   REQUIRE(waitFor([&] { return failed || completed; }));
   CHECK_FALSE(completed);
   CHECK(failed);
-  // The whole point: the process, and its caches, are still there.
+  // The whole point: the process, and its caches, are still there. The SAME process -- once a
+  // crashed worker is respawned, a cancel that killed it and started a fresh one would also leave
+  // a running worker, and would pass a bare isRunning() check while throwing the caches away.
   CHECK(worker->isRunning());
+  CHECK(worker->processId() == processBefore);
 
   // And it still answers, so nothing was left half-finished on the channel.
   completed = false;
