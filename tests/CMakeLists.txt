@@ -915,6 +915,9 @@ list(APPEND EXPORT_PARAM_TEST_FILES
   ${TEST_SCAD_DIR}/issues/issue6597.scad
   ${TEST_SCAD_DIR}/issues/issue7013.scad
 )
+list(APPEND EXPORT_USD_TEST_FILES ${TEST_SCAD_DIR}/usd/usd-export.scad)
+list(APPEND EXPORT_USD_ANIM_TEST_FILES ${TEST_SCAD_DIR}/usd/usd-export-animated.scad)
+list(APPEND EXPORT_USD_TRANSFORM_ANIM_TEST_FILES ${TEST_SCAD_DIR}/usd/usd-export-transform-animated.scad)
 
 list(APPEND EXPORT_IMPORT_3D_FILES
   ${TEST_SCAD_DIR}/3D/features/mirror-tests.scad
@@ -1002,6 +1005,9 @@ add_failing_test(export-paramset-hardwarnings     SUFFIX json FILES ${TEST_SCAD_
 
 add_cmdline_test(echo-param    OPENSCAD SUFFIX echo FILES ${TEST_SCAD_DIR}/issues/issue7013.scad ARGS -p ${TEST_SCAD_DIR}/issues/issue7013.json EXPECTEDDIR echo)
 add_cmdline_test(echo-paramset OPENSCAD SUFFIX echo FILES ${TEST_SCAD_DIR}/issues/issue7013.scad ARGS -p ${TEST_SCAD_DIR}/issues/issue7013.json -P Defaults)
+add_cmdline_test(export-usda             EXPERIMENTAL OPENSCAD SUFFIX usda FILES ${EXPORT_USD_TEST_FILES} ARGS --enable=predictible-output --backend=manifold)
+add_cmdline_test(export-usda-animated    EXPERIMENTAL OPENSCAD SUFFIX usda FILES ${EXPORT_USD_ANIM_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --animate 3 --animate_fps 24)
+add_cmdline_test(export-usda-transform-animated EXPERIMENTAL OPENSCAD SUFFIX usda FILES ${EXPORT_USD_TRANSFORM_ANIM_TEST_FILES} ARGS --enable=predictible-output --backend=manifold --animate 3 --animate_fps 24)
 
 # Trivial Export/Import files: Sanity-checks bidirectional file format import/export
 set(SIMPLE_EXPORT_IMPORT_2D_FILES ${TEST_SCAD_DIR}/misc/square10.scad)
@@ -1526,6 +1532,8 @@ if(NOT ENABLE_MANIFOLD)
     export-pov-rotate-3_pov-export
     export-pov-distance-1_pov-export
     export-pov-all_pov-export
+    export-usda_usd-export
+    export-usda-animated_usd-export-animated
     render-3mf-manifold_bad-stl-tardis
     render-3mf-manifold_bad-stl-wing
     render-3mf-manifold_issue904
@@ -1563,6 +1571,23 @@ add_test(NAME pretty_print_logfile
   CONFIGURATIONS Default
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_pretty_print_logfile.py
 )
+#############################
+# Animation container export #
+#############################
+
+# End-to-end check that --animate writes a single valid gif/apng/avi. Structural,
+# not golden-file: the compressed bytes vary with the zlib and JPEG versions in use,
+# but the container structure and frame count do not.
+if(OPENSCAD_BINPATH)
+  add_test(NAME animation_export
+    CONFIGURATIONS Default
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/test_animation_export.py
+      ${OPENSCAD_BINPATH}
+      ${TEST_SCAD_DIR}/misc/animation-export.scad
+      ${CMAKE_CURRENT_BINARY_DIR}/animation_export_output
+  )
+endif()
 
 ####################
 # Extra Debug Info #

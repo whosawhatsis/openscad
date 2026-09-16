@@ -107,6 +107,7 @@
 #include "glview/RenderSettings.h"
 #include "handle_dep.h"
 #include "io/export.h"
+#include "io/VideoEncoder.h"
 #include "openscad_gui.h"
 #include "openscad_mimalloc.h"
 #include "platform/PlatformUtils.h"
@@ -162,6 +163,7 @@ struct AnimateArgs {
   unsigned frames = 0;
   unsigned num_shards = 1;
   unsigned shard = 1;
+  unsigned fps = 30;  //!< only used by the animation container formats
 };
 
 struct CommandLine {
@@ -299,6 +301,13 @@ AnimateArgs get_animate(const po::variables_map& vm)
   if (vm.count("animate")) {
     animate.frames = vm["animate"].as<unsigned>();
   }
+  if (vm.count("animate_fps")) {
+    animate.fps = vm["animate_fps"].as<unsigned>();
+    if (animate.fps == 0 || animate.fps > 100) {
+      LOG("--animate_fps needs to be in range <1..100>");
+      exit(1);
+    }
+  }
   if (vm.count("animate_sharding")) {
     std::vector<std::string> strs;
     boost::split(strs, vm["animate_sharding"].as<std::string>(), boost::is_any_of("/"));
@@ -388,8 +397,25 @@ Camera get_camera(const po::variables_map& vm)
   return camera;
 }
 
+bool collectUsdAnimationObjects(const std::shared_ptr<CSGNode>& node,
+                                std::vector<UsdAnimationObject>& objects)
+{
+  if (!node || node->isEmptySet()) return true;
+  if (const auto leaf = std::dynamic_pointer_cast<CSGLeaf>(node)) {
+    if (leaf->polyset) {
+      objects.push_back({leaf->polyset, leaf->matrix, leaf->color, leaf->index});
+    }
+    return true;
+  }
+  const auto operation = std::dynamic_pointer_cast<CSGOperation>(node);
+  if (!operation || operation->getType() != OpenSCADOperator::UNION) return false;
+  return collectUsdAnimationObjects(operation->left(), objects) &&
+         collectUsdAnimationObjects(operation->right(), objects);
+}
+
 int do_export(const CommandLine& cmd, const RenderVariables& render_variables, FileFormat export_format,
-              SourceFile *root_file)
+              SourceFile *root_file, VideoEncoder *videoEncoder,
+              std::vector<UsdAnimationFrame> *usdFrames)
 {
   auto filename_str = fs::path(cmd.output_file).generic_string();
   // Avoid possibility of fs::absolute throwing when passed an empty path
@@ -478,7 +504,8 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     GeometryEvaluator geomevaluator(tree);
     std::unique_ptr<OffscreenView> glview;
     std::shared_ptr<const Geometry> root_geom;
-    if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG) &&
+    if ((export_format == FileFormat::ECHO || export_format == FileFormat::PNG ||
+         fileformat::isAnimation(export_format)) &&
         (cmd.viewOptions.renderer == RenderType::OPENCSG ||
          cmd.viewOptions.renderer == RenderType::THROWNTOGETHER)) {
       // OpenCSG or throwntogether png -> just render a preview
@@ -513,11 +540,35 @@ int do_export(const CommandLine& cmd, const RenderVariables& render_variables, F
     const int dim = fileformat::is3D(export_format) ? 3 : fileformat::is2D(export_format) ? 2 : 0;
     ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
                                              input_filename, &cmd.camera, cmd.exportOptions);
-    if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
+    if (usdFrames != nullptr) {
+      /*
+         Animated USD: one stage covers every frame, so the geometry is collected here and
+         the caller writes the single file once the loop has finished.
+         ponytail: a second nullable out-parameter alongside videoEncoder, rather than an
+         accumulator abstraction over both. Unify them if a third frame-collecting format
+         ever appears -- two is not yet a pattern.
+       */
+      GeometryEvaluator usdGeometryEvaluator(tree);
+      CSGTreeEvaluator usdCsgEvaluator(tree, &usdGeometryEvaluator);
+      std::vector<UsdAnimationObject> objects;
+      const auto csgRoot = usdCsgEvaluator.buildCSGTree(*tree.root());
+      if (!collectUsdAnimationObjects(csgRoot, objects)) objects.clear();
+      usdFrames->push_back({root_geom, std::move(objects)});
+    } else if (dim > 0 && !checkAndExport(root_geom, dim, exportInfo, cmd.is_stdout, filename_str)) {
       return 1;
     }
 
-    if (export_format == FileFormat::PNG) {
+    if (videoEncoder != nullptr) {
+      // One animation frame: hand the pixels to the encoder rather than writing a file.
+      const bool success = (cmd.viewOptions.renderer == RenderType::BACKEND_SPECIFIC ||
+                            cmd.viewOptions.renderer == RenderType::GEOMETRY)
+                             ? export_video_frame(root_geom, cmd.viewOptions, camera, *videoEncoder)
+                             : export_video_frame(*glview, *videoEncoder);
+      if (!success) {
+        LOG(message_group::Error, "Failed to encode animation frame.");
+        return 1;
+      }
+    } else if (export_format == FileFormat::PNG) {
       bool success = true;
       bool const wrote = with_output(
         cmd.is_stdout, filename_str,
@@ -652,34 +703,92 @@ int cmdline(const CommandLine& cmd)
   };
 
   if (cmd.animate.frames == 0) {
+    if (fileformat::isAnimation(export_format)) {
+      LOG(message_group::Error, "%1$s output needs --animate <frames>.",
+          fileformat::info(export_format).description);
+      return 1;
+    }
     render_variables.time = 0;
-    return do_export(cmd, render_variables, export_format, root_file);
+    return do_export(cmd, render_variables, export_format, root_file, nullptr, nullptr);
   } else {
     // export the requested number of animated frames
     const unsigned start_frame = ((cmd.animate.shard - 1) * cmd.animate.frames) / cmd.animate.num_shards;
     const unsigned limit_frame = (cmd.animate.shard * cmd.animate.frames) / cmd.animate.num_shards;
+    /*
+       An animation container collects every frame into one file, so it is opened once
+       here and each frame is handed to it; the still formats keep writing one
+       numbered file per frame as before.
+     */
+    std::unique_ptr<VideoEncoder> encoder;
+    /*
+       USD is animatable but not an animation-only container: it collects the frames'
+       geometry and writes one time-sampled stage at the end.
+     */
+    std::vector<UsdAnimationFrame> usdFrames;
+    const bool collectsGeometry =
+      fileformat::canAnimate(export_format) && !fileformat::isAnimation(export_format);
+    if (fileformat::isAnimation(export_format)) {
+      if (cmd.is_stdout) {
+        LOG(message_group::Error, "Animation output cannot be written to stdout.");
+        return 1;
+      }
+      encoder = VideoEncoder::create(fileformat::toSuffix(export_format));
+      assert(encoder != nullptr);
+      if (!encoder->open(cmd.output_file, cmd.camera.pixel_width, cmd.camera.pixel_height,
+                         cmd.animate.fps)) {
+        LOG(message_group::Error, "Can't open %1$s for writing.", cmd.output_file);
+        return 1;
+      }
+    }
+
     for (unsigned frame = start_frame; frame < limit_frame; ++frame) {
       render_variables.time = frame * (1.0 / cmd.animate.frames);
 
-      std::ostringstream oss;
-      oss << std::setw(5) << std::setfill('0') << frame;
+      CommandLine frame_cmd = cmd;
+      if (!encoder && !collectsGeometry) {
+        std::ostringstream oss;
+        oss << std::setw(5) << std::setfill('0') << frame;
 
-      auto frame_file = fs::path(cmd.output_file);
-      auto extension = frame_file.extension();
-      frame_file.replace_extension();
-      frame_file += oss.str();
-      frame_file.replace_extension(extension);
-      std::string const frame_str = frame_file.generic_string();
+        auto frame_file = fs::path(cmd.output_file);
+        auto extension = frame_file.extension();
+        frame_file.replace_extension();
+        frame_file += oss.str();
+        frame_file.replace_extension(extension);
+        frame_cmd.output_file = frame_file.generic_string();
+      }
 
       LOG("Exporting %1$s...", cmd.filename);
 
-      CommandLine frame_cmd = cmd;
-      frame_cmd.output_file = frame_str;
-
-      int const r = do_export(frame_cmd, render_variables, export_format, root_file);
+      int const r = do_export(frame_cmd, render_variables, export_format, root_file, encoder.get(),
+                              collectsGeometry ? &usdFrames : nullptr);
       if (r != 0) {
         return r;
       }
+    }
+
+    if (collectsGeometry) {
+      const std::string input_filename = cmd.is_stdin ? "<stdin>" : cmd.filename;
+      const ExportInfo exportInfo = createExportInfo(export_format, fileformat::info(export_format),
+                                                     input_filename, &cmd.camera, cmd.exportOptions);
+      const bool wrote = with_output(
+        false, fs::path(cmd.output_file).generic_string(),
+        [&](std::ostream& stream) {
+          if (export_format == FileFormat::USDZ) {
+            export_usdz_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
+          } else {
+            export_usda_animation(usdFrames, cmd.animate.fps, stream, exportInfo);
+          }
+        },
+        std::ios::out | std::ios::binary);
+      if (!wrote) {
+        LOG(message_group::Error, "Can't open %1$s for writing.", cmd.output_file);
+        return 1;
+      }
+    }
+
+    if (encoder && !encoder->close()) {
+      LOG(message_group::Error, "Failed to finalize %1$s.", cmd.output_file);
+      return 1;
     }
 
     return 0;
@@ -893,6 +1002,7 @@ int openscad_main(int argc, char **argv)
     ("preview", po::value<std::string>()->implicit_value(""),
       "[=throwntogether] -for ThrownTogether preview png")
     ("animate", po::value<unsigned>(), "export N animated frames")
+    ("animate_fps", po::value<unsigned>(), "frame rate for formats that fold the frames into one file (gif, apng, avi, usda, usdz); default 30")
     ("animate_sharding", po::value<std::string>(),
       "Parameter <shard>/<num_shards> - Divide work into <num_shards> and only output frames for "
       "<shard>. E.g. 2/5 only outputs the second 1/5 of frames. Use to parallelize work on multiple "

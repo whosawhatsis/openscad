@@ -25,6 +25,18 @@ using S3MF = Settings::SettingsExport3mf;
 
 class PolySet;
 
+struct UsdAnimationObject {
+  std::shared_ptr<const PolySet> geometry;
+  Transform3d transform;
+  Color4f color;
+  int nodeIndex;
+};
+
+struct UsdAnimationFrame {
+  std::shared_ptr<const Geometry> geometry;
+  std::vector<UsdAnimationObject> objects;
+};
+
 enum class FileFormat {
   ASCII_STL,
   BINARY_STL,
@@ -41,8 +53,13 @@ enum class FileFormat {
   TERM,
   ECHO,
   PNG,
+  APNG,
+  GIF,
+  AVI,
   PDF,
   POV,
+  USDA,
+  USDZ,
   PARAM
 };
 
@@ -65,6 +82,17 @@ const FileFormatInfo& info(FileFormat fileFormat);
 bool fromIdentifier(const std::string& identifier, FileFormat& format);
 const std::string& toSuffix(FileFormat format);
 bool canPreview(FileFormat format);
+/*!
+   True for the animation containers, which hold a sequence of rendered frames and are
+   only meaningful together with --animate.
+ */
+bool isAnimation(FileFormat format);
+/*!
+   True for the formats that fold every --animate frame into a single output file. A
+   superset of isAnimation(): the video containers are meaningless without --animate,
+   whereas USD is equally valid as a still, so it is animatable without requiring it.
+ */
+bool canAnimate(FileFormat format);
 bool is3D(FileFormat format);
 bool is2D(FileFormat format);
 
@@ -318,6 +346,27 @@ void export_svg(const std::shared_ptr<const Geometry>& geom, std::ostream& outpu
                 const ExportInfo& exportInfo);
 void export_pov(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
+void export_usda(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo);
+void export_usdz(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
+                 const ExportInfo& exportInfo);
+/*!
+   Writes one USD stage covering every animation frame. OpenSCAD re-evaluates the script per
+   frame, so topology may change between frames; USD represents that natively by
+   time-sampling points/faceVertexCounts/faceVertexIndices.
+ */
+void export_usda_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usdz_animation(const std::vector<std::shared_ptr<const Geometry>>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+//! Whether an animation can be written as one rigidly-transformed object per body, rather than
+//! as new topology per frame. Exposed because the .blend exporter makes the same decision.
+bool canExportObjectAnimation(const std::vector<UsdAnimationFrame>& frames);
+
+void export_usda_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
+void export_usdz_animation(const std::vector<UsdAnimationFrame>& frames, unsigned fps,
+                           std::ostream& output, const ExportInfo& exportInfo);
 void export_pdf(const std::shared_ptr<const Geometry>& geom, std::ostream& output,
                 const ExportInfo& exportInfo);
 void export_nefdbg(const std::shared_ptr<const Geometry>& geom, std::ostream& output);
@@ -362,6 +411,14 @@ std::unique_ptr<OffscreenView> prepare_preview(Tree& tree, const ViewOptions& op
 bool export_png(const std::shared_ptr<const class Geometry>& root_geom, const ViewOptions& options,
                 Camera& camera, std::ostream& output);
 bool export_png(const OffscreenView& glview, std::ostream& output);
+
+/*!
+   Renders one animation frame and hands its RGBA pixels to `encoder`, instead of
+   writing a still image. The encoder must already be open at the camera's pixel size.
+ */
+bool export_video_frame(const OffscreenView& glview, class VideoEncoder& encoder);
+bool export_video_frame(const std::shared_ptr<const class Geometry>& root_geom,
+                        const ViewOptions& options, Camera& camera, class VideoEncoder& encoder);
 bool export_param(SourceFile *root, const fs::path& path, std::ostream& output);
 
 std::unique_ptr<PolySet> createSortedPolySet(const PolySet& ps);
