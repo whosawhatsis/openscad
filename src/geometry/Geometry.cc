@@ -67,6 +67,15 @@ bool GeometryList::isEmpty() const
   return true;
 }
 
+void GeometryList::transform(const Transform3d& mat)
+{
+  for (auto& item : children) {
+    auto geometry = item.second->copy();
+    geometry->transform(mat);
+    item.second = std::move(geometry);
+  }
+}
+
 void flatten(const GeometryList& geomlist, GeometryList::Geometries& childlist)
 {
   for (const auto& item : geomlist.getChildren()) {

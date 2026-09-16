@@ -23,7 +23,7 @@ class Tree;
 class GeometryEvaluator : public NodeVisitor
 {
 public:
-  GeometryEvaluator(const Tree& tree);
+  GeometryEvaluator(const Tree& tree, bool preserveBodies = false);
 
   std::shared_ptr<const Geometry> evaluateGeometry(const AbstractNode& node, bool allownef);
 
@@ -129,6 +129,7 @@ private:
   std::map<int, Geometry::Geometries> visitedchildren;
   const Tree& tree;
   std::shared_ptr<const Geometry> root;
+  bool preserveBodies;
 
 public:
 };

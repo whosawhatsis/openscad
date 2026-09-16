@@ -39,7 +39,7 @@ ScadLexer::ScadLexer(QObject *parent) : QsciLexerCPP(parent)
     "minkowski hull resize child children echo union difference "
     "intersection linear_extrude rotate_extrude import group "
     "projection render surface scale rotate mirror translate "
-    "multmatrix color offset intersection_for roof fill";
+    "multmatrix color material offset intersection_for roof fill";
 
   setFoldComments(true);
   setFoldAtElse(true);
@@ -126,7 +126,7 @@ void Lex::default_rules()
 
   std::string transformations(
     "translate rotate scale linear_extrude "
-    "rotate_extrude resize mirror multmatrix color "
+    "rotate_extrude resize mirror multmatrix color material "
     "offset hull minkowski children");
   defineRules(transformations, etransformation);
 
