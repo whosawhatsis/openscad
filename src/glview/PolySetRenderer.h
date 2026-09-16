@@ -47,5 +47,7 @@ private:
   std::vector<std::pair<std::shared_ptr<const Polygon2d>, std::shared_ptr<const PolySet>>> polygons_;
 
   std::vector<VertexStateContainer> polyset_vertex_state_containers_;
+  // Transparent faces, drawn after the opaque ones with depth writes disabled.
+  std::vector<VertexStateContainer> polyset_transparent_containers_;
   std::vector<VertexStateContainer> polygon_vertex_state_containers_;
 };

@@ -142,6 +142,7 @@ set(STLEXPORTSANITYTEST_PY   "${CCSD}/stlexportsanitytest.py")
 set(EXPORT_IMPORT_PNGTEST_PY "${CCSD}/export_import_pngtest.py")
 set(EXPORT_PNGTEST_PY        "${CCSD}/export_pngtest.py")
 set(SHOULDFAIL_PY            "${CCSD}/shouldfail.py")
+set(TEARINGTEST_PY           "${CCSD}/transparencytearingtest.py")
 set(TEST_CMDLINE_TOOL_PY     "${CCSD}/test_cmdline_tool.py")
 
 ######################
@@ -267,6 +268,11 @@ if(EXAMPLES_DIR)
 endif(EXAMPLES_DIR)
 
 file(GLOB FEATURES_3D_FILES   ${TEST_SCAD_DIR}/3D/features/*.scad)
+# Driven only by preview-transparency-product-order, which checks product ordering rather
+# than a rendered image. Left in the generic sweeps it fails eight of them as "missing
+# expected output", because it has no expected images and is not meant to have any.
+list(REMOVE_ITEM FEATURES_3D_FILES
+  ${TEST_SCAD_DIR}/3D/features/transparency-product-depth.scad)
 file(GLOB DEPRECATED_3D_FILES ${TEST_SCAD_DIR}/3D/deprecated/*.scad)
 file(GLOB ISSUES_3D_FILES     ${TEST_SCAD_DIR}/3D/issues/*.scad)
 file(GLOB SCAD_NEF3_FILES          ${TEST_SCAD_DIR}/nef3/*.scad)
@@ -860,6 +866,11 @@ endif()
 add_cmdline_test(preview-cgal    OPENSCAD FILES ${PREVIEW_COMMON_FILES} EXPECTEDDIR preview SUFFIX png ARGS --backend=cgal)
 add_cmdline_test(preview-cgal    OPENSCAD FILES ${PREVIEW_DIFFERENT_EXPECTATIONS} SUFFIX png ARGS --backend=cgal)
 add_cmdline_test(preview-cgal    OPENSCAD FILES ${PREVIEW_ERRORS} SUFFIX png ARGS --backend=cgal)
+add_test(NAME preview-transparency-product-order
+  COMMAND ${Python3_EXECUTABLE} ${CCSD}/transparency_product_order.py
+    ${OPENSCAD_BINPATH}
+    ${TEST_SCAD_DIR}/3D/features/transparency-product-depth.scad)
+set_property(TEST preview-transparency-product-order PROPERTY ENVIRONMENT ${CTEST_ENVIRONMENT})
 if (ENABLE_MANIFOLD_TESTS)
 add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_COMMON_FILES} EXPECTEDDIR preview ARGS --backend=manifold)
 add_cmdline_test(preview-manifold OPENSCAD SUFFIX png FILES ${PREVIEW_DIFFERENT_EXPECTATIONS} ARGS --backend=manifold)
@@ -1369,6 +1380,22 @@ if (ENABLE_MANIFOLD_TESTS)
   add_cmdline_test(render-manifold-discretization-by-error EXPERIMENTAL OPENSCAD FILES ${EXPERIMENTAL_DISCRETIZATION_FILES} EXPECTEDDIR render-discretization-by-error SUFFIX png ARGS --render --backend=manifold --enable=discretization-by-error)
 endif()
 add_cmdline_test(dump-discretization-by-error EXPERIMENTAL OPENSCAD FILES ${EXPERIMENTAL_DISCRETIZATION_FILES} EXPECTEDDIR dump-discretization-by-error SUFFIX csg ARGS --enable=discretization-by-error)
+add_cmdline_test(transparent-tearing    SCRIPT ${TEARINGTEST_PY} SUFFIX txt FILES ${TEST_SCAD_DIR}/misc/transparent-tearing.scad ARGS ${OPENSCAD_EXE_ARG} --camera=0,0,0,60,0,30,140 --imgsize=400,400)
+# Blessed image, deliberately, where the relational metrics could not help: correct
+# and incorrect layer ordering differ across a region in mid-tones, not in any
+# aggregate this suite can compute - measured, they agree on mean, p10, p90 and peak
+# brightness while differing on tens of thousands of pixels. The image is the only
+# oracle available.
+#
+# Default view, NOT --view=shaded, though the artifact is just as visible in both
+# (measured: identical 5.91% of 3x3 blocks, median 13, either way). The default view
+# has no PBR shader and no smooth shading to drift, so this image is byte-identical
+# across the feature branch and dogfooding - checked, not assumed. A shaded version
+# of this test was written first and failed on dogfooding for that exact reason,
+# which is the same trap preview-shaded-transparency is stuck in.
+add_cmdline_test(render-transparent-cavity OPENSCAD SUFFIX png
+  FILES ${TEST_SCAD_DIR}/misc/transparent-cavity.scad
+  ARGS --render --camera=0,0,0,68,0,25,105 --imgsize=400,400)
 
 
 ############################

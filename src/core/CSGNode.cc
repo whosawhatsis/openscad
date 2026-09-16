@@ -27,12 +27,15 @@
 #include "core/CSGNode.h"
 
 #include <boost/range/iterator_range.hpp>
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <numeric>
 #include <sstream>
 #include <stack>
+#include <string>
 #include <tuple>
 #include <utility>
 
@@ -262,6 +265,34 @@ std::string CSGProduct::dump() const
     dump << " -" << csgobj.leaf->label;
   }
   return dump.str();
+}
+
+size_t CSGProduct::stableKey() const
+{
+  size_t key = 0;
+  const auto combine = [&key](size_t value) {
+    key ^= value + 0x9e3779b97f4a7c15ULL + (key << 6) + (key >> 2);
+  };
+  for (const auto& csgobj : this->intersections) {
+    const auto& leaf = csgobj.leaf;
+    if (const auto& ps = leaf->polyset) {
+      combine(ps->vertices.size());
+      combine(ps->indices.size());
+      // A fixed sample, not every vertex: the key only has to be the same whenever the geometry is,
+      // and summarizing a whole mesh here is what made rebuilds scale with model size.
+      // ponytail: meshes differing only between sampled vertices share a key; that only picks an
+      // arbitrary but still deterministic order for exactly coincident depths.
+      const size_t n = ps->vertices.size();
+      const size_t stride = std::max<size_t>(1, n / 16);
+      for (size_t i = 0; i < n; i += stride) {
+        for (int axis = 0; axis < 3; ++axis) combine(std::hash<double>{}(ps->vertices[i][axis]));
+      }
+    }
+    for (const float channel : {leaf->color.r(), leaf->color.g(), leaf->color.b(), leaf->color.a()}) {
+      combine(std::hash<float>{}(channel));
+    }
+  }
+  return key;
 }
 
 BoundingBox CSGProduct::getBoundingBox(bool throwntogether) const
