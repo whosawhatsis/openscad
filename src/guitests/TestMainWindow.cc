@@ -482,6 +482,44 @@ void TestMainWindow::checkInProcessPreviewProducesProducts()
   QVERIFY2(window->previewProductsForTest() != nullptr, "no product list in-process");
 }
 
+void TestMainWindow::checkCrashedWorkerRespawns()
+{
+  // A worker can go away under its window -- a crash, the OS reclaiming memory, or the kill a
+  // cancellation escalates to. Before respawn, the window then had no worker for the rest of its
+  // life: every later F5/F6 failed with "not running" until the application was restarted, which is
+  // exactly the wedged window this feature exists to prevent.
+  Feature::enable_feature("process-isolation");
+  auto *window = runInOwnWindow(QStringLiteral("cube([10, 10, 10]);"), false);
+  QVERIFY2(window != nullptr, "an isolated render never finished");
+  const auto editorTextBeforeCrash = window->activeEditor->toPlainText();
+
+  const auto workerBeforeCrash = window->computeWorkerProcessId();
+  QVERIFY2(workerBeforeCrash > 0, "the window has no live compute worker to kill");
+
+  window->exitComputeWorkerForTest();
+  QElapsedTimer diedTimer;
+  diedTimer.start();
+  while (window->computeWorkerProcessId() != 0 && diedTimer.elapsed() < 5000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  QCOMPARE(window->computeWorkerProcessId(), qint64{0});
+
+  // The editor must not lose the user's text just because the process underneath it died.
+  QCOMPARE(window->activeEditor->toPlainText(), editorTextBeforeCrash);
+
+  // The next render must succeed anyway, and must do so with a fresh process rather than a wedged
+  // window that keeps failing "not running" forever.
+  renderAgain(window);
+  const auto polyset = std::dynamic_pointer_cast<const PolySet>(window->rootGeom);
+  QVERIFY2(polyset != nullptr, "the render after the crash produced no mesh");
+
+  const auto workerAfterRespawn = window->computeWorkerProcessId();
+  QVERIFY2(workerAfterRespawn > 0, "no worker is running after the respawned render");
+  QVERIFY2(workerAfterRespawn != workerBeforeCrash, "the respawned worker reused the dead PID");
+
+  Feature::enable_feature("process-isolation", false);
+}
+
 void TestMainWindow::checkAWindowWhoseWorkerCannotStartStillRenders()
 {
   // The fallback matters more than it looks: a user whose worker cannot start -- a broken install,

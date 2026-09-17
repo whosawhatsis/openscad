@@ -993,7 +993,17 @@ std::shared_ptr<AbstractNode> MainWindow::instantiateRootFromSource(SourceFile *
 
   return node;
 }
+
+void MainWindow::exitComputeWorkerForTest()
+{
+  if (this->computeWorker) this->computeWorker->cancel();
+}
 #endif  // ifdef ENABLE_GUI_TESTS
+
+qint64 MainWindow::computeWorkerProcessId() const
+{
+  return this->computeWorker ? this->computeWorker->processId() : 0;
+}
 
 void MainWindow::instantiateRoot()
 {

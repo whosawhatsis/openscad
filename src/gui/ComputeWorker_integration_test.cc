@@ -362,3 +362,45 @@ TEST_CASE("A worker exits when its parent lets go of the channel", "[gui][Comput
   if (!exited) worker.kill(), worker.waitForFinished();
   CHECK(exited);
 }
+
+TEST_CASE("An unavailable compute worker does not block or respawn forever",
+          "[gui][ComputeWorkerIntegration]")
+{
+  // A broken install, a policy blocking the executable, or a sandboxed environment can all mean
+  // there is no program to spawn at all. Nothing here may block the GUI thread waiting for a
+  // process that will never start, and nothing here may keep retrying on its own once a request
+  // has failed -- respawn only happens lazily, in response to the next request, so a worker that
+  // can never start must not turn into a tight background retry loop.
+  ensureApplication();
+  ComputeWorker worker(QStringLiteral("/definitely/missing/openscad"),
+                       QStringList{QStringLiteral("--compute-worker")},
+                       QStringLiteral("OPENSCAD_IPC_CHANNEL"));
+
+  QElapsedTimer elapsed;
+  elapsed.start();
+  CHECK_FALSE(worker.start());
+  CHECK(elapsed.elapsed() < 2000);
+  CHECK(worker.processId() == 0);
+  CHECK_FALSE(worker.isRunning());
+
+  bool failed = false;
+  QString reason;
+  QObject::connect(&worker, &ComputeWorker::renderFailed, &worker, [&](const QString& r) {
+    reason = r;
+    failed = true;
+  });
+  worker.startRender(QString::fromStdString(writeModel("cube(1);", "openscad-worker-unavailable")), {},
+                     {}, {}, Camera{}, 0.0);
+
+  REQUIRE(waitFor([&] { return failed; }, 5000));
+  CHECK_FALSE(reason.isEmpty());
+  CHECK(worker.processId() == 0);
+
+  // A second request must fail exactly the same way rather than escalate into repeated spawn
+  // attempts piling up behind the first.
+  failed = false;
+  worker.startRender(QString::fromStdString(writeModel("cube(1);", "openscad-worker-unavailable-2")), {},
+                     {}, {}, Camera{}, 0.0);
+  REQUIRE(waitFor([&] { return failed; }, 5000));
+  CHECK(worker.processId() == 0);
+}

@@ -139,7 +139,14 @@ public:
   //! Whether this window counts itself busy. An isolated window releases the application-wide lock
   //! while its worker computes, so that lock alone no longer says whether a preview is in flight.
   bool isBusyForTest() const { return isBusy(); }
+  //! Kills this window's compute worker outright, as a crash or an OOM kill would. Used to prove
+  //! that a later request replaces it rather than leaving the window permanently unable to compute.
+  void exitComputeWorkerForTest();
 #endif
+  //! 0 when isolation is off or the worker is not currently running. Exposed outside the test guard
+  //! because it is also how a test can wait for a fresh worker to come up after
+  //! exitComputeWorkerForTest().
+  qint64 computeWorkerProcessId() const;
   ~MainWindow() override;
 
 private:
