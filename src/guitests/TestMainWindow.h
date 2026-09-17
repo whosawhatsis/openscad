@@ -28,6 +28,13 @@ private slots:
   //! must be replaced by the next request rather than leaving the window permanently unable to
   //! compute, and the editor's text must survive the crash untouched.
   void checkCrashedWorkerRespawns();
+  //! An isolated window's busy state must be its own: another window's in-process render, which
+  //! holds the application-wide lock for its whole synchronous duration, must not block this
+  //! window's worker request from starting or finishing.
+  void checkIsolatedWindowIsIndependentOfInProcessWindow();
+  //! Cancelling an isolated preview must release this window's lock -- not just kill the worker --
+  //! or the window is stuck reporting itself busy forever after a Stop.
+  void checkCancelReleasesIsolatedWindowLock();
   void checkInProcessPreviewProducesProducts();
   void checkOpenTabPropagateToWindow();
   void checkSaveToShouldUpdateWindowTitle();
