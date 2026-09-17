@@ -1,4 +1,6 @@
 #include "TestMainWindow.h"
+#include "gui/QSettingsCached.h"
+#include <QScopeGuard>
 #include "openscad.h"
 #include <QDoubleSpinBox>
 
@@ -170,6 +172,14 @@ void TestMainWindow::checkIsolatedAutoReloadPreviewUsesWorker()
   QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
   file.write("cube([10, 10, 10]);");
   file.close();
+
+  // Toggling auto-reload writes design/autoReload, and this test binary shares its settings with the
+  // user's real application. Put back the value that was there -- not an assumed default -- however
+  // this test exits, including a failed check's early return. Written straight to the settings rather
+  // than through the action, which would restart this window's timer on the way out.
+  const auto originalAutoReload = QSettingsCached{}.value("design/autoReload");
+  const auto restoreAutoReload = qScopeGuard(
+    [&originalAutoReload] { QSettingsCached{}.setValue("design/autoReload", originalAutoReload); });
 
   Feature::enable_feature("process-isolation");
   auto *window = new MainWindow{QStringList{}};  // leaked for the reason runInOwnWindow gives
