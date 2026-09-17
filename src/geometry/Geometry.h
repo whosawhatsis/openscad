@@ -82,7 +82,6 @@ public:
   // compute worker transport too.
   void setFinishParams(std::map<std::string, double> params) { finishParams_ = std::move(params); }
   [[nodiscard]] const std::map<std::string, double>& finishParams() const { return finishParams_; }
-  // The smoothing tolerance this geometry was generated for, in degrees: facets meeting
   void setMetallic(float m) { metallic_ = m; }
   [[nodiscard]] float metallic() const { return metallic_; }
   [[nodiscard]] const std::string& materialName() const { return materialName_; }

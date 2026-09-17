@@ -7,6 +7,8 @@
 // correct preview of concave objects, which blocks a merge.
 
 #include "io/ipc_geometry.h"
+#include <map>
+#include "geometry/SurfaceFinish.h"
 
 #include <catch2/catch_all.hpp>
 #include <memory>
@@ -224,5 +226,96 @@ TEST_CASE("An export after the IPC round trip is byte-identical", "[io][IPC][IPC
     const auto decoded = decode(encode(original));
     REQUIRE(decoded);
     CHECK(exportDxf(decoded) == exportDxf(original));
+  }
+}
+
+// Surface finish and body material. Geometry carries more than shape and color here: a per-surface
+// SurfaceFinish (parallel to colors), and on the Geometry itself a material name, roughness, metallic,
+// finish parameters, smoothing angle, and body boundary/color. None of it survived the transport, so
+// with process isolation on, material shading and smooth shading silently fell back to their defaults.
+// Every field is checked individually: one that is written but not read looks exactly like one never
+// written.
+TEST_CASE("IPC geometry codec preserves surface finish and body material", "[io][IPC][IPC-Geometry]")
+{
+  SECTION("per-surface finishes on a PolySet, parallel to its colors")
+  {
+    auto ps = coloredTetrahedron();
+    ps->finishes = {SurfaceFinish{0.2f, 0.9f, 0.5f, 0.0f}, SurfaceFinish{0.8f, 0.0f, 0.04f, 1.5f},
+                    SurfaceFinish{}};
+    REQUIRE(ps->finishes.size() == ps->colors.size());
+    const auto decoded = std::dynamic_pointer_cast<const PolySet>(decode(encode(ps)));
+    REQUIRE(decoded);
+    REQUIRE(decoded->finishes.size() == ps->finishes.size());
+    for (size_t i = 0; i < ps->finishes.size(); ++i) CHECK(decoded->finishes[i] == ps->finishes[i]);
+  }
+
+  SECTION("a PolySet with no finishes stays with none, rather than gaining defaults")
+  {
+    const auto decoded = std::dynamic_pointer_cast<const PolySet>(decode(encode(coloredTetrahedron())));
+    REQUIRE(decoded);
+    CHECK(decoded->finishes.empty());
+  }
+
+  const auto setMaterial = [](Geometry& g) {
+    g.setMaterialName("brushed steel");
+    g.setRoughness(0.35f);
+    g.setMetallic(0.75f);
+    g.setFinishParams({{"ior", 1.45}, {"specular", 0.6}});
+    g.setSmoothAngle(40.0);
+    g.setBodyBoundary(true);
+    g.setBodyColor(Color4f(0.1f, 0.2f, 0.3f, 0.4f));
+  };
+  const auto checkMaterial = [](const Geometry& g) {
+    CHECK(g.materialName() == "brushed steel");
+    CHECK(g.hasRoughness());
+    CHECK(g.roughness() == 0.35f);
+    CHECK(g.metallic() == 0.75f);
+    CHECK(g.finishParams() == std::map<std::string, double>{{"ior", 1.45}, {"specular", 0.6}});
+    CHECK(g.smoothAngle() == 40.0);
+    CHECK(g.isBodyBoundary());
+    CHECK(g.hasBodyColor());
+    CHECK(g.bodyColor() == Color4f(0.1f, 0.2f, 0.3f, 0.4f));
+  };
+
+  SECTION("body material on a PolySet")
+  {
+    auto ps = coloredTetrahedron();
+    setMaterial(*ps);
+    const auto decoded = decode(encode(ps));
+    REQUIRE(decoded);
+    checkMaterial(*decoded);
+  }
+
+  SECTION("body material on a Polygon2d")
+  {
+    auto poly = squareWithHole();
+    setMaterial(*poly);
+    const auto decoded = decode(encode(poly));
+    REQUIRE(decoded);
+    checkMaterial(*decoded);
+  }
+
+  SECTION("body material on a preview leaf, which uses the single-PolySet writer")
+  {
+    auto ps = coloredTetrahedron();
+    setMaterial(*ps);
+    std::ostringstream out(std::ios::binary);
+    export_ipc_geometry(*ps, out);
+    const auto bytes = out.str();
+    const auto decoded = import_ipc_polyset_buffer(bytes.data(), bytes.size(), "leaf");
+    REQUIRE(decoded);
+    checkMaterial(*decoded);
+  }
+
+  SECTION("an unset material decodes as unset, not as explicit defaults")
+  {
+    // roughness = 0 means a mirror, so "not set" must stay distinguishable from "set to 0".
+    const auto decoded = decode(encode(coloredTetrahedron()));
+    REQUIRE(decoded);
+    CHECK_FALSE(decoded->hasRoughness());
+    CHECK_FALSE(decoded->hasBodyColor());
+    CHECK_FALSE(decoded->isBodyBoundary());
+    CHECK(decoded->materialName().empty());
+    CHECK(decoded->finishParams().empty());
   }
 }

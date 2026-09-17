@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -10,6 +11,7 @@
 #include "geometry/Geometry.h"
 #include "geometry/PolySet.h"
 #include "geometry/PolySetUtils.h"
+#include "geometry/SurfaceFinish.h"
 #include "geometry/Polygon2d.h"
 #include "geometry/linalg.h"
 #include "utils/printutils.h"
@@ -20,7 +22,7 @@ namespace {
 // a different build, which is all the compatibility this format owes anyone -- both ends are the
 // same binary on the same machine.
 constexpr uint32_t kMagic = 0x4749534f;
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2;
 
 // What a body is. The transport carries meshes and 2D outlines; anything else (Manifold, Nef) is
 // converted to a PolySet on the way out, which is the one lossy step left here.
@@ -44,8 +46,28 @@ struct PolySetHeader {
   uint32_t polygonCount;
   uint32_t colorCount;
   uint32_t colorIndexCount;
+  //! Surface finishes, parallel to colors: either 0 or colorCount.
+  uint32_t finishCount;
+};
+
+// What a body is made of rather than what shape it is: material name, roughness, metallic, finish
+// parameters, smoothing angle, and body identity. It lives on Geometry, so it follows every body of
+// either kind. Without it an isolated preview or render shades at the defaults, which looks right
+// until a model sets a material.
+struct BodyAttributesHeader {
+  float roughness;
+  float metallic;
+  double smoothAngle;
+  float bodyColor[4];
+  uint32_t flags;  // bit 0 hasRoughness, bit 1 body boundary, bit 2 hasBodyColor
+  uint32_t materialNameSize;
+  uint32_t finishParamCount;
   uint32_t reserved;
 };
+
+// A corrupt header must not become a huge allocation. Real names and parameter lists are tiny.
+constexpr uint32_t kMaxAttributeStringSize = 1u << 16;
+constexpr uint32_t kMaxFinishParams = 1u << 12;
 
 struct Polygon2dHeader {
   int32_t convexity;
@@ -117,13 +139,14 @@ void appendPolySet(std::vector<char>& buffer, const PolySet& polyset)
   uint32_t indexCount = 0;
   for (const auto& face : polyset.indices) indexCount += face.size();
 
-  append(buffer,
-         PolySetHeader{
-           polyset.getDimension(), static_cast<int32_t>(polyset.getConvexity()),
-           static_cast<uint32_t>((polyset.isTriangular() ? 1u : 0u) | (polyset.isManifold() ? 2u : 0u)),
-           static_cast<uint32_t>(polyset.vertices.size()), static_cast<uint32_t>(polyset.indices.size()),
-           static_cast<uint32_t>(polyset.colors.size()),
-           static_cast<uint32_t>(polyset.color_indices.size()), 0});
+  append(
+    buffer,
+    PolySetHeader{
+      polyset.getDimension(), static_cast<int32_t>(polyset.getConvexity()),
+      static_cast<uint32_t>((polyset.isTriangular() ? 1u : 0u) | (polyset.isManifold() ? 2u : 0u)),
+      static_cast<uint32_t>(polyset.vertices.size()), static_cast<uint32_t>(polyset.indices.size()),
+      static_cast<uint32_t>(polyset.colors.size()), static_cast<uint32_t>(polyset.color_indices.size()),
+      static_cast<uint32_t>(polyset.finishes.size())});
   buffer.reserve(buffer.size() + polyset.vertices.size() * 3 * sizeof(double) +
                  (polyset.indices.size() + indexCount) * sizeof(uint32_t) +
                  polyset.colors.size() * 4 * sizeof(float) +
@@ -146,6 +169,37 @@ void appendPolySet(std::vector<char>& buffer, const PolySet& polyset)
     appendBytes(buffer, rgba, sizeof(rgba));
   }
   for (const auto index : polyset.color_indices) append(buffer, static_cast<int32_t>(index));
+  // Indexed exactly like colors, so a face's finish is found the same way its color is.
+  for (const auto& finish : polyset.finishes) {
+    const float values[4]{finish.roughness, finish.metallic, finish.reflectance, finish.emission};
+    appendBytes(buffer, values, sizeof(values));
+  }
+}
+
+void appendString(std::vector<char>& buffer, const std::string& value)
+{
+  appendBytes(buffer, value.data(), value.size());
+}
+
+void appendBodyAttributes(std::vector<char>& buffer, const Geometry& body)
+{
+  const auto& color = body.bodyColor();
+  append(buffer, BodyAttributesHeader{body.roughness(),
+                                      body.metallic(),
+                                      body.smoothAngle(),
+                                      {color.r(), color.g(), color.b(), color.a()},
+                                      static_cast<uint32_t>((body.hasRoughness() ? 1u : 0u) |
+                                                            (body.isBodyBoundary() ? 2u : 0u) |
+                                                            (body.hasBodyColor() ? 4u : 0u)),
+                                      static_cast<uint32_t>(body.materialName().size()),
+                                      static_cast<uint32_t>(body.finishParams().size()),
+                                      0});
+  appendString(buffer, body.materialName());
+  for (const auto& [key, value] : body.finishParams()) {
+    append(buffer, static_cast<uint32_t>(key.size()));
+    appendString(buffer, key);
+    append(buffer, value);
+  }
 }
 
 void appendBody(std::vector<char>& buffer, const std::shared_ptr<const Geometry>& body)
@@ -153,6 +207,7 @@ void appendBody(std::vector<char>& buffer, const std::shared_ptr<const Geometry>
   if (const auto polygon = std::dynamic_pointer_cast<const Polygon2d>(body)) {
     append(buffer, kKindPolygon2d);
     appendPolygon2d(buffer, *polygon);
+    appendBodyAttributes(buffer, *polygon);
     return;
   }
   // The same normalization the OFF exporter applies, so switching formats does not change which
@@ -160,6 +215,9 @@ void appendBody(std::vector<char>& buffer, const std::shared_ptr<const Geometry>
   const auto polyset = PolySetUtils::getGeometryAsPolySet(body);
   append(buffer, kKindPolySet);
   appendPolySet(buffer, *polyset);
+  // From the body as it arrived, not from the conversion: turning a Manifold into a PolySet is about
+  // shape, and need not carry the material along.
+  appendBodyAttributes(buffer, *body);
 }
 
 bool readListHeader(Cursor& cursor, const std::string& name, ListHeader& listHeader)
@@ -235,7 +293,57 @@ std::unique_ptr<PolySet> readPolySet(Cursor& cursor)
     if (!cursor.read(value)) return {};
     index = value;
   }
+  // Either none or one per color; anything else is not a payload this writer produced.
+  if (header.finishCount != 0 && header.finishCount != header.colorCount) return {};
+  polyset->finishes.resize(header.finishCount);
+  for (auto& finish : polyset->finishes) {
+    float values[4];
+    if (!cursor.read(values, sizeof(values))) return {};
+    finish.roughness = values[0];
+    finish.metallic = values[1];
+    finish.reflectance = values[2];
+    finish.emission = values[3];
+  }
   return polyset;
+}
+
+bool readString(Cursor& cursor, uint32_t size, std::string& value)
+{
+  if (size > kMaxAttributeStringSize) return false;
+  value.resize(size);
+  return size == 0 || cursor.read(value.data(), size);
+}
+
+//! False for a truncated or implausible block, which makes the whole payload unusable -- a body with
+//! half its material would render wrongly rather than visibly fail.
+bool readBodyAttributes(Cursor& cursor, Geometry& body)
+{
+  BodyAttributesHeader header{};
+  if (!cursor.read(header)) return false;
+  std::string materialName;
+  if (!readString(cursor, header.materialNameSize, materialName)) return false;
+  if (header.finishParamCount > kMaxFinishParams) return false;
+  std::map<std::string, double> params;
+  for (uint32_t i = 0; i < header.finishParamCount; ++i) {
+    uint32_t keySize = 0;
+    std::string key;
+    double value = 0;
+    if (!cursor.read(keySize) || !readString(cursor, keySize, key) || !cursor.read(value)) return false;
+    params.emplace(std::move(key), value);
+  }
+
+  // Only what was set is set: roughness = 0 is a mirror, so "not set" has to stay distinguishable.
+  if (header.flags & 1u) body.setRoughness(header.roughness);
+  body.setMetallic(header.metallic);
+  body.setSmoothAngle(header.smoothAngle);
+  if (header.flags & 2u) body.setBodyBoundary(true);
+  if (header.flags & 4u) {
+    body.setBodyColor(
+      Color4f(header.bodyColor[0], header.bodyColor[1], header.bodyColor[2], header.bodyColor[3]));
+  }
+  if (!materialName.empty()) body.setMaterialName(std::move(materialName));
+  if (!params.empty()) body.setFinishParams(std::move(params));
+  return true;
 }
 
 }  // namespace
@@ -263,6 +371,7 @@ void export_ipc_geometry(const PolySet& polyset, std::ostream& output)
   append(buffer, ListHeader{kMagic, kVersion, 1, 0});
   append(buffer, kKindPolySet);
   appendPolySet(buffer, polyset);
+  appendBodyAttributes(buffer, polyset);
   output.write(buffer.data(), buffer.size());
 }
 
@@ -284,7 +393,7 @@ std::shared_ptr<const Geometry> import_ipc_geometry_buffer(const char *data, con
       LOG(message_group::Error, "Compute worker geometry '%1$s' carries an unknown body kind.", name);
       return {};
     }
-    if (!body) return {};
+    if (!body || !readBodyAttributes(cursor, *body)) return {};
     bodies.emplace_back(nullptr, std::shared_ptr<const Geometry>(std::move(body)));
   }
 
@@ -308,5 +417,7 @@ std::unique_ptr<PolySet> import_ipc_polyset_buffer(const char *data, const std::
   }
   uint32_t kind = 0;
   if (!cursor.read(kind) || kind != kKindPolySet) return {};
-  return readPolySet(cursor);
+  auto polyset = readPolySet(cursor);
+  if (!polyset || !readBodyAttributes(cursor, *polyset)) return {};
+  return polyset;
 }

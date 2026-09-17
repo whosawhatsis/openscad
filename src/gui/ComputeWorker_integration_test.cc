@@ -11,6 +11,10 @@
 // ComputeWorker, exactly as a window will.
 
 #include "gui/ComputeWorker.h"
+#include <cmath>
+#include <algorithm>
+#include "geometry/SurfaceFinish.h"
+#include "Feature.h"
 
 #include "glview/Camera.h"
 
@@ -291,6 +295,44 @@ TEST_CASE("A cancelled render leaves the worker alive", "[gui][ComputeWorkerInte
     QString::fromStdString(writeModel("cube([10, 10, 10]);", "openscad-worker-after-cancel")), {}, {},
     {}, Camera{}, 0.0);
   REQUIRE(waitFor([&] { return completed; }));
+}
+
+TEST_CASE("An isolated render carries the body's material", "[gui][ComputeWorkerIntegration]")
+{
+  // The window shades what arrives. If a model's roughness never leaves the worker, an isolated F6
+  // shades at the default -- indistinguishable from a model that set no material. Checked on the
+  // decoded geometry itself: comparing payloads cannot isolate material, because adding a roughness
+  // also changes the color palette (colors and finishes are deduplicated as pairs), which was always
+  // transported.
+  Feature::enable_feature("multi-material");
+  auto worker = startRealWorker();
+
+  std::shared_ptr<const Geometry> result;
+  QString failure;
+  QObject::connect(worker.get(), &ComputeWorker::renderDone, worker.get(),
+                   [&](const std::shared_ptr<const Geometry>& geometry) { result = geometry; });
+  QObject::connect(worker.get(), &ComputeWorker::renderFailed, worker.get(),
+                   [&](const QString& reason) { failure = reason; });
+  worker->startRender(QString::fromStdString(
+                        writeModel("material(\"m\", c = \"red\", roughness = 0.9) sphere(20, $fn = 24);",
+                                   "openscad-worker-material")),
+                      {}, {}, {}, Camera{}, 0.0);
+  const bool answered = waitFor([&] { return result != nullptr || !failure.isEmpty(); });
+  Feature::enable_feature("multi-material", false);
+
+  REQUIRE(answered);
+  INFO("render failed with: " << failure.toStdString());
+  REQUIRE(result != nullptr);
+  const auto polyset = std::dynamic_pointer_cast<const PolySet>(result);
+  REQUIRE(polyset != nullptr);
+
+  const bool bodyRoughness = polyset->hasRoughness() && std::abs(polyset->roughness() - 0.9f) < 1e-4f;
+  const bool faceRoughness =
+    std::any_of(polyset->finishes.begin(), polyset->finishes.end(),
+                [](const SurfaceFinish& f) { return std::abs(f.roughness - 0.9f) < 1e-4f; });
+  INFO("body hasRoughness=" << polyset->hasRoughness() << " roughness=" << polyset->roughness()
+                            << " finishes=" << polyset->finishes.size());
+  CHECK((bodyRoughness || faceRoughness));
 }
 
 TEST_CASE("A worker that died is replaced on the next request", "[gui][ComputeWorkerIntegration]")
