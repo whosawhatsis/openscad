@@ -147,6 +147,10 @@ std::shared_ptr<PolySet> facesByTransparency(const PolySet& ps, const Color4f& d
   subset->setTriangular(ps.isTriangular());
   subset->vertices = ps.vertices;
   subset->colors = ps.colors;
+  // Surface finish is indexed like colors, and the body's material lives on the geometry itself, so
+  // both have to come along or a split mesh renders at the default roughness and metallic.
+  subset->finishes = ps.finishes;
+  subset->copyBodyAttributes(ps);
   for (size_t i = 0, n = ps.indices.size(); i < n; i++) {
     if (isTransparent(i) != wantTransparent) continue;
     subset->indices.push_back(ps.indices[i]);
