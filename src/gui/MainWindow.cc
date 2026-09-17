@@ -67,6 +67,7 @@
 #include <QTextStream>
 #include <QTime>
 #include <QTemporaryDir>
+#include <boost/property_tree/json_parser.hpp>
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
@@ -997,7 +998,9 @@ void MainWindow::selectPreviewViewMode()
 void MainWindow::compileEnded()
 {
   clearCurrentOutput();
-  GuiLocker::unlock();
+  // A worker request released the lock when it was sent; unlocking again would drop someone else's.
+  if (dispatchedToWorker) dispatchedToWorker = false;
+  else GuiLocker::unlock();
   if (designActionAutoReload->isChecked()) autoReloadTimer->start();
 #ifdef ENABLE_GUI_TESTS
   emit compilationDone(this->rootFile.get());
@@ -1870,7 +1873,7 @@ void MainWindow::on_designActionReloadAndPreview_triggered()
 
 void MainWindow::actionReloadRenderPreview()
 {
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   GuiLocker::lock();
   autoReloadTimer->stop();
   setCurrentOutput();
@@ -1913,20 +1916,32 @@ void MainWindow::on_designActionPreview_triggered()
 
 void MainWindow::actionRenderPreview()
 {
-  static bool preview_requested;
-  preview_requested = true;
+  previewRequested = true;
 
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) {
+    if (this->isolatedPreviewInFlight) {
+      if (previewRequestKey() == this->isolatedPreviewKey) {
+        // Nothing changed: the answer already on its way is the answer to this request too.
+        previewRequested = false;
+      } else if (!this->replacingIsolatedPreview && this->computeWorker) {
+        // The in-flight preview is of something the user has already moved past. Ask it to stop so
+        // the newer one does not wait for a stale result; it runs as soon as that one has answered.
+        this->replacingIsolatedPreview = true;
+        this->computeWorker->cancelRequest();
+      }
+    }
+    return;
+  }
 
   GuiLocker::lock();
-  preview_requested = false;
+  previewRequested = false;
 
   resetMeasurementsState(false, "Render (not preview) to enable measurements");
 
   prepareCompile("csgRender", !animateDock->isVisible(), true);
   compile(false, false);
 
-  if (preview_requested) {
+  if (previewRequested) {
     // if the action was called when the gui was locked, we must request it one more time
     // however, it's not possible to call it directly NOR make the loop
     // it must be called from the mainloop
@@ -1980,8 +1995,12 @@ void MainWindow::startIsolatedPreview()
 
   const QString sourceFile = writeSourceForWorker();
   if (sourceFile.isEmpty()) return;  // writeSourceForWorker has already reported why
+  this->isolatedPreviewInFlight = true;
+  this->isolatedPreviewKey = previewRequestKey();
+  ++this->isolatedPreviewRequests;
   // The window owns the OpenCSG limit, so the worker is told how far to normalize.
   const auto limit = 2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
+  releaseGuiLockForWorker();
   this->computeWorker->startPreview(
     sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
     this->activeEditor->filepath, limit, qglview->cam, this->animateWidget->getAnimTval());
@@ -1989,6 +2008,8 @@ void MainWindow::startIsolatedPreview()
 
 void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
 {
+  this->isolatedPreviewInFlight = false;
+  this->replacingIsolatedPreview = false;
   ++this->isolatedPreviews;
   this->rootProduct = products->root_products;
   this->highlightsProducts = products->highlights_products;
@@ -1999,6 +2020,7 @@ void MainWindow::isolatedPreviewDone(const std::shared_ptr<CsgInfo>& products)
   progress_report_fin();
   updateStatusBar(nullptr);
   finishPreview();
+  runPendingPreview();
 }
 
 // What a preview does once its products exist, whichever process produced them.
@@ -2090,7 +2112,7 @@ void MainWindow::sendToExternalTool(ExternalToolInterface& externalToolService)
 
 void MainWindow::on_designAction3DPrint_triggered()
 {
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   const GuiLocker lock;
 
   // Make sure we can export:
@@ -2121,7 +2143,7 @@ void MainWindow::on_designAction3DPrint_triggered()
 
 void MainWindow::on_designActionRender_triggered()
 {
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   GuiLocker::lock();
 
   prepareCompile("cgalRender", true, false);
@@ -2196,6 +2218,7 @@ void MainWindow::startIsolatedRender()
 {
   const QString sourceFile = writeSourceForWorker();
   if (sourceFile.isEmpty()) return;
+  releaseGuiLockForWorker();
   this->computeWorker->startRender(
     sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
     this->activeEditor->filepath, qglview->cam, this->animateWidget->getAnimTval());
@@ -2206,10 +2229,54 @@ void MainWindow::isolatedRenderFailed(const QString& reason)
   // Ends a failed render or preview. The window has to be released either way: a request that ends
   // without ending the progress state leaves the user with a progress bar and no way to start
   // another.
-  LOG(message_group::Error, "%1$s", reason.toStdString());
+  const bool wasPreview = this->isolatedPreviewInFlight;
+  const bool replaced = this->replacingIsolatedPreview;
+  this->isolatedPreviewInFlight = false;
+  this->replacingIsolatedPreview = false;
+  // A preview the user replaced with a newer one was cancelled on purpose; saying so as an error
+  // would report a failure for something that went exactly as asked.
+  if (!replaced) LOG(message_group::Error, "%1$s", reason.toStdString());
   progress_report_fin();
   updateStatusBar(nullptr);
   compileEnded();
+  if (wasPreview) runPendingPreview();
+}
+
+bool MainWindow::isBusy() const
+{
+  return GuiLocker::isLocked() || this->dispatchedToWorker;
+}
+
+void MainWindow::releaseGuiLockForWorker()
+{
+  GuiLocker::unlock();
+  this->dispatchedToWorker = true;
+}
+
+void MainWindow::runPendingPreview()
+{
+  // Not called directly: this runs from inside the previous preview's completion, and starting the
+  // next one has to wait for the event loop, as actionRenderPreview() itself does.
+  if (previewRequested) QTimer::singleShot(0, this, &MainWindow::actionRenderPreview);
+}
+
+QString MainWindow::previewRequestKey()
+{
+  QString key = this->activeEditor->toPlainText();
+  key += QChar(3);
+  key += QString::fromStdString(commandline_commands);
+  // ponytail: values are compared as their JSON text, which is exact for a value that has not
+  // changed -- the only case this key has to recognize.
+  for (const auto& [name, value] :
+       this->activeEditor->parameterWidget->exportValues(kWorkerParameterSet)) {
+    std::ostringstream json;
+    boost::property_tree::write_json(json, value, false);
+    key += QChar(3);
+    key += QString::fromStdString(name);
+    key += QChar(4);
+    key += QString::fromStdString(json.str());
+  }
+  return key;
 }
 
 void MainWindow::actionRenderDone(const std::shared_ptr<const Geometry>& root_geom)
@@ -2642,7 +2709,7 @@ void MainWindow::on_designActionDisplayCSGProducts_triggered()
 
 void MainWindow::on_designCheckValidity_triggered()
 {
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   const GuiLocker lock;
   auto guard = scopedSetCurrentOutput();
 
@@ -2740,7 +2807,7 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
   const auto suffix = QString::fromStdString(exportInfo.info.suffix);
 
   // Setting filename skips the file selection dialog and uses the path provided instead.
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   const GuiLocker lock;
 
   auto guard = scopedSetCurrentOutput();

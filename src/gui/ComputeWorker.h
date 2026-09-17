@@ -104,6 +104,16 @@ signals:
 
 private:
   /*!
+     Makes sure there is a live child to send to, replacing one that has died.
+
+     A worker can go away under its window -- a crash, the OS reclaiming memory, or the kill a
+     cancellation escalates to -- and without this the window could never compute again until the
+     application restarted. Only called with no request in flight, so a request that is still
+     unwinding from its child's death is never restarted underneath.
+   */
+  bool ensureRunning();
+
+  /*!
      Sends a request on a thread of its own and delivers the result back on the caller's thread.
 
      `deliver` is called exactly once, with the payloads that arrived and the worker's answer, or
