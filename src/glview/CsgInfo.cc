@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "geometry/PolySet.h"
+#include "geometry/SurfaceFinish.h"
 #include "io/ipc_endpoint.h"
 #include "io/ipc_channel.h"
 #include "io/ipc_geometry.h"
@@ -67,6 +68,12 @@ json writeChain(const std::vector<CSGChainObject>& chain, const std::string& fil
                       {"color",
                        {object.leaf->color.r(), object.leaf->color.g(), object.leaf->color.b(),
                         object.leaf->color.a()}},
+                      // The leaf's material and finish, which the preview shades with. Like color,
+                      // they live on the leaf rather than in the mesh payload.
+                      {"materialName", object.leaf->materialName},
+                      {"finish",
+                       {object.leaf->finish.roughness, object.leaf->finish.metallic,
+                        object.leaf->finish.reflectance, object.leaf->finish.emission}},
                       {"label", object.leaf->label},
                       {"index", object.leaf->index},
                       {"flags", object.flags}});
@@ -166,8 +173,17 @@ bool readChain(const json& input, std::vector<CSGChainObject>& output,
     const auto channels = item.value("color", std::vector<float>{});
     if (channels.size() != 4) return false;
 
+    SurfaceFinish finish;
+    const auto finishValues = item.value("finish", std::vector<float>{});
+    if (finishValues.size() == 4) {
+      finish.roughness = finishValues[0];
+      finish.metallic = finishValues[1];
+      finish.reflectance = finishValues[2];
+      finish.emission = finishValues[3];
+    }
     auto leaf = std::make_shared<CSGLeaf>(polyset, matrix,
                                           Color4f(channels[0], channels[1], channels[2], channels[3]),
+                                          item.value("materialName", std::string{}), finish,
                                           item.value("label", std::string{}), item.value("index", 0));
     output.emplace_back(leaf, static_cast<CSGNode::Flag>(item.value("flags", 0)));
   }

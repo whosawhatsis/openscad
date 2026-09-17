@@ -12,6 +12,7 @@
 // since it is the sink that decides when to write.
 
 #include "glview/CsgInfo.h"
+#include "geometry/SurfaceFinish.h"
 
 #include <catch2/catch_all.hpp>
 #include <map>
@@ -39,7 +40,7 @@ std::shared_ptr<CSGLeaf> leaf(const std::shared_ptr<const PolySet>& ps, const Co
 {
   Transform3d matrix = Transform3d::Identity();
   matrix.translate(Vector3d(index * 10.0, 0, 0));
-  return std::make_shared<CSGLeaf>(ps, matrix, color, label, index);
+  return std::make_shared<CSGLeaf>(ps, matrix, color, std::string{}, SurfaceFinish{}, label, index);
 }
 
 // Stands in for the far end of the channel, keeping what the sink sends. This is what makes the

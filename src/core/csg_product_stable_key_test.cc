@@ -9,6 +9,7 @@
 #include <string>
 
 #include "core/CSGNode.h"
+#include "geometry/SurfaceFinish.h"
 #include "geometry/PolySet.h"
 #include "geometry/linalg.h"
 
@@ -30,7 +31,8 @@ std::shared_ptr<PolySet> strip(size_t vertices, double offset = 0)
 CSGProduct product(const std::shared_ptr<PolySet>& ps, const Color4f& color)
 {
   CSGProduct p;
-  p.intersections.emplace_back(std::make_shared<CSGLeaf>(ps, Transform3d::Identity(), color, "leaf", 0));
+  p.intersections.emplace_back(std::make_shared<CSGLeaf>(ps, Transform3d::Identity(), color,
+                                                         std::string{}, SurfaceFinish{}, "leaf", 0));
   return p;
 }
 
