@@ -773,6 +773,8 @@ void TestMainWindow::checkClosingWindowDoesNotUseFreedMembers()
   QCoreApplication::processEvents();
 
   QCOMPARE(scadApp->windowManager.getWindows().size(), windowCountBefore);
+}
+
 // ------------------------------------------------------------------------------------------
 // Process isolation, from the window's point of view.
 //
