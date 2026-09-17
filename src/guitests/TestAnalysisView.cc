@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QImage>
+#include <QScopeGuard>
 #include <QString>
 #include <QTest>
 #include <QElapsedTimer>
@@ -176,6 +177,13 @@ void TestAnalysisView::checkDepthIsOneOfTheModes()
 
 void TestAnalysisView::checkShadedComposesWithEdges()
 {
+  // Toggling Show Edges writes view/showEdges, and this binary shares its settings with the user's real
+  // application. Put back the state that was there -- not an assumed "off" -- however this exits,
+  // including a failed check's early return, which used to leave it switched on in the user's app.
+  const bool originalShowEdges = window->viewActionShowEdges->isChecked();
+  const auto restoreShowEdges = qScopeGuard(
+    [this, originalShowEdges] { window->viewActionShowEdges->setChecked(originalShowEdges); });
+
   restoreWindowInitialState();
 
   const QString filename =
