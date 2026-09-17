@@ -332,9 +332,10 @@ QString slowPreviewModel(int salt)
     .arg(salt);
 }
 
-//! Pumps events until the window has been idle -- no GUI lock held -- for a short stretch, so a
-//! preview that re-runs itself on completion has had its chance to start and finish.
-bool waitUntilSettled(int timeoutMs = 90000)
+//! Pumps events until the windows have been idle for a short stretch, so a preview that re-runs
+//! itself on completion has had its chance to start and finish. Idle means the windows themselves
+//! say so: an isolated window releases the application-wide lock while its worker computes.
+bool waitUntilSettled(std::initializer_list<MainWindow *> windows, int timeoutMs = 90000)
 {
   QElapsedTimer total;
   total.start();
@@ -342,7 +343,10 @@ bool waitUntilSettled(int timeoutMs = 90000)
   bool idleRunning = false;
   while (total.elapsed() < timeoutMs) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    if (GuiLocker::isLocked()) {
+    const bool busy =
+      GuiLocker::isLocked() ||
+      std::any_of(windows.begin(), windows.end(), [](MainWindow *w) { return w->isBusyForTest(); });
+    if (busy) {
       idleRunning = false;
     } else if (!idleRunning) {
       idle.start();
@@ -370,14 +374,14 @@ void TestMainWindow::checkF5DuringAnInFlightPreviewShowsTheEditedModel()
   window->activeEditor->setPlainText(slowPreviewModel(1));
   window->designActionPreview->trigger();
   QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-  QVERIFY2(GuiLocker::isLocked(),
+  QVERIFY2(window->isBusyForTest(),
            "the first preview finished before the second F5, so this would not exercise an in-flight "
            "preview at all");
 
   window->activeEditor->setPlainText(QStringLiteral("cube(7);"));
   window->designActionPreview->trigger();
 
-  QVERIFY2(waitUntilSettled(), "the window never settled after the second F5");
+  QVERIFY2(waitUntilSettled({window}), "the window never settled after the second F5");
   const auto products = window->previewProductsForTest();
   QVERIFY2(products != nullptr, "no preview is showing");
   QCOMPARE(products->getBoundingBox().max().x(), 7.0);
@@ -397,14 +401,49 @@ void TestMainWindow::checkIdenticalPreviewRequestIsNotRepeated()
 
   window->designActionPreview->trigger();
   QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-  QVERIFY2(GuiLocker::isLocked(), "the first preview finished before the repeat F5 arrived");
+  QVERIFY2(window->isBusyForTest(), "the first preview finished before the repeat F5 arrived");
   window->designActionPreview->trigger();
 
-  QVERIFY2(waitUntilSettled(), "the window never settled after the repeat F5");
+  QVERIFY2(waitUntilSettled({window}), "the window never settled after the repeat F5");
   QCOMPARE(window->isolatedPreviewsForTest() - before, 1);
   // One request, not two. Cancelling the first preview and running the same thing again would also
   // finish with a single completed preview, having thrown the first one's work away.
   QCOMPARE(window->isolatedPreviewRequestsForTest() - requestsBefore, 1);
+}
+
+// Each window has its own worker process, so one window's slow preview must not hold up another's.
+// That is half the reason for isolation: a heavy model in one window should leave the rest usable.
+// The second window's quick preview has to finish -- showing its own model -- while the first is
+// still computing, rather than waiting its turn behind it.
+void TestMainWindow::checkIsolatedWindowsPreviewConcurrently()
+{
+  Feature::enable_feature("process-isolation");
+  auto *slow = new MainWindow{QStringList{}};
+  auto *quick = new MainWindow{QStringList{}};
+  Feature::enable_feature("process-isolation", false);
+
+  slow->activeEditor->setPlainText(slowPreviewModel(3));
+  const auto slowBefore = slow->isolatedPreviewsForTest();
+  slow->designActionPreview->trigger();
+  QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+  QCOMPARE(slow->isolatedPreviewsForTest(), slowBefore);  // the slow preview is really in flight
+
+  quick->activeEditor->setPlainText(QStringLiteral("cube(9);"));
+  const auto quickBefore = quick->isolatedPreviewsForTest();
+  quick->designActionPreview->trigger();
+
+  QElapsedTimer timer;
+  timer.start();
+  while (quick->isolatedPreviewsForTest() == quickBefore && timer.elapsed() < 60000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  QVERIFY2(quick->isolatedPreviewsForTest() > quickBefore,
+           "the second window's preview never ran: it was blocked by the first window's");
+  QVERIFY2(slow->isolatedPreviewsForTest() == slowBefore,
+           "the second window only finished after the first did, so they ran one after another");
+  QCOMPARE(quick->previewProductsForTest()->getBoundingBox().max().x(), 9.0);
+
+  QVERIFY2(waitUntilSettled({slow, quick}), "the windows never settled");
 }
 
 void TestMainWindow::checkIsolatedRenderUsesCustomizerValues()

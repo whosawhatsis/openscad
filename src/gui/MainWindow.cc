@@ -972,7 +972,9 @@ void MainWindow::selectPreviewViewMode()
 void MainWindow::compileEnded()
 {
   clearCurrentOutput();
-  GuiLocker::unlock();
+  // A worker request released the lock when it was sent; unlocking again would drop someone else's.
+  if (dispatchedToWorker) dispatchedToWorker = false;
+  else GuiLocker::unlock();
   if (designActionAutoReload->isChecked()) autoReloadTimer->start();
 #ifdef ENABLE_GUI_TESTS
   emit compilationDone(this->rootFile.get());
@@ -1845,7 +1847,7 @@ void MainWindow::on_designActionReloadAndPreview_triggered()
 
 void MainWindow::actionReloadRenderPreview()
 {
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   GuiLocker::lock();
   autoReloadTimer->stop();
   setCurrentOutput();
@@ -1890,7 +1892,7 @@ void MainWindow::actionRenderPreview()
 {
   previewRequested = true;
 
-  if (GuiLocker::isLocked()) {
+  if (isBusy()) {
     if (this->isolatedPreviewInFlight) {
       if (previewRequestKey() == this->isolatedPreviewKey) {
         // Nothing changed: the answer already on its way is the answer to this request too.
@@ -1972,6 +1974,7 @@ void MainWindow::startIsolatedPreview()
   ++this->isolatedPreviewRequests;
   // The window owns the OpenCSG limit, so the worker is told how far to normalize.
   const auto limit = 2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
+  releaseGuiLockForWorker();
   this->computeWorker->startPreview(
     sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
     this->activeEditor->filepath, limit, qglview->cam, this->animateWidget->getAnimTval());
@@ -2055,7 +2058,7 @@ void MainWindow::sendToExternalTool(ExternalToolInterface& externalToolService)
 
 void MainWindow::on_designAction3DPrint_triggered()
 {
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   const GuiLocker lock;
 
   // Make sure we can export:
@@ -2086,7 +2089,7 @@ void MainWindow::on_designAction3DPrint_triggered()
 
 void MainWindow::on_designActionRender_triggered()
 {
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   GuiLocker::lock();
 
   prepareCompile("cgalRender", true, false);
@@ -2161,6 +2164,7 @@ void MainWindow::startIsolatedRender()
 {
   const QString sourceFile = writeSourceForWorker();
   if (sourceFile.isEmpty()) return;
+  releaseGuiLockForWorker();
   this->computeWorker->startRender(
     sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
     this->activeEditor->filepath, qglview->cam, this->animateWidget->getAnimTval());
@@ -2182,6 +2186,17 @@ void MainWindow::isolatedRenderFailed(const QString& reason)
   updateStatusBar(nullptr);
   compileEnded();
   if (wasPreview) runPendingPreview();
+}
+
+bool MainWindow::isBusy() const
+{
+  return GuiLocker::isLocked() || this->dispatchedToWorker;
+}
+
+void MainWindow::releaseGuiLockForWorker()
+{
+  GuiLocker::unlock();
+  this->dispatchedToWorker = true;
 }
 
 void MainWindow::runPendingPreview()
@@ -2651,7 +2666,7 @@ void MainWindow::on_designActionDisplayCSGProducts_triggered()
 
 void MainWindow::on_designCheckValidity_triggered()
 {
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   const GuiLocker lock;
   auto guard = scopedSetCurrentOutput();
 
@@ -2749,7 +2764,7 @@ void MainWindow::actionExport(unsigned int dim, ExportInfo& exportInfo)
   const auto suffix = QString::fromStdString(exportInfo.info.suffix);
 
   // Setting filename skips the file selection dialog and uses the path provided instead.
-  if (GuiLocker::isLocked()) return;
+  if (isBusy()) return;
   const GuiLocker lock;
 
   auto guard = scopedSetCurrentOutput();

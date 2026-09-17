@@ -136,6 +136,9 @@ public:
   //! Counts previews *sent* to the worker. Completions alone cannot tell a repeat request that was
   //! skipped from one that cancelled the first preview and ran again: both end with one completion.
   int isolatedPreviewRequestsForTest() const { return this->isolatedPreviewRequests; }
+  //! Whether this window counts itself busy. An isolated window releases the application-wide lock
+  //! while its worker computes, so that lock alone no longer says whether a preview is in flight.
+  bool isBusyForTest() const { return isBusy(); }
 #endif
   ~MainWindow() override;
 
@@ -499,6 +502,21 @@ private:
      so the request has to survive until then or it is silently lost.
    */
   bool previewRequested = false;
+  /*!
+     This window handed its work to its worker and released the application-wide GUI lock while the
+     worker computes. The lock exists because in-process computation runs on the one GUI thread every
+     window shares; an isolated window's computation runs in its own process, so holding the lock
+     across that wait needlessly stopped every OTHER window from previewing. The window still counts
+     as busy to itself until compileEnded().
+   */
+  bool dispatchedToWorker = false;
+  //! Locked for this window: either something holds the application-wide lock, or this window's own
+  //! worker is still computing.
+  bool isBusy() const;
+  //! Releases the application-wide lock for the duration of a worker request. Called BEFORE sending,
+  //! because a worker that cannot take the request reports that synchronously, and compileEnded()
+  //! must then find this already done rather than unlock a second time.
+  void releaseGuiLockForWorker();
   //! True from sending an isolated preview until its answer arrives.
   bool isolatedPreviewInFlight = false;
   //! What the in-flight preview was computed from, so a repeat F5 with nothing changed is not queued.
