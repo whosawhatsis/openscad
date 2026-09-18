@@ -221,7 +221,9 @@ int gui(std::vector<std::string>& inputFiles, const std::filesystem::path& origi
   QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 #endif
 
-#ifndef Q_OS_MACOS
+#ifdef Q_OS_MACOS
+  app.setWindowIcon(QIcon(":/icon-macos.png"));
+#else
   app.setWindowIcon(QIcon(":/logo.png"));
 #endif
 
