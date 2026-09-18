@@ -67,7 +67,6 @@
 #include <QTextStream>
 #include <QTime>
 #include <QTemporaryDir>
-#include <boost/property_tree/json_parser.hpp>
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
@@ -1019,7 +1018,17 @@ std::shared_ptr<AbstractNode> MainWindow::instantiateRootFromSource(SourceFile *
 
   return node;
 }
+
+void MainWindow::exitComputeWorkerForTest()
+{
+  if (this->computeWorker) this->computeWorker->cancel();
+}
 #endif  // ifdef ENABLE_GUI_TESTS
+
+qint64 MainWindow::computeWorkerProcessId() const
+{
+  return this->computeWorker ? this->computeWorker->processId() : 0;
+}
 
 void MainWindow::instantiateRoot()
 {
@@ -1874,7 +1883,7 @@ void MainWindow::on_designActionReloadAndPreview_triggered()
 void MainWindow::actionReloadRenderPreview()
 {
   if (isBusy()) return;
-  GuiLocker::lock();
+  lockForNewRequest();
   autoReloadTimer->stop();
   setCurrentOutput();
 
@@ -1933,7 +1942,7 @@ void MainWindow::actionRenderPreview()
     return;
   }
 
-  GuiLocker::lock();
+  lockForNewRequest();
   previewRequested = false;
 
   resetMeasurementsState(false, "Render (not preview) to enable measurements");
@@ -2000,7 +2009,8 @@ void MainWindow::startIsolatedPreview()
   ++this->isolatedPreviewRequests;
   // The window owns the OpenCSG limit, so the worker is told how far to normalize.
   const auto limit = 2ul * GlobalPreferences::inst()->getValue("advanced/openCSGLimit").toUInt();
-  releaseGuiLockForWorker();
+  // dispatchedToWorker is already set: lockForNewRequest() set it when this window's action
+  // handler started, well before parsing reached here.
   this->computeWorker->startPreview(
     sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
     this->activeEditor->filepath, limit, qglview->cam, this->animateWidget->getAnimTval());
@@ -2144,7 +2154,7 @@ void MainWindow::on_designAction3DPrint_triggered()
 void MainWindow::on_designActionRender_triggered()
 {
   if (isBusy()) return;
-  GuiLocker::lock();
+  lockForNewRequest();
 
   prepareCompile("cgalRender", true, false);
   compile(false);
@@ -2218,7 +2228,8 @@ void MainWindow::startIsolatedRender()
 {
   const QString sourceFile = writeSourceForWorker();
   if (sourceFile.isEmpty()) return;
-  releaseGuiLockForWorker();
+  // dispatchedToWorker is already set: lockForNewRequest() set it when this window's action
+  // handler started, well before parsing reached here.
   this->computeWorker->startRender(
     sourceFile, writeParametersForWorker(), QString::fromStdString(kWorkerParameterSet),
     this->activeEditor->filepath, qglview->cam, this->animateWidget->getAnimTval());
@@ -2244,13 +2255,17 @@ void MainWindow::isolatedRenderFailed(const QString& reason)
 
 bool MainWindow::isBusy() const
 {
-  return GuiLocker::isLocked() || this->dispatchedToWorker;
+  // Never both: an isolated window's busy state is its own dispatchedToWorker, full stop, so
+  // another window's in-process render -- which holds GuiLocker for its whole synchronous
+  // duration -- cannot hold this window up, and this window's own worker request cannot hold any
+  // other window up either.
+  return this->computeWorker ? this->dispatchedToWorker : GuiLocker::isLocked();
 }
 
-void MainWindow::releaseGuiLockForWorker()
+void MainWindow::lockForNewRequest()
 {
-  GuiLocker::unlock();
-  this->dispatchedToWorker = true;
+  if (this->computeWorker) this->dispatchedToWorker = true;
+  else GuiLocker::lock();
 }
 
 void MainWindow::runPendingPreview()
@@ -2265,16 +2280,16 @@ QString MainWindow::previewRequestKey()
   QString key = this->activeEditor->toPlainText();
   key += QChar(3);
   key += QString::fromStdString(commandline_commands);
-  // ponytail: values are compared as their JSON text, which is exact for a value that has not
-  // changed -- the only case this key has to recognize.
+  // Every ParameterObject::exportValue() returns a leaf holding the value already serialized -- the
+  // same text the Customizer writes to a .json parameter set -- so its data() is the comparable
+  // form. Do not route it through write_json(): JSON has no top-level scalar, so Boost rejects a
+  // bare leaf, and every parameterized document aborted its preview here.
   for (const auto& [name, value] :
        this->activeEditor->parameterWidget->exportValues(kWorkerParameterSet)) {
-    std::ostringstream json;
-    boost::property_tree::write_json(json, value, false);
     key += QChar(3);
     key += QString::fromStdString(name);
     key += QChar(4);
-    key += QString::fromStdString(json.str());
+    key += QString::fromStdString(value.data());
   }
   return key;
 }
@@ -2647,7 +2662,13 @@ void MainWindow::exceptionCleanup()
 {
   LOG("Execution aborted");
   LOG(" ");
-  GuiLocker::unlock();
+  // An exception during parsing/evaluation aborts before an isolated window ever reaches its
+  // worker dispatch, so lockForNewRequest()'s choice must be undone the same way compileEnded()
+  // undoes it: this window's own flag if isolated, the application-wide lock otherwise. Calling
+  // GuiLocker::unlock() unconditionally would underflow it for an isolated window, which never
+  // locked it in the first place.
+  if (this->computeWorker) this->dispatchedToWorker = false;
+  else GuiLocker::unlock();
   if (designActionAutoReload->isChecked()) autoReloadTimer->start();
 }
 
@@ -2660,7 +2681,10 @@ void MainWindow::UnknownExceptionCleanup(std::string msg)
     LOG(message_group::Error, "Compilation aborted by exception: %1$s", msg);
   }
   LOG(" ");
-  GuiLocker::unlock();
+  // See exceptionCleanup(): must match how this window's request was locked, not just unlock the
+  // application-wide counter unconditionally.
+  if (this->computeWorker) this->dispatchedToWorker = false;
+  else GuiLocker::unlock();
   if (designActionAutoReload->isChecked()) autoReloadTimer->start();
 }
 

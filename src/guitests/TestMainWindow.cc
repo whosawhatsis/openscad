@@ -18,10 +18,12 @@
 #include <QStringList>
 #include <QTest>
 #include <QImage>
+#include <QTimer>
 #include <memory>
 
 #include "geometry/Geometry.h"
 #include "gui/Editor.h"
+#include "gui/ProgressWidget.h"
 #include "gui/parameter/ParameterWidget.h"
 
 #include <functional>
@@ -919,6 +921,23 @@ void TestMainWindow::checkIsolatedAutoReloadPreviewUsesWorker()
   QCOMPARE(window->isolatedPreviewsForTest(), 1);
 }
 
+// Any document with a Customizer parameter has to preview under isolation. The request key built
+// for the in-flight-preview comparison serializes each parameter value on its own, and a value
+// exported by the Customizer is a bare ptree leaf -- which Boost's write_json refuses, because JSON
+// has no top-level scalar. Every such preview aborted with "ptree contains data that cannot be
+// represented in JSON format", so isolation was unusable on any parameterized file. The existing
+// preview tests all use sources without parameters, which is why this went unnoticed.
+void TestMainWindow::checkIsolatedPreviewWithCustomizerParameterSucceeds()
+{
+  Feature::enable_feature("process-isolation");
+  auto *window = runInOwnWindow(QStringLiteral("pw_side = 5; cube([pw_side, 5, 5]);"), true);
+  Feature::enable_feature("process-isolation", false);
+
+  QVERIFY2(window != nullptr, "an isolated preview of a parameterized document never finished");
+  QVERIFY2(window->previewProductsForTest() != nullptr,
+           "an isolated preview of a parameterized document produced no product list");
+}
+
 void TestMainWindow::checkIsolatedPreviewUsesGuiColorScheme()
 {
 #ifdef ENABLE_OPENCSG
@@ -1192,6 +1211,128 @@ void TestMainWindow::checkInProcessPreviewProducesProducts()
   auto *window = runInOwnWindow(QStringLiteral("cube([10, 10, 10]);"), true);
   QVERIFY2(window != nullptr, "the in-process preview never finished either");
   QVERIFY2(window->previewProductsForTest() != nullptr, "no product list in-process");
+}
+
+void TestMainWindow::checkCrashedWorkerRespawns()
+{
+  // A worker can go away under its window -- a crash, the OS reclaiming memory, or the kill a
+  // cancellation escalates to. Before respawn, the window then had no worker for the rest of its
+  // life: every later F5/F6 failed with "not running" until the application was restarted, which is
+  // exactly the wedged window this feature exists to prevent.
+  Feature::enable_feature("process-isolation");
+  auto *window = runInOwnWindow(QStringLiteral("cube([10, 10, 10]);"), false);
+  QVERIFY2(window != nullptr, "an isolated render never finished");
+  const auto editorTextBeforeCrash = window->activeEditor->toPlainText();
+
+  const auto workerBeforeCrash = window->computeWorkerProcessId();
+  QVERIFY2(workerBeforeCrash > 0, "the window has no live compute worker to kill");
+
+  window->exitComputeWorkerForTest();
+  QElapsedTimer diedTimer;
+  diedTimer.start();
+  while (window->computeWorkerProcessId() != 0 && diedTimer.elapsed() < 5000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  QCOMPARE(window->computeWorkerProcessId(), qint64{0});
+  // The window's own lock must release when its worker dies, not just when a request completes --
+  // otherwise "not running" is followed by "permanently busy" instead of a working respawn.
+  QVERIFY2(!window->isBusyForTest(), "the window is still marked busy after its worker died");
+
+  // The editor must not lose the user's text just because the process underneath it died.
+  QCOMPARE(window->activeEditor->toPlainText(), editorTextBeforeCrash);
+
+  // The next render must succeed anyway, and must do so with a fresh process rather than a wedged
+  // window that keeps failing "not running" forever.
+  renderAgain(window);
+  const auto polyset = std::dynamic_pointer_cast<const PolySet>(window->rootGeom);
+  QVERIFY2(polyset != nullptr, "the render after the crash produced no mesh");
+
+  const auto workerAfterRespawn = window->computeWorkerProcessId();
+  QVERIFY2(workerAfterRespawn > 0, "no worker is running after the respawned render");
+  QVERIFY2(workerAfterRespawn != workerBeforeCrash, "the respawned worker reused the dead PID");
+
+  Feature::enable_feature("process-isolation", false);
+}
+
+void TestMainWindow::checkIsolatedWindowIsIndependentOfInProcessWindow()
+{
+  // The in-process path legitimately shares one application-wide lock across every window --
+  // that path's caches and evaluation state are not safe for two windows to touch at once. An
+  // isolated window has none of that: its geometry is computed by its own worker process, so
+  // nothing about another window's in-process render should be able to hold it up.
+  Feature::enable_feature("process-isolation", false);
+  auto *inProcess = new MainWindow{QStringList{}};
+  Feature::enable_feature("process-isolation");
+  auto *isolated = new MainWindow{QStringList{}};
+  Feature::enable_feature("process-isolation", false);
+
+  inProcess->activeEditor->setPlainText(slowPreviewModel(31));
+  isolated->activeEditor->setPlainText(QStringLiteral("cube(9);"));
+
+  // An in-process preview is one synchronous call: trigger() does not return to this test until
+  // the whole render is finished, so there is no window afterwards in which to observe it "still
+  // running". report_func() pumps the event loop a few times a second while it computes, though --
+  // the same mechanism that keeps the app responsive during a long boolean -- so a timer queued
+  // before the trigger fires *from inside* that nested loop, while the in-process window still
+  // genuinely holds the application-wide lock. That is the real window to try dispatching the
+  // isolated window's own request in.
+  bool triedWhileLocked = false;
+  bool wasLockedAtTheTime = false;
+  const auto isolatedPreviewsBefore = isolated->isolatedPreviewsForTest();
+  QTimer::singleShot(50, [&] {
+    triedWhileLocked = true;
+    wasLockedAtTheTime = GuiLocker::isLocked();
+    isolated->designActionPreview->trigger();
+  });
+  inProcess->designActionPreview->trigger();
+  QVERIFY2(triedWhileLocked, "the timer never fired during the in-process render");
+  QVERIFY2(wasLockedAtTheTime, "the in-process preview had already released the application-wide lock");
+
+  QElapsedTimer timer;
+  timer.start();
+  while (isolated->isolatedPreviewsForTest() == isolatedPreviewsBefore && timer.elapsed() < 60000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  QVERIFY2(isolated->isolatedPreviewsForTest() > isolatedPreviewsBefore,
+           "the isolated window's preview was blocked by the other window's in-process render");
+
+  QVERIFY2(waitUntilSettled({inProcess, isolated}), "the windows never settled");
+}
+
+void TestMainWindow::checkCancelReleasesIsolatedWindowLock()
+{
+  // Cancelling has to release this window's own lock, not just end up killing the worker: a Stop
+  // that leaves the window reporting itself busy is indistinguishable, from the user's seat, from
+  // the wedged window process isolation exists to prevent.
+  Feature::enable_feature("process-isolation");
+  auto *window = new MainWindow{QStringList{}};
+  Feature::enable_feature("process-isolation", false);
+
+  window->activeEditor->setPlainText(slowPreviewModel(32));
+  window->designActionPreview->trigger();
+  QVERIFY2(window->isBusyForTest(), "the isolated preview never marked the window busy");
+
+  auto *progress = window->findChild<ProgressWidget *>();
+  QVERIFY(progress != nullptr);
+  progress->cancel();
+
+  QElapsedTimer timer;
+  timer.start();
+  while (window->isBusyForTest() && timer.elapsed() < 15000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  QVERIFY2(!window->isBusyForTest(), "cancelling an isolated preview left the window's lock held");
+
+  // And the window must be usable again immediately, not just unlocked in name.
+  window->activeEditor->setPlainText(QStringLiteral("cube(9);"));
+  const auto previewsBefore = window->isolatedPreviewsForTest();
+  window->designActionPreview->trigger();
+  timer.restart();
+  while (window->isolatedPreviewsForTest() == previewsBefore && timer.elapsed() < 60000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  QVERIFY2(window->isolatedPreviewsForTest() > previewsBefore,
+           "the window could not preview again after the cancelled one released its lock");
 }
 
 void TestMainWindow::checkAWindowWhoseWorkerCannotStartStillRenders()

@@ -139,7 +139,14 @@ public:
   //! Whether this window counts itself busy. An isolated window releases the application-wide lock
   //! while its worker computes, so that lock alone no longer says whether a preview is in flight.
   bool isBusyForTest() const { return isBusy(); }
+  //! Kills this window's compute worker outright, as a crash or an OOM kill would. Used to prove
+  //! that a later request replaces it rather than leaving the window permanently unable to compute.
+  void exitComputeWorkerForTest();
 #endif
+  //! 0 when isolation is off or the worker is not currently running. Exposed outside the test guard
+  //! because it is also how a test can wait for a fresh worker to come up after
+  //! exitComputeWorkerForTest().
+  qint64 computeWorkerProcessId() const;
   ~MainWindow() override;
 
 private:
@@ -519,20 +526,25 @@ private:
    */
   bool previewRequested = false;
   /*!
-     This window handed its work to its worker and released the application-wide GUI lock while the
-     worker computes. The lock exists because in-process computation runs on the one GUI thread every
-     window shares; an isolated window's computation runs in its own process, so holding the lock
-     across that wait needlessly stopped every OTHER window from previewing. The window still counts
-     as busy to itself until compileEnded().
+     True for an isolated window with a request outstanding -- from the moment it is dispatched
+     (well, from the moment the GUI action that will dispatch it starts, since parsing happens
+     synchronously first) until data returns, the request is cancelled, or the worker dies.
+
+     This is this window's *own* lock, independent of GuiLocker. The in-process path shares one
+     application-wide lock because it shares one GUI thread's caches and evaluation state across
+     every window; an isolated window's geometry is computed by its own worker process, so none of
+     that is shared, and gating it on another window's in-process lock only stops it from starting
+     or finishing for no reason. isBusy() consults this instead of GuiLocker whenever this window is
+     isolated, and never both -- see isBusy().
    */
   bool dispatchedToWorker = false;
-  //! Locked for this window: either something holds the application-wide lock, or this window's own
-  //! worker is still computing.
+  //! For an isolated window, this window's own dispatchedToWorker; for the in-process path, the
+  //! application-wide GuiLocker (unchanged from before isolation existed -- that path's shared
+  //! caches genuinely need one lock across every window).
   bool isBusy() const;
-  //! Releases the application-wide lock for the duration of a worker request. Called BEFORE sending,
-  //! because a worker that cannot take the request reports that synchronously, and compileEnded()
-  //! must then find this already done rather than unlock a second time.
-  void releaseGuiLockForWorker();
+  //! Begins this window's compute lifecycle: dispatchedToWorker when isolated, GuiLocker::lock()
+  //! otherwise. Call once, before compile() starts.
+  void lockForNewRequest();
   //! True from sending an isolated preview until its answer arrives.
   bool isolatedPreviewInFlight = false;
   //! What the in-flight preview was computed from, so a repeat F5 with nothing changed is not queued.
