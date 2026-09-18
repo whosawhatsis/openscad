@@ -66,7 +66,6 @@
 #include <QTextStream>
 #include <QTime>
 #include <QTemporaryDir>
-#include <boost/property_tree/json_parser.hpp>
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
@@ -2227,16 +2226,16 @@ QString MainWindow::previewRequestKey()
   QString key = this->activeEditor->toPlainText();
   key += QChar(3);
   key += QString::fromStdString(commandline_commands);
-  // ponytail: values are compared as their JSON text, which is exact for a value that has not
-  // changed -- the only case this key has to recognize.
+  // Every ParameterObject::exportValue() returns a leaf holding the value already serialized -- the
+  // same text the Customizer writes to a .json parameter set -- so its data() is the comparable
+  // form. Do not route it through write_json(): JSON has no top-level scalar, so Boost rejects a
+  // bare leaf, and every parameterized document aborted its preview here.
   for (const auto& [name, value] :
        this->activeEditor->parameterWidget->exportValues(kWorkerParameterSet)) {
-    std::ostringstream json;
-    boost::property_tree::write_json(json, value, false);
     key += QChar(3);
     key += QString::fromStdString(name);
     key += QChar(4);
-    key += QString::fromStdString(json.str());
+    key += QString::fromStdString(value.data());
   }
   return key;
 }

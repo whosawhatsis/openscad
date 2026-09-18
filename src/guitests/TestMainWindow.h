@@ -11,6 +11,7 @@ private slots:
   void checkIsolatedRenderProducesGeometry();
   //! And a preview under isolation must come back as a product list the window can composite.
   void checkIsolatedPreviewProducesProducts();
+  void checkIsolatedPreviewWithCustomizerParameterSucceeds();
   void checkIsolatedPreviewUsesGuiColorScheme();
   void checkIsolatedRenderTagsSchemeColors();
   void checkUntouchedCustomizerDoesNotOverrideEditedText();

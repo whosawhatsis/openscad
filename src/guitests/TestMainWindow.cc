@@ -209,6 +209,23 @@ void TestMainWindow::checkIsolatedAutoReloadPreviewUsesWorker()
   QCOMPARE(window->isolatedPreviewsForTest(), 1);
 }
 
+// Any document with a Customizer parameter has to preview under isolation. The request key built
+// for the in-flight-preview comparison serializes each parameter value on its own, and a value
+// exported by the Customizer is a bare ptree leaf -- which Boost's write_json refuses, because JSON
+// has no top-level scalar. Every such preview aborted with "ptree contains data that cannot be
+// represented in JSON format", so isolation was unusable on any parameterized file. The existing
+// preview tests all use sources without parameters, which is why this went unnoticed.
+void TestMainWindow::checkIsolatedPreviewWithCustomizerParameterSucceeds()
+{
+  Feature::enable_feature("process-isolation");
+  auto *window = runInOwnWindow(QStringLiteral("pw_side = 5; cube([pw_side, 5, 5]);"), true);
+  Feature::enable_feature("process-isolation", false);
+
+  QVERIFY2(window != nullptr, "an isolated preview of a parameterized document never finished");
+  QVERIFY2(window->previewProductsForTest() != nullptr,
+           "an isolated preview of a parameterized document produced no product list");
+}
+
 void TestMainWindow::checkIsolatedPreviewUsesGuiColorScheme()
 {
 #ifdef ENABLE_OPENCSG
