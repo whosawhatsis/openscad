@@ -38,6 +38,7 @@
 #include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QFont>
 #include <QFontMetrics>
 #include <QHBoxLayout>
@@ -131,6 +132,7 @@
 #include "gui/LibraryInfoDialog.h"
 #include "gui/Measurement.h"
 #include "gui/OpenSCADApp.h"
+#include "gui/AdvancedExportDialog.h"
 #include "gui/Preferences.h"
 #include "Feature.h"
 #include "gui/PrintInitDialog.h"
@@ -2651,6 +2653,64 @@ void MainWindow::actionExportFileFormat(int fmt)
   } break;
   default: actionExport(fileformat::is3D(format) ? 3 : fileformat::is2D(format) ? 2 : 0, exportInfo);
   }
+}
+
+namespace {
+
+//! Quotes a path for the Advanced Export field if it contains anything split_command_line
+//! would treat as a separator. Paths with spaces are the common case.
+QString quoteForCommandLine(const QString& path)
+{
+  if (!path.contains(QRegularExpression("[\\s\"\']"))) return path;
+  QString quoted = path;
+  quoted.replace('"', "");
+  return "\"" + quoted + "\"";
+}
+
+}  // namespace
+
+/*
+   Advanced Export: a spike. See AdvancedExportDialog.h for what it is and is not.
+
+   The arguments are seeded from the live viewport, which is the part worth learning from --
+   the whole reason to run in-process rather than shelling out is that the GUI already knows
+   the camera, the image size and which file is open.
+ */
+void MainWindow::on_fileActionAdvancedExport_triggered()
+{
+  auto guard = scopedSetCurrentOutput();
+
+  if (!rootGeom) {
+    LOG(message_group::Error, "Nothing to export! Try rendering first (press F6)");
+    return;
+  }
+
+  const auto vpt = qglview->cam.getVpt();
+  const auto vpr = qglview->cam.getVpr();
+  const QString seed = QString("--camera=%1,%2,%3,%4,%5,%6,%7 --imgsize=%8,%9 -o ")
+                         .arg(vpt.x(), 0, 'f', 2)
+                         .arg(vpt.y(), 0, 'f', 2)
+                         .arg(vpt.z(), 0, 'f', 2)
+                         .arg(vpr.x(), 0, 'f', 2)
+                         .arg(vpr.y(), 0, 'f', 2)
+                         .arg(vpr.z(), 0, 'f', 2)
+                         .arg(qglview->cam.zoomValue(), 0, 'f', 2)
+                         .arg(qglview->cam.pixel_width)
+                         .arg(qglview->cam.pixel_height);
+
+  /*
+     Suggest an output path next to the source rather than leaving -o empty: an -o that
+     accidentally names the .scad file would overwrite the user's source, and an empty one is
+     the easiest way for that to happen by mistyping.
+   */
+  QFileInfo const sourceInfo(activeEditor->filepath);
+  const QString suggestedOutput = sourceInfo.dir().filePath(sourceInfo.completeBaseName() + ".png");
+
+  const QString arguments =
+    seed + quoteForCommandLine(suggestedOutput) + " " + quoteForCommandLine(activeEditor->filepath);
+
+  AdvancedExportDialog dialog(arguments, this);
+  dialog.exec();
 }
 
 void MainWindow::on_editActionCopy_triggered()

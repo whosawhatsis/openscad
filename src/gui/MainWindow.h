@@ -360,6 +360,7 @@ private slots:
   bool canExport(unsigned int dim);
   void actionExport(unsigned int dim, ExportInfo& exportInfo);
   void actionExportFileFormat(int fmt);
+  void on_fileActionAdvancedExport_triggered();
   void on_editActionCopyViewport_triggered();
   void on_designActionFlushCaches_triggered();
 

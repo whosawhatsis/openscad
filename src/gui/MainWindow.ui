@@ -230,6 +230,8 @@
      <addaction name="fileActionExportBinarySTL"/>
      <addaction name="fileActionExportOBJ"/>
      <addaction name="fileActionExportPOV"/>
+     <addaction name="separator"/>
+     <addaction name="fileActionAdvancedExport"/>
      <addaction name="fileActionExportOFF"/>
      <addaction name="fileActionExportWRL"/>
      <addaction name="fileActionExportAMF"/>
@@ -1084,6 +1086,11 @@
    </property>
    <property name="text">
     <string>Export as &amp;POV...</string>
+   </property>
+  </action>
+  <action name="fileActionAdvancedExport">
+   <property name="text">
+    <string>Advanced Export...</string>
    </property>
   </action>
   <action name="fileActionExportOFF">

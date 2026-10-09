@@ -37,3 +37,11 @@ public:
    that. See the feature page for row 02.
  */
 int run_command_line(const std::vector<std::string>& args, std::string& error);
+
+/*!
+   Splits one line of text into arguments, the way a shell roughly would: whitespace separates,
+   and single or double quotes group. Export paths routinely contain spaces, which is the whole
+   reason this exists. An unterminated quote runs to the end of the line rather than being an
+   error -- the user is typing, and failing hard mid-word is more annoying than useful.
+ */
+std::vector<std::string> split_command_line(const std::string& text);

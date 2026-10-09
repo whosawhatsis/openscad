@@ -1374,3 +1374,36 @@ int run_command_line(const std::vector<std::string>& args, std::string& error)
     return 1;
   }
 }
+
+std::vector<std::string> split_command_line(const std::string& text)
+{
+  std::vector<std::string> args;
+  std::string current;
+  bool inWord = false;
+  char quote = '\0';
+
+  for (const char c : text) {
+    if (quote != '\0') {
+      if (c == quote) quote = '\0';
+      else current += c;
+      continue;
+    }
+    if (c == '"' || c == '\'') {
+      quote = c;
+      inWord = true;  // an empty quoted string is still an argument
+      continue;
+    }
+    if (std::isspace(static_cast<unsigned char>(c))) {
+      if (inWord) {
+        args.push_back(current);
+        current.clear();
+        inWord = false;
+      }
+      continue;
+    }
+    current += c;
+    inWord = true;
+  }
+  if (inWord) args.push_back(current);
+  return args;
+}

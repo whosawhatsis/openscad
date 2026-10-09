@@ -184,3 +184,51 @@ TEST_CASE("changing a -D variable misses the cache only for what it affects", "[
   // ...and the two exports genuinely differ, i.e. the cache did not serve stale geometry.
   CHECK(fs::file_size(out1) != fs::file_size(out2));
 }
+
+// --- Argument tokenising -----------------------------------------------------------------
+//
+// The Advanced Export dialog hands the user a single text field, so something has to turn
+// that string into an argv. This is the only real logic in the dialog, and paths with spaces
+// are the obvious way to get it wrong, so it lives here rather than in the GUI where it would
+// need a GUI test harness to reach.
+
+TEST_CASE("split_command_line splits on whitespace", "[commandline]")
+{
+  REQUIRE(split_command_line("-o out.png --imgsize=800,600") ==
+          std::vector<std::string>{"-o", "out.png", "--imgsize=800,600"});
+}
+
+TEST_CASE("split_command_line collapses runs of whitespace", "[commandline]")
+{
+  REQUIRE(split_command_line("  -o   out.png\t--render  ") ==
+          std::vector<std::string>{"-o", "out.png", "--render"});
+}
+
+TEST_CASE("split_command_line keeps quoted paths together", "[commandline]")
+{
+  // The reason this function exists: export paths routinely contain spaces.
+  REQUIRE(split_command_line("-o \"/tmp/my model.png\"") ==
+          std::vector<std::string>{"-o", "/tmp/my model.png"});
+  REQUIRE(split_command_line("-o '/tmp/my model.png'") ==
+          std::vector<std::string>{"-o", "/tmp/my model.png"});
+}
+
+TEST_CASE("split_command_line handles a quoted segment inside a word", "[commandline]")
+{
+  REQUIRE(split_command_line("--camera=\"1,2,3\" -o x.png") ==
+          std::vector<std::string>{"--camera=1,2,3", "-o", "x.png"});
+}
+
+TEST_CASE("split_command_line treats an unterminated quote as running to the end", "[commandline]")
+{
+  // Forgiving rather than an error: the user is mid-typing, and a hard failure here would be
+  // more annoying than useful.
+  REQUIRE(split_command_line("-o \"/tmp/unfinished") ==
+          std::vector<std::string>{"-o", "/tmp/unfinished"});
+}
+
+TEST_CASE("split_command_line returns nothing for blank input", "[commandline]")
+{
+  REQUIRE(split_command_line("").empty());
+  REQUIRE(split_command_line("   \t ").empty());
+}

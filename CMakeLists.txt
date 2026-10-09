@@ -1303,6 +1303,7 @@ set(GUI_SOURCES
   src/gui/ErrorLog.cc
   src/gui/EventFilter.h
   src/gui/Export3mfDialog.cc
+  src/gui/AdvancedExportDialog.cc
   src/gui/ExportPdfDialog.cc
   src/gui/ExportSvgDialog.cc
   src/gui/OctoPrintApiKeyDialog.cc
